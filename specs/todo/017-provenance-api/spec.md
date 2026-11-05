@@ -20,6 +20,7 @@ region highlighted.
   their own.
 - Original file download with HTTP Range support.
 - Superseded versions stay resolvable and are marked as such.
+- Routes for a plain page image, page count, thumbnails and the allowed DPI values. Reverse lookup from a Source or Segment to the claims that cite it.
 
 ## Verification
 1. Pixel test: for fixtures including rotated and cropped pages, the highlight overlay covers the target word's rendered
@@ -29,6 +30,7 @@ region highlighted.
 4. Bad cases: a wrong-vault token gets not-found; bad page numbers and DPI above the limit are refused; a broken anchor is
    reported as broken, not guessed.
 5. Range requests return correct bytes, verified against the blob hash.
+6. Reverse lookup returns exactly the claims that forward lineage connects to that Source, on a fixture vault.
 
 ## Out of scope
 Audio ranges (spec 028), annotation UI and caching of page images (spec 021).

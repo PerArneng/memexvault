@@ -20,6 +20,7 @@ result, and the API stays responsive while ingestion runs.
   rendition job. Identical bytes reuse the blob and return the existing Source.
 - Job status, retry and cancel APIs.
 - Jobs are idempotent, keyed on input hash and pipeline version.
+- Routes for source list, detail and versions, trust-tier change and metadata edit. Job list with filters by kind and state, dead-letter list, and attempts and error detail per job. A route that publishes upload limits and allowed types.
 
 ## Verification
 1. Kill harness for 200 cycles during mixed jobs: every job finishes exactly once in effect, with 0 duplicate derived
@@ -30,6 +31,7 @@ result, and the API stays responsive while ingestion runs.
    wrong scope.
 5. Same bytes uploaded twice produce one blob and one Source version.
 6. Queue saturation returns a clear backpressure response rather than unbounded memory growth.
+7. Job and source lists filter and page correctly at 10,000 rows, including while jobs change state.
 
 ## Out of scope
 Parsing itself (spec 015), connectors that pull from other systems, and email or web import.

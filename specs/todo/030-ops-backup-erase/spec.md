@@ -23,6 +23,7 @@ everywhere it spread, with zero hits for the purged text.
   and index entries, invalidates derived claims and pages, bumps the vault generation, compacts storage, and appends an `Erased`
   event with no content.
 - Metrics and a status API: lag, queue depth, sizes and cache stats.
+- Erasure gets an impact preview route listing what it would remove. The cascade is a list of steps, so spec 049 can add chat threads. A route lists claims invalidated by erasure. Whole-vault deletion from spec 012 runs through the same cascade and drops the vault's schema, blobs and indexes.
 
 ## Verification
 1. Backup during ingest, restore elsewhere, then reconcile reports no differences up to the backup's sequence.
@@ -33,6 +34,7 @@ everywhere it spread, with zero hits for the purged text.
 4. Claims and pages depending on the erased source are flagged or removed, and the log still replays to the same state.
 5. Bad cases: a corrupt backup is refused, restore doesn't overwrite an existing vault without an explicit flag, and an erasure proposal
    from an agent never auto-commits. The `VACUUM FULL` lock time is measured and recorded.
+6. The impact preview lists exactly what the erasure then removes, on a fixture vault.
 
 ## Out of scope
 Crypto-shredding, remote backup targets, replication and backups already taken before an erasure (documented as a limit).

@@ -21,6 +21,7 @@ Anchors round-trip: quote to rects and back to the same text.
 - Per-segment language detection with a pure-Rust library, storing unknown at low confidence.
 - Plain text and Markdown sources use the same model, with offset anchors only.
 - Rendition blobs store word tables. A new parser version creates a new Rendition and re-anchors by quote.
+- Routes for rendition list per source and rendition detail (parser version, canonical text, word table). Reprocess, as a job. Segment list per rendition and segment get, with language. A list of re-anchor failures.
 
 ## Verification
 1. 50 labelled fixture anchors round-trip on rotated, cropped and multi-column pages: rects match within 1 pt.
@@ -32,6 +33,7 @@ Anchors round-trip: quote to rects and back to the same text.
 5. Word-table stability: parsing the same file twice gives byte-identical rendition blobs.
 6. Language is correct on at least 95% of labelled segments in English, Swedish, German and Spanish, including a mixed-language
    document.
+7. Reprocessing through the route creates a new Rendition, and failed re-anchors appear in the list.
 
 ## Out of scope
 Scanned pages (spec 016), Office formats, tables as structured cells, and images and figures as objects.

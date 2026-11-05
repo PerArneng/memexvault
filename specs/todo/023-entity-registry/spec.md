@@ -23,6 +23,7 @@ new type becomes searchable without a restart or reindex.
 - A resolve API from mention to candidates, with aliases and identity fields.
 - `same_as` candidates only as suggestions. Merge and split are human-approved and reversible, with redirects.
 - Typed filter API, such as `type=Product, price<100`.
+- Routes for type list, version history and a preview classifying a change as additive or breaking. Entity list by type, get, and create and edit as proposals. Merge and split proposals, the `same_as` suggestion list, and redirect lookup.
 
 ## Verification
 1. A brand-new type with entities is found by text, exact and filtered search within the lag target, without restart.
@@ -33,6 +34,7 @@ new type becomes searchable without a restart or reindex.
 6. Exact filter p95 ≤2 ms at 200k field values, with a projection to 1M.
 7. Bad cases: invalid schema, remote `$ref`, values failing validation, a type with 10k distinct fields (refused by a limit),
    and a merge proposed by an agent never auto-commits.
+8. The preview's additive or breaking result matches what the type change does when it's submitted.
 
 ## Out of scope
 Automatic merges, agent-created types going live without review, ontology import and RDF export.

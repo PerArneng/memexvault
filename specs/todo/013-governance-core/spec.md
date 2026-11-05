@@ -23,6 +23,7 @@ and any commit can be reverted.
 - Review queue tables and API: list, approve, reject, with reason and reviewer attribution.
 - Conflict responses for stale base versions, returning current state. A computed inverse and revert.
 - A changes-since-cursor API.
+- Routes for proposal status with validator results and rejection reasons, dry-run validation, ChangeSet list and detail with ops, inverse preview and a reversibility check, revert, decision history, and a list of open contradictions.
 
 ## Verification
 1. Sending the same idempotency key 100 times, concurrently, commits once and returns the same result.
@@ -32,6 +33,7 @@ and any commit can be reverted.
 4. An unsourced machine claim can't become active. A contradictory claim coexists with a link to the other claim.
 5. Stale base versions return a structured conflict. No partial ChangeSet is ever visible to a concurrent reader.
 6. `as_of` on transaction time returns what was believed at a past sequence.
+7. A dry run writes nothing, and its validator results match a real submission of the same proposal.
 
 ## Out of scope
 LLM agents (specs 024-026), pages (022), entity types (023).

@@ -7,15 +7,17 @@ Guidance for AI coding agents working in this repository.
 memexvault is a knowledge base, or "second brain", for AI agents.
 
 The repository holds this file, the license, the spec-driven workflow, and no
-product code yet. The backend is planned in specs 002-033, and
-[docs/architecture.md](docs/architecture.md) holds their shared design.
+product code yet. The backend and web console are planned in specs 002-051.
+[docs/architecture.md](docs/architecture.md) holds the backend's shared design, and
+[docs/frontend-architecture.md](docs/frontend-architecture.md) holds the console's.
 
 Decided: the backend is Rust, structured by the `rust-architecture` skill, with an
 HTTP API and MCP. PostgreSQL, with pgvector allowed, is the system of record and
 the one required external system. Blobs live in folders on disk. AI calls are the
 only other accepted network dependency. Backends are swappable behind traits, and
-code above the edge traits must not assume a particular backend. The spec tooling's
-use of Python and `uv` doesn't decide anything for the product.
+code above the edge traits must not assume a particular backend. The console is
+React and TypeScript, structured by the frontend document, which adapts
+`rust-architecture`. The spec tooling's use of Python and `uv` doesn't decide anything for the product.
 
 `research/` holds background reports converted from PDF (spec 001). It's git-ignored
 and exists only locally, so never commit it or copy passages from it. The reports
@@ -25,7 +27,8 @@ are source material, not decisions: treat their claims as unverified.
 
 Run `uv run .claude/skills/spec-driven/scripts/spec-manager.py list` to see what
 is in progress and what is next. Respect each spec's `Depends on` line: spec 032,
-the Postgres store, comes right after 009 despite its id.
+the Postgres store, comes right after 009 despite its id. Specs 035 and 036 run
+alongside the backend, and each console screen follows its backend spec.
 
 ## Working in this repository
 

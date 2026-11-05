@@ -1,6 +1,6 @@
 # memexvault backend architecture
 
-The shared design for the backend specs (002-033). Specs link here instead of repeating it. Update this file when a
+The shared design for the backend specs (002-034, 037-039 and 049). [frontend-architecture.md](frontend-architecture.md) covers the console. Specs link here instead of repeating it. Update this file when a
 spec changes a decision. Choices marked **provisional** wait on the named spike, which records the outcome here.
 
 The reports in `research/` are background with unverified claims. This design adopts Postgres but not the rest of their
@@ -8,7 +8,8 @@ stack, and the numbers here are our own targets to measure.
 
 ## Requirements
 
-- A knowledge base for AI agents. These specs cover the backend only, with an HTTP API and MCP.
+- A knowledge base for AI agents, with an HTTP API and MCP, and a web console with UI for all functionality.
+- A live view of processing, and a chat with an agent over AG-UI.
 - Three kinds of knowledge, all linked: wiki pages, information extracted from documents, and structured entities.
 - Everything is traceable to the original document or meeting recording, with bounding boxes or highlights.
 - OCR of PDFs, and hybrid search that is very fast.
@@ -52,7 +53,7 @@ crates/
   memex-asr/          edge: transcription (provisional, spec 027)
   memex-agent-adk/    edge: the only crate that depends on ADK-Rust
   memex-cache/        edge: RAM and disk caches
-  memex-http/         frontend: axum
+  memex-http/         frontend: axum, and serves the embedded web console
   memex-mcp/          frontend: rmcp
   memexvault/         binary: the single composition root and the trait wrappers
 ```
@@ -139,7 +140,7 @@ Each object kind has its own tables and a common header: UUIDv7, creator, status
 | Page, Block, Revision | Wiki content, edited with optimistic versions | Editable, full history |
 | Edge | A typed link between objects, including wiki links and backlinks | Via events |
 | ChangeSet | An atomic group of mutations with author, rationale and approval state | Append-only |
-| Derivation | Records inputs, model and prompt hash of anything generated | Rebuildable |
+| Derivation | Records inputs, model, prompt hash and token counts of anything generated | Rebuildable |
 
 ### Anchors
 
@@ -257,6 +258,40 @@ Intent is classified by deterministic rules, with no LLM on the read path:
 5. Hits are fenced, then assembled into a token-budgeted evidence package with claims first, citations, conflicts and
    trust notes.
 
+## API conventions
+
+All HTTP routes sit under `/api/v1`. The OpenAPI document is generated from code and is the contract: the frontend's types are generated
+from it.
+
+- **Lists** take a cursor, a limit, a stated sort and typed filters. They return a total only where it's cheap to compute.
+- **Long operations** return a job id, and their progress appears in the jobs API and the activity stream.
+- **Errors** use the one format from spec 012.
+- **Writes** to knowledge objects are proposals, as in [Governance](#governance).
+- **Browsers** authenticate with a session cookie (spec 037). API and MCP clients use bearer tokens. Both resolve to the same principal and
+  scopes.
+
+## Live activity
+
+One server-sent event stream per vault feeds the console's live views (spec 038). It carries metadata only, never document content.
+
+- **Durable events** come from the log and resume by sequence number, so a reconnect misses nothing.
+- **Progress messages,** such as OCR page 12 of 400, are in memory only and may be dropped.
+- **Each document has a stage model:** stored, parsing, OCR or transcription, segmenting, indexing, embedding, extraction, review, done. Failed,
+  partial and waiting are visible states.
+- **A slow client never slows ingest.** Its buffer is bounded, and overflow sends a resync frame, which makes the client fetch a new snapshot.
+
+## Chat agent
+
+A separate, opt-in surface (spec 049). It's off per vault until an admin enables it, because it sends vault content to the configured LLM. The
+search path stays free of LLMs, and the chat agent calls search like any other client.
+
+- **Protocol.** AG-UI over server-sent events. A pure mapping turns `AgentRunner` streaming events into AG-UI events, and `memex-http` serves
+  them with our own auth. ADK stays confined to `memex-agent-adk`.
+- **Tools.** Search, read, provenance and propose. It holds `propose` scope only and can't fetch URLs.
+- **Changes** go to the normal review queue, and a human approves them. Runs don't pause for approval, and AG-UI interrupts aren't used.
+- **Threads** live in the vault's schema and aren't indexed for search. Erasing a Source deletes the threads that cite it, because a model's reply
+  may paraphrase content in ways a byte scan can't find.
+
 ## Targets
 
 These are goals at 1M segments, warm, on the reference machine, with default backends and Postgres on the same machine. A
@@ -308,7 +343,7 @@ Every key also includes a vault generation, which erasure bumps. That covers the
 | GraphRAG community summaries | High token cost. Start with k-hop, and add more only after a measured golden-set gain. |
 | ColPali and other visual retrieval | Large vector storage cost. Page images are kept, so it can come later. |
 | In-process vision-language parsers | Too heavy. Reconsider only if spec 003 fails. |
-| LLMs on the read path, including `kb.ask` and LLM planners | They break the latency targets, and the calling agent does the generation. |
+| LLMs on the search path, including `kb.ask` and LLM planners | They break the latency targets, and the calling agent does the generation. Chat is a separate opt-in surface that calls search like any client. |
 | Query DSL | Typed filters instead. |
 | CRDTs | Optimistic versions are enough. |
 | Automatic entity merges | Merges are always human-approved. |
@@ -325,3 +360,4 @@ Every key also includes a vault generation, which erasure bumps. That covers the
 | Pages and entities | 022, 023 |
 | Agents | 024-026, 028 |
 | MCP, operations, acceptance | 029-031, 033 |
+| Support for the console | 034, 037-039, 049 |

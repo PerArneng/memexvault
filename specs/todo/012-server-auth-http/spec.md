@@ -21,6 +21,7 @@ scope, and every write records who made it.
 - API: vault create and list, token create, list and revoke, whoami, health, version.
 - Binds to localhost by default. Body size limits, request ids, a consistent error format and an OpenAPI document.
 - A first-run bootstrap creates an admin token once.
+- API conventions from `docs/architecture.md`, with a shared list helper. Vault get, rename and delete, and a server-admin flag on principals that controls creating vaults. Principal list, create and disable. Tokens carry expiry, scopes and last-used, and token lists show them.
 
 ## Verification
 1. A table-driven test of all scopes × all operations × own and other vault, with no gaps. Every denied case returns the
@@ -30,9 +31,10 @@ scope, and every write records who made it.
 4. Bad cases: revoked, expired and malformed tokens; oversized bodies; the token doesn't appear in logs (tested by
    capturing logs).
 5. `cargo tree -p memex-core` still lists no axum or tokio.
+6. Every list route in the OpenAPI document has a cursor, limit and stated sort, checked by a test that reads the document.
 
 ## Out of scope
-TLS (use a reverse proxy if needed), SSO or OAuth, per-object ACLs, and a UI.
+TLS (use a reverse proxy if needed), SSO or OAuth, and per-object ACLs. The console is covered by specs 037, 040 and 048.
 
 ## Result
 Not started.

@@ -23,6 +23,7 @@ resolves to a source region, with precision ≥0.9 on a labelled set.
 - Token budget per document, retries on bad output, and waiting and retrying while the LLM is down, while everything else
   stays available.
 - Identity resolution against existing entities produces candidates, not merges.
+- Derivations record token counts. Routes for per-document extraction status, including partial and waiting for the LLM, and a re-run.
 
 ## Verification
 1. Labelled set of at least 50 documents using public material, with at least 10 each in English, Swedish, German and Spanish, run
@@ -35,6 +36,7 @@ resolves to a source region, with precision ≥0.9 on a labelled set.
 5. A new type added to the registry is extracted without a code change.
 6. The budget is enforced: a document over budget stops and is marked partial.
 7. `cargo tree -p memex-core` shows no ADK crate.
+8. Token counts on Derivations match what the scripted fake reports, and a re-run through the route creates no duplicates.
 
 ## Out of scope
 The review agent (025), audits (026), audio (028) and fine-tuning.

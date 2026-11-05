@@ -23,6 +23,7 @@ in a PDF gets flagged.
 - OCR worker pool with a CPU cap, so reads keep their latency.
 - This is the first feature needing models, so it adds the `models fetch` command with pinned hashes and a clear startup
   error if models are missing.
+- Per-page routes for OCR routing and confidence, and a list of flagged pages (low confidence, hidden text).
 
 ## Verification
 1. On the spec 003 corpus through the full pipeline: CER and IoU are within 0.5 points of the spike.
@@ -32,6 +33,7 @@ in a PDF gets flagged.
    ingest, since search doesn't exist yet at this point.
 5. Works offline after `models fetch`, a corrupted model is refused by hash, and missing models give a clear error.
 6. Bad cases: a blank page, a huge image page (bounded memory), and an OCR failure on one page that doesn't lose the rest.
+7. A fixture with hidden text and one with a low-confidence page both appear in the flagged list.
 
 ## Out of scope
 Handwriting, vision-LLM OCR, and languages beyond what spec 003 recorded.

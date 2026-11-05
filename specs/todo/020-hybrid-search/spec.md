@@ -24,6 +24,7 @@ There is no LLM on the read path. The calling agent does the generating.
   tier and conflicts. It also has token budget and cursor handling, and says explicitly when nothing relevant was found.
 - A golden set of 200 questions over a public corpus committed as fixtures, labelled by category and language. At least 40 per
   language (English, Swedish, German, Spanish) and 20 where the question and answer differ in language.
+- Lexical-only and vector-only modes for comparison and debugging, per-signal scores and the planner's path in an opt-in debug field, and opt-in facets with counts for the typed filters.
 
 ## Verification
 1. Recall@20 ≥95% overall and ≥90% per language, plus nDCG@10 and MRR, compared against lexical-only and vector-only, per category
@@ -37,6 +38,7 @@ There is no LLM on the read path. The calling agent does the generating.
 7. Fusion, planner and budget logic are unit-tested in memory.
 8. Store round trips per search don't grow with the number of hits: the counting fake reports the same count for 10 and for
    200 hits.
+9. Requesting facets or debug data leaves the default response and its latency unchanged, measured.
 
 ## Out of scope
 Query caching (021), entity and page results (added by 022 and 023), and LLM query rewriting.

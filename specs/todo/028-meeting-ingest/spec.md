@@ -22,6 +22,7 @@ original file that can be played back.
   located to word times.
 - The provenance API returns a time range, and a byte-range stream of the original file.
 - Meeting metadata: title, date and participants, with participants linkable to Person entities through proposals.
+- Routes for meeting metadata read and write, full transcript, and media type and duration.
 
 ## Verification
 1. On a labelled recording, for at least 50 claims, the cited range contains the spoken quote at least 95% of the time, with the
@@ -32,6 +33,7 @@ original file that can be played back.
 5. A Range request plays from the cited time in a test player, or is byte-verified where a player is impractical.
 6. Sending to an API transcriber is impossible unless enabled, proven by a test with it disabled.
 7. Bad cases: silence, no speech, corrupted audio and very long files stay within memory limits and fail one job only.
+8. The full transcript's time ranges agree with the provenance API's ranges on a fixture recording.
 
 ## Out of scope
 Live capture, calendar integration and meeting summaries as a separate feature.

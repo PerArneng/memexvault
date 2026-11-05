@@ -22,6 +22,7 @@ embedded by reference, so a fact never drifts between pages.
 - API: create, read at a revision, update, diff, list backlinks, list unresolved links.
 - Pages and blocks are added to the lexical and vector projectors. Search adds k-hop expansion over Edges for relational
   queries, with its gain measured.
+- Routes for page list, revision list, delete and rename as ChangeSets, revert, outgoing links and redirect lookup, and Markdown import and export.
 
 ## Verification
 1. Renaming a page keeps all links and backlinks correct, verified on a generated graph of 10k pages.
@@ -32,9 +33,10 @@ embedded by reference, so a fact never drifts between pages.
 6. A new page is searchable within the lag target. k-hop expansion ships enabled only if it improves golden-set relational
    questions, with the numbers recorded.
 7. Bad cases: broken links are listed and not fatal, link cycles terminate, and oversized pages are refused.
+8. Export followed by import reproduces the page content and links.
 
 ## Out of scope
-A web editor, live co-editing, page permissions and page templates.
+Live co-editing, page permissions and page templates.
 
 ## Result
 Not started.

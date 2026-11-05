@@ -24,6 +24,7 @@ checks" requirement.
 - Audit results stored as events. Agents hold `propose` scope, so findings become review items, never direct changes.
 - Failures revoke auto-commit for that combination and requeue sibling claims.
 - A planted-error mode, with tagged errors in a test vault, measures auditor recall.
+- Routes for run list and detail with seed and sample, on-demand trigger, findings with check results, schedule read and write, budget state, and the planted-error recall report.
 
 ## Verification
 1. The same seed and state gives an identical sample, proven by a test. A different seed differs.
@@ -35,9 +36,10 @@ checks" requirement.
 6. Audits don't push search p95 above 1.5× idle.
 7. Scheduler tests use `ManualClock` and no sleeping. Bad cases: an empty vault, an LLM outage (deterministic checks still run),
    and a missed schedule.
+8. A run triggered through the route with a given seed gives the same sample as a scheduled run with that seed.
 
 ## Out of scope
-Auto-fixing findings, agent reputation and user-facing dashboards.
+Auto-fixing findings, and agent reputation.
 
 ## Result
 Not started.
