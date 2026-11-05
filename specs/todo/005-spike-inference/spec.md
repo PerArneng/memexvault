@@ -20,10 +20,11 @@ still a release candidate. One ML runtime shared with OCR is preferred if it cos
 
 ## Approach
 - Throwaway crate in this spec's folder.
-- At least two embedding models and two cross-encoders, on CPU and on any Apple acceleration available without extra
+- At least two multilingual embedding models and two multilingual cross-encoders, on CPU and on any Apple acceleration available without extra
   system installs.
 - Measure latency at batch 1 and batch 32, ingest throughput, RSS, binary size, model size and model licence.
-- Measure retrieval quality on a small public labelled set (nDCG@10), so speed isn't chosen alone.
+- Measure retrieval quality on a small public labelled set (nDCG@10), so speed isn't chosen alone. Cover English, Swedish, German
+  and Spanish, plus queries in one language that must find text in another.
 - Design the `models fetch` layout: pinned URL, hash and an offline check at startup.
 
 ## Verification
@@ -35,7 +36,7 @@ still a release candidate. One ML runtime shared with OCR is preferred if it cos
 5. Model licences recorded.
 6. The vector dimension is recorded, so spec 004's matching results apply. If spec 004 has finished, confirm it tested
    that dimension.
-7. `docs/architecture.md` records runtime, models and quality numbers.
+7. `docs/architecture.md` records runtime, models and quality numbers per language, and cross-language.
 
 ## Out of scope
 The projector, query caches, GPU servers and remote embedding APIs.

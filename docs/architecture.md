@@ -29,8 +29,8 @@ stack, and the numbers here are our own targets to measure.
 | Access | One server, several isolated vaults, tokens with per-vault read/propose/admin scopes, all writes attributed. No per-object ACLs, but a nullable `acl_id` leaves room. |
 | Model files | Installed explicitly with a `models fetch` command using pinned hashes. The server never downloads at runtime and works offline afterwards, apart from LLM calls. |
 
-Working assumptions: about 1M segments per vault on one machine (reference: M1 Max, 32 GB), and English or Latin-script
-documents for the first OCR work.
+Working assumptions: about 1M segments per vault, roughly 200,000 pages, on one machine (reference: M1 Max, 32 GB), and
+the [languages](#languages) below.
 
 Operators run Postgres and nothing else. No other server or system library is needed, and AI calls are the only other
 network dependency. Without the LLM endpoint, search, reading and upload still work, and extraction jobs wait and retry.
@@ -131,7 +131,7 @@ Each object kind has its own tables and a common header: UUIDv7, creator, status
 |---|---|---|
 | Source | One version of an original file, with sha256, trust tier and `recorded_at` | Immutable |
 | Rendition | Parser output for a Source (parser@version, canonical text and word table blobs) | Immutable, superseded by reprocessing |
-| Segment | A located, structure-bounded span of a Rendition | Immutable |
+| Segment | A located, structure-bounded span of a Rendition, with its detected language | Immutable |
 | Evidence | Links an Assertion to a Segment with anchor, quote and stance | Append-only |
 | Assertion | One claim, literal-valued or entity-valued, with epistemic status and confidence | Never edited, only superseded |
 | Entity | A typed thing with aliases. Current state is materialized from its Assertions | Via merge and split events |
@@ -230,6 +230,21 @@ instead of trying to detect bad text:
 - Invisible Unicode and text-layer content that OCR can't see gets flagged.
 - Evidence packages expose trust tier and epistemic status.
 - Tool descriptions are never built from vault content.
+
+## Languages
+
+English, Swedish, German and Spanish are the tested languages. Other Latin-script languages work with weaker keyword
+matching, and other scripts aren't supported yet. Documents can mix languages, and a vault is never tied to one.
+
+- **Detection.** Each Segment stores a detected language. Low confidence is stored as unknown, because short text is often
+  misdetected.
+- **Keyword search.** Every segment goes into a language-neutral field and a diacritic-folded field, so `ORA-00904` matches
+  literally and `Goteborg` still finds `Göteborg`. Segments in a tested language also go into that language's stemmed field,
+  with å, ä, ö, ü, ß and ñ kept. A query runs against all these fields, because its language can't be reliably detected.
+- **Compound words.** German and Swedish join words, and stemming doesn't split them. Decompounding is added only if the golden
+  set shows a measured need.
+- **Vector search and reranking** use multilingual models, so a question in one language can find text in another.
+- **Claims** keep the source language, and quotes stay verbatim. Translating them would break quote verification.
 
 ## Search
 

@@ -22,10 +22,12 @@ There is no LLM on the read path. The calling agent does the generating.
 - Fence all hits against store status with one batched lookup. Support `as_of` and `min_seq`.
 - An evidence package with claims first, then segments, then parent sections. Each item has anchors, epistemic status, trust
   tier and conflicts. It also has token budget and cursor handling, and says explicitly when nothing relevant was found.
-- A golden set of 200 questions over a public corpus committed as fixtures, labelled by category.
+- A golden set of 200 questions over a public corpus committed as fixtures, labelled by category and language. At least 40 per
+  language (English, Swedish, German, Spanish) and 20 where the question and answer differ in language.
 
 ## Verification
-1. Recall@20 ≥95%, plus nDCG@10 and MRR, compared against lexical-only and vector-only, per category.
+1. Recall@20 ≥95% overall and ≥90% per language, plus nDCG@10 and MRR, compared against lexical-only and vector-only, per category
+   and language. Cross-language recall and compound-word misses are reported on their own.
 2. Latency p50, p95 and p99 at 1M segments with 8 concurrent clients meets the targets.
 3. Every returned item resolves to an anchor or is explicitly marked as having none.
 4. Retracted objects are never returned, tested by retracting between candidate generation and fencing with fakes.

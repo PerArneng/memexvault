@@ -11,13 +11,14 @@ A lexical index fed only by a projector. A rebuild and an incremental run yield 
 and search p95 is ≤15 ms at 1M segments.
 
 ## Background
-**Depends on:** 015, and results from 006. Design: `docs/architecture.md`, sections Consistency, Search, Targets.
+**Depends on:** 015, and results from 006. Design: `docs/architecture.md`, sections Consistency, Languages, Search, Targets.
 
 ## Approach
 - `LexicalIndex` trait as the Backends section defines it, with a fake, a reusable contract suite and `memex-lexical` on
   tantivy. No tantivy type or query syntax crosses the trait.
-- A schema for segments and claims, extendable for pages (022) and entities (023). Stemmed text and exact fields, so part
-  numbers and identifiers match literally. Status and time as fast fields.
+- A schema for segments and claims, extendable for pages (022) and entities (023). Language-neutral, diacritic-folded and
+  per-language stemmed fields as the Languages section defines, so part numbers and identifiers match literally. Status and
+  time as fast fields.
 - An idempotent projector keyed by object id. The trait exposes the watermark, and tantivy keeps it in the commit payload.
   Startup catch-up.
 - Rebuild to a new generation directory, then flip a pointer, keeping the old one for rollback.
@@ -32,9 +33,11 @@ and search p95 is ≤15 ms at 1M segments.
 6. Bad cases: a retracted claim stops appearing; a corrupted index generation is detected and rebuilt; query syntax errors
    return a clear error instead of a 500.
 7. The contract suite passes on the fake and on tantivy.
+8. Language tests: a Swedish, German and Spanish inflected form each finds its base form. `Goteborg` finds `Göteborg`, and `Göteborg`
+   ranks exact matches first. Search p95 stays within the target with all fields queried.
 
 ## Out of scope
-Vector search (019), fusion (020), and languages other than the working assumption.
+Vector search (019), fusion (020), decompounding unless spec 020 shows a need, and non-Latin scripts.
 
 ## Result
 Not started.

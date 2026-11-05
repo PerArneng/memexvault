@@ -19,15 +19,15 @@ speaker stays optional.
 
 ## Approach
 - Throwaway crate in this spec's folder.
-- Corpus: public-domain or synthetic recordings only, no real meetings sent to a provider. Multiple speakers, noise, 5 and 60 minute
-  lengths, and the formats WAV, MP3, M4A, Opus, WebM and MP4 video.
-- Measure word error rate, timing error against hand-labelled points, speed relative to real time, RSS, model licence, cost per hour
+- Corpus: public-domain or synthetic recordings only, no real meetings sent to a provider. English, Swedish, German and Spanish, multiple speakers, noise, 5 and 60
+  minute lengths, and the formats WAV, MP3, M4A, Opus, WebM and MP4 video.
+- Measure word error rate per language, timing error against hand-labelled points, speed relative to real time, RSS, model licence, cost per hour
   and speaker labels.
 - Check that long audio doesn't lose timing accuracy when split into chunks.
 
 ## Verification
 1. Results table per option and format.
-2. Median word timing error ≤300 ms, and WER recorded, for the chosen options.
+2. Median word timing error ≤300 ms in each language, and WER recorded per language, for the chosen options.
 3. All listed formats decode, or each gap is recorded with a workaround. External `ffmpeg` isn't an acceptable answer.
 4. `otool -L` shows system libraries only for the local option.
 5. A 60-minute file has no timing drift above 1 s by the end.
