@@ -8,7 +8,7 @@ description: Combine lexical, vector and rerank signals into a fast, citation-be
 
 ## Goal
 One search API that returns a token-budgeted evidence package with citations. Pass: recall@20 ≥95% on a 200-question
-golden set, p95 ≤50 ms for hybrid search and ≤300 ms with reranking at 1M segments.
+golden set, p95 ≤50 ms for hybrid search and ≤300 ms with reranking at the test scale.
 
 ## Background
 **Depends on:** 019, and the reranker from 005. Design: `docs/architecture.md`, sections Search, Targets.
@@ -28,7 +28,7 @@ There is no LLM on the read path. The calling agent does the generating.
 ## Verification
 1. Recall@20 ≥95% overall and ≥90% per language, plus nDCG@10 and MRR, compared against lexical-only and vector-only, per category
    and language. Cross-language recall and compound-word misses are reported on their own.
-2. Latency p50, p95 and p99 at 1M segments with 8 concurrent clients meets the targets.
+2. Latency p50, p95 and p99 at 200k segments with 8 concurrent clients meets the targets, with a projection to 1M.
 3. Every returned item resolves to an anchor or is explicitly marked as having none.
 4. Retracted objects are never returned, tested by retracting between candidate generation and fencing with fakes.
 5. Unanswerable golden questions return a low-relevance flag at least 80% of the time.

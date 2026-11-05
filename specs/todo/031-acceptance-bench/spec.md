@@ -1,20 +1,20 @@
 ---
 id: 031
 name: acceptance-bench
-description: Run the whole backend end to end at 1M segments and measure every target
+description: Run the whole backend end to end at the test scale and measure every target
 ---
 
 # 031 acceptance-bench
 
 ## Goal
-Prove the backend meets the requirements as a whole. Every target in `docs/architecture.md` is measured at 1M segments, and
+Prove the backend meets the requirements as a whole. Every target in `docs/architecture.md` is measured at 200k segments and projected to 1M, and
 one scripted run exercises the full path from upload to audit.
 
 ## Background
 **Depends on:** all of 002-030 except the dropped 010, plus 032. Design: `docs/architecture.md`, sections Requirements, Targets.
 
 ## Approach
-- A benchmark harness in the repo with a reproducible corpus generator built on public text, and scripts for 1M segments.
+- A benchmark harness in the repo with a reproducible corpus generator built on public text, and scripts that take the segment count as a parameter, so spec 033 reuses them.
 - An end-to-end scenario through the public APIs: upload a digital PDF, a scanned PDF and a recording. Extract, review and commit.
   Create a page and a new entity type. Search by text, identifier and type. Follow a result to a highlighted region and a time
   range. Run an audit. Then erase a source.

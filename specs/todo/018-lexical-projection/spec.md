@@ -8,7 +8,7 @@ description: Project segments and claims into a tantivy index that can be rebuil
 
 ## Goal
 A lexical index fed only by a projector. A rebuild and an incremental run yield the same hits, indexing lag has p95 ≤1 s,
-and search p95 is ≤15 ms at 1M segments.
+and search p95 is ≤15 ms at the test scale.
 
 ## Background
 **Depends on:** 015, and results from 006. Design: `docs/architecture.md`, sections Consistency, Languages, Search, Targets.
@@ -27,8 +27,8 @@ and search p95 is ≤15 ms at 1M segments.
 ## Verification
 1. Incremental and rebuilt indexes return the same hit sets across 1,000 test queries on a generated corpus.
 2. Kill harness for 200 cycles: the index is never ahead of the log and always catches up.
-3. Lag p95 ≤1 s under sustained ingest, and search p95 ≤15 ms at 1M segments.
-4. Rebuild time at 1M segments ≤15 minutes, while the old generation keeps serving.
+3. Lag p95 ≤1 s under sustained ingest, and search p95 ≤15 ms at 200k segments, with a projection to 1M.
+4. Rebuild time at 200k segments ≤3 minutes, while the old generation keeps serving.
 5. Identifier queries such as `ORA-00904` and `XK-42/B` match exactly.
 6. Bad cases: a retracted claim stops appearing; a corrupted index generation is detected and rebuilt; query syntax errors
    return a clear error instead of a 500.

@@ -7,7 +7,7 @@ Guidance for AI coding agents working in this repository.
 memexvault is a knowledge base, or "second brain", for AI agents.
 
 The repository holds this file, the license, the spec-driven workflow, and no
-product code yet. The backend is planned in specs 002-032, and
+product code yet. The backend is planned in specs 002-033, and
 [docs/architecture.md](docs/architecture.md) holds their shared design.
 
 Decided: the backend is Rust, structured by the `rust-architecture` skill, with an

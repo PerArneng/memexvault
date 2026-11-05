@@ -1,6 +1,6 @@
 # memexvault backend architecture
 
-The shared design for the backend specs (002-032). Specs link here instead of repeating it. Update this file when a
+The shared design for the backend specs (002-033). Specs link here instead of repeating it. Update this file when a
 spec changes a decision. Choices marked **provisional** wait on the named spike, which records the outcome here.
 
 The reports in `research/` are background with unverified claims. This design adopts Postgres but not the rest of their
@@ -259,8 +259,13 @@ Intent is classified by deterministic rules, with no LLM on the read path:
 
 ## Targets
 
-Measured at 1M segments, warm, on the reference machine, with default backends and Postgres on the same machine. A spike may
-revise a target with a recorded reason.
+These are goals at 1M segments, warm, on the reference machine, with default backends and Postgres on the same machine. A
+spike may revise a target with a recorded reason.
+
+**Test scale.** Until spec 033, specs measure at 200k segments and also at 50k, with at most 20 GB of test data on disk, including
+Docker volumes but not Rust build output. Each spec records the growth from 50k to 200k and a projection to 1M. A result passes
+when it meets the target at 200k. A projection that misses the target at 1M is raised with the user. A projection isn't a
+measurement: only spec 033 proves the 1M goal.
 
 | Metric | Target |
 |---|---|
@@ -319,4 +324,4 @@ Every key also includes a vault generation, which erasure bumps. That covers the
 | Search and caching | 018-021 |
 | Pages and entities | 022, 023 |
 | Agents | 024-026, 028 |
-| MCP, operations, acceptance | 029-031 |
+| MCP, operations, acceptance | 029-031, 033 |

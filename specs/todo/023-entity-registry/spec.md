@@ -30,7 +30,7 @@ new type becomes searchable without a restart or reindex.
 3. Two sources with different values both appear, along with the current choice and why.
 4. A schema evolution test: additive versions keep old entities valid, and breaking versions wait for approval.
 5. A merge and its revert restore the materialized state, and old ids redirect during the merge.
-6. Exact filter p95 ≤2 ms at 1M field values.
+6. Exact filter p95 ≤2 ms at 200k field values, with a projection to 1M.
 7. Bad cases: invalid schema, remote `$ref`, values failing validation, a type with 10k distinct fields (refused by a limit),
    and a merge proposed by an agent never auto-commits.
 

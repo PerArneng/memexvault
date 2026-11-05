@@ -37,7 +37,7 @@ The user chose Postgres as the real database and allows the pgvector extension.
 6. Bad cases: a second writer on one vault is refused; a lost connection stops the writer until it regains the lease; a full disk
    returns an error and data stays readable; an unknown schema version is refused; `synchronous_commit=off` is refused at startup;
    the URL's password appears in no log line.
-7. Exact lookup batched for 50 ids has p95 ≤2 ms at 1M rows on the same machine, or the revised target from spec 006.
+7. Exact lookup batched for 50 ids has p95 ≤2 ms at 200k rows on the same machine, with a projection to 1M, or the revised target from spec 006.
 
 ## Out of scope
 Blobs (spec 011), backup (spec 030), replication and failover, a second SQL database, and several active servers on one vault.

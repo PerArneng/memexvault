@@ -22,10 +22,10 @@ change before code depends on it.
 - Compare pure-Rust Postgres clients, and record the choice and how it fits the synchronous `Store` trait.
 - A single writer loop batches events into one durable SQL transaction and acknowledges them after commit. Measure
   throughput and latency at several batch sizes and event sizes, over a Unix socket and TCP on localhost.
-- Measure batched point reads at 1M rows against the exact-lookup target.
+- Measure batched point reads at 200k rows, and at 50k for growth, against the exact-lookup target.
 - Use the Postgres image from spec 004's `compose.yaml`.
 - Tantivy: round-trip a watermark in the commit payload, reopen, and resume. Test JSON field term, range and fast-field
-  filters on 1M documents with dynamic keys.
+  filters on 200k documents with dynamic keys.
 - Crash harness: a parent starts the child writer, records acknowledgements from a pipe, kills it at a random moment, and
   checks the store on restart. It repeats this 1,000 times, then 100 times killing Postgres instead.
 
@@ -33,7 +33,7 @@ change before code depends on it.
 1. Throughput and commit latency table. ≥1,000 events/s with durable commits and commit latency p95 reported.
 2. In all kill runs: 0 acknowledged events lost, 0 partial transactions, 0 tantivy watermarks ahead of the log, and 0
    reopen failures.
-3. JSON-field filters: p95 ≤15 ms on 1M documents, or the alternative design recorded. Batched point reads meet ≤2 ms p95, or
+3. JSON-field filters: p95 ≤15 ms on 200k documents, with a projection to 1M, or the alternative design recorded. Batched point reads meet ≤2 ms p95, or
    a revised target is recorded.
 4. The Result states plainly that `kill -9` tests process crashes, not power loss. Power-loss safety depends on Postgres
    settings and the OS's fsync behaviour. Check and record what macOS `fsync` versus `F_FULLFSYNC` means for `wal_sync_method`, and
