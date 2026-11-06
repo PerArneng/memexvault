@@ -1,0 +1,36 @@
+
+running 1 test
+test lexical_bench_200k has been running for over 60 seconds
+== scale 200000: ingested 200000 segments in 210 s, 952/s, 198 edited, 198 deleted
+lag from commit to searchable: n=200 p50=454.75 p95=519.41 p99=547.12 max=586.27 ms
+keyword search during ingest, limit 100: n=3785 p50=0.95 p95=3.30 p99=6.26 max=14.95 ms
+keyword clients=1 limit=20: n=1000 p50=0.31 p95=0.55 p99=0.68 max=0.87 ms
+keyword clients=1 limit=100: n=1000 p50=0.70 p95=1.00 p99=1.19 max=1.46 ms
+keyword clients=8 limit=20: n=1000 p50=0.44 p95=0.70 p99=0.93 max=2.62 ms
+keyword clients=8 limit=100: n=1000 p50=0.81 p95=1.20 p99=1.51 max=2.35 ms
+question clients=1 limit=20: n=1000 p50=1.22 p95=2.86 p99=3.97 max=5.33 ms
+question clients=1 limit=100: n=1000 p50=1.85 p95=3.87 p99=5.06 max=6.34 ms
+question clients=8 limit=20: n=1000 p50=1.46 p95=3.59 p99=4.57 max=6.58 ms
+question clients=8 limit=100: n=1000 p50=2.12 p95=4.87 p99=7.23 max=14.28 ms
+sentence clients=1 limit=20: n=1000 p50=2.39 p95=9.31 p99=13.48 max=36.36 ms
+sentence clients=1 limit=100: n=1000 p50=3.13 p95=10.74 p99=15.21 max=19.71 ms
+sentence clients=8 limit=20: n=1000 p50=2.69 p95=9.57 p99=14.18 max=19.85 ms
+sentence clients=8 limit=100: n=1000 p50=3.58 p95=12.10 p99=16.77 max=22.55 ms
+identifier clients=1 limit=20: n=1000 p50=0.03 p95=0.03 p99=0.04 max=0.11 ms
+identifier clients=1 limit=100: n=1000 p50=0.03 p95=0.03 p99=0.03 max=0.06 ms
+identifier clients=8 limit=20: n=1000 p50=0.07 p95=0.08 p99=0.09 max=0.17 ms
+identifier clients=8 limit=100: n=1000 p50=0.07 p95=0.09 p99=0.14 max=0.72 ms
+disk after following the log: 151 MB
+read the full hit sets of 1000 queries in 108 s
+rebuild: 7.5 s, with 0 failed searches
+keyword search during rebuild, limit 100: n=297 p50=0.96 p95=1.47 p99=3.28 max=61.60 ms
+disk with both generations: 310 MB
+incremental against rebuilt: 0 of 1000 queries differ, 1506380 hits compared; top-20 overlap 99.49%
+incremental against rebuilt, whole sentences: 0 of 1000 differ
+keyword after rebuild, clients=1, limit=100: n=1000 p50=0.82 p95=1.11 p99=1.28 max=1.47 ms
+reopen 3.3 ms -> Ready { watermark: Some(1999) }
+deep check 15 ms -> Ready { watermark: Some(1999) }
+test lexical_bench_200k ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 497.15s
+

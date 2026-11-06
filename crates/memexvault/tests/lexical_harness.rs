@@ -462,7 +462,18 @@ fn lexical_kill_200_times() {
     for _ in 0..20 {
         add(1000);
     }
-    let (mut ahead, mut unusable, mut behind_events, mut caught_up_runs, mut corrupt) = (0u64, 0u64, 0u64, 0u64, 0u64);
+    // A first build outlasts the shortest kills, so without this every kill would land before any index exists.
+    {
+        let index = TantivyIndex(TantivyLexical::new(&dir));
+        let (clock, mut projector) = (SystemClock::default(), LexicalProjector::default());
+        let head = raw.snapshot(&v).expect("snapshot").head().expect("head");
+        while index.watermark(&v, Generation::Live).ok().flatten() < head {
+            if projector.step(&raw, &index, &clock, &v).expect("first build") == StepOutcome::Idle {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+    let (mut ahead, mut unusable, mut behind_events, mut caught_up_runs, mut corrupt, mut missing) = (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
     let mut random = 0x9E37_79B9_7F4A_7C15u64;
     let mut draw = |limit: u64| {
         random ^= random << 13;
@@ -478,11 +489,13 @@ fn lexical_kill_200_times() {
             .args(["--exact", "lexical_kill_child", "--ignored", "--nocapture"])
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        if cycle % 10 == 5 {
+        let rebuilding = cycle % 10 == 5;
+        if rebuilding {
             command.env("LEX_REBUILD", "1");
         }
         let mut child = command.spawn().expect("spawn");
-        let wait = draw(1200) + 20;
+        // A rebuild gets long enough for some kills to land near or after its flip.
+        let wait = draw(if rebuilding { 8000 } else { 1200 }) + 20;
         // Writes arrive while it runs, at a random point in its life.
         std::thread::sleep(Duration::from_millis(wait / 2));
         add(50);
@@ -503,7 +516,7 @@ fn lexical_kill_200_times() {
                     caught_up_runs += 1;
                 }
             }
-            Ok(IndexHealth::Missing) => {}
+            Ok(IndexHealth::Missing) => missing += 1,
             Ok(IndexHealth::Corrupt(detail)) => {
                 println!("cycle {cycle}: corrupt: {detail}");
                 corrupt += 1;
@@ -516,7 +529,7 @@ fn lexical_kill_200_times() {
         }
     }
     println!(
-        "{cycles} kills in {:.0} s: {ahead} ahead of the log, {corrupt} corrupt, {unusable} unusable, {caught_up_runs} had caught up, {behind_events} events replayed in all",
+        "{cycles} kills in {:.0} s: {ahead} ahead of the log, {corrupt} corrupt, {unusable} unusable, {missing} missing, {caught_up_runs} had caught up, {behind_events} events replayed in all",
         t.elapsed().as_secs_f64()
     );
 
@@ -553,7 +566,10 @@ fn lexical_kill_200_times() {
     }
     println!("{} documents against {} rows", found.len(), stored.len());
     assert_eq!(found, stored);
-    assert_eq!((ahead, corrupt, unusable), (0, 0, 0));
+    // An open snapshot holds a lock that would block the drop below for ever.
+    drop(snap);
+    assert_eq!((ahead, corrupt, unusable, missing), (0, 0, 0, 0));
+    assert!(behind_events > 0, "no kill left anything to replay, so recovery wasn't tested");
     let _ = raw.close_vault(&lease);
     raw.0.drop_vault(&v).expect("drop");
     let _ = std::fs::remove_dir_all(&dir);
