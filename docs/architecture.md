@@ -33,6 +33,7 @@ stack, and the numbers here are our own targets to measure.
 | Embeddings | `multilingual-e5-small`, 384 dimensions, MIT, on ONNX Runtime through `ort` on CPU, shared with OCR. Query p95 9.4 ms on 4 threads, 40 passages/s. nDCG@10 on a 434-topic Wikipedia set: en 0.936, sv 0.897, de 0.913, es 0.911, cross-language 0.832. See spec 005. |
 | Reranking | Opt-in. `mmarco-mMiniLMv2-L12-H384-v1` int8, Apache-2.0, on the top 20 at 128 tokens, p95 133 ms. No local model met the rerank-50 target. See specs 005 and 055. |
 | Vector index | pgvector 0.8.7: `halfvec(384)`, inner product, HNSW `m=16, ef_construction=128`. Unfiltered and wide filters use `ef_search=300`, recall 0.974 at p95 9.6 ms at 200k. Up to about 12,000 estimated matches, an exact scan through a B-tree. Filters matching 6 to 20% of rows have a revised target, recall ≥0.93 and p95 ≤20 ms. See specs 004 and 057. |
+| Transcription | Local: `whisper-rs` =0.16.0 with `ggml-large-v3-turbo-q5_0`, 574 MB, MIT, with DTW word timing and Silero VAD. Median word start error 150-212 ms, drift at most 224 ms over 60 minutes, 15-17× real time on Metal, about 5× on CPU, up to 1.7 GB. API, off unless configured: `gemini-3.8-flash` text and speakers placed on the local model's clock, because Gemini's own word times are off by up to 80 s. Decoding is `symphonia` =0.6.1 plus `opus-rs` =0.1.41, in process, with no `ffmpeg`. Whisper can abort the process, so it runs in a worker. See specs 027 and 061. |
 | Model files | Installed explicitly with a `models fetch` command using pinned hashes. The server never downloads at runtime and works offline afterwards, apart from LLM calls. |
 
 Working assumptions: about 1M segments per vault, roughly 200,000 pages, on one machine (reference: M1 Max, 32 GB), and
@@ -55,7 +56,7 @@ crates/
   memex-pdf/          edge: PDF text, coordinates, rasterizing on statically linked pdfium, in worker processes (specs 002, 015)
   memex-ocr/          edge: oar-ocr on statically linked ONNX Runtime, in worker processes (specs 003, 016)
   memex-inference/    edge: embeddings and reranking on ONNX Runtime through ort (spec 005)
-  memex-asr/          edge: transcription (provisional, spec 027)
+  memex-asr/          edge: whisper.cpp in worker processes, Gemini transcription, media decoding (specs 027, 028)
   memex-agent-adk/    edge: the only crate that depends on ADK-Rust
   memex-cache/        edge: RAM and disk caches
   memex-http/         frontend: axum, with routes through provenance so far, and serves the embedded web console from spec 037
