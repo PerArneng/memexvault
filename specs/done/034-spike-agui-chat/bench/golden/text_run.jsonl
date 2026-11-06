@@ -1,0 +1,14 @@
+{"type":"RUN_STARTED","threadId":"thread","runId":"run"}
+{"type":"TEXT_MESSAGE_START","messageId":"run-m1","role":"assistant"}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"The Zor"}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"blat Br"}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"idge "}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"is 412 m"}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"etres lo"}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"ng, sä"}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"ger "}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"Å"}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"sa 🌉"}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"."}
+{"type":"TEXT_MESSAGE_END","messageId":"run-m1"}
+{"type":"RUN_FINISHED","threadId":"thread","runId":"run"}

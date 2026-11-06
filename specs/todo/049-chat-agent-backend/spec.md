@@ -12,6 +12,8 @@ An agent that answers from the vault with citations and can propose changes, str
 ## Background
 **Depends on:** 013, 017, 020, 034. Design: `docs/architecture.md`, sections Chat agent, Prompt injection.
 
+Spec 034's Result lists what this spec inherits: terminal events repeat content, output guardrails turn streaming off, and cancelled runs' token use, thinking and `MaxTokens` weren't measured.
+
 ## Approach
 - `AgentRunner` gains streaming events. A pure mapping to AG-UI uses the result of spec 034, with `memex-agent-adk` still the only crate depending on ADK.
 - `POST /api/v1/vaults/{id}/chat/runs` as server-sent AG-UI events, and routes for thread list, read, rename and delete. Threads belong to a principal, and are stored in the vault's schema.
