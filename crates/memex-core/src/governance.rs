@@ -34,6 +34,10 @@ pub fn risk(kinds: &[OpKind], author: Author, machine_earned_auto_commit: bool, 
     if kinds.iter().any(|k| ALWAYS_REVIEW.contains(k)) {
         return RiskDecision::Review;
     }
+    // An agent's type never goes live without review, however much auto-commit it has earned for claims.
+    if author.machine && kinds.contains(&OpKind::AdditiveSchemaChange) {
+        return RiskDecision::Review;
+    }
     if author.machine && !machine_earned_auto_commit {
         return RiskDecision::Review;
     }
@@ -225,6 +229,24 @@ pub fn validate_dedup<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<(ValidatorRes
     Ok((pass(name), check))
 }
 
+/// Entity rules: a type's schema, and each value against its type. Nothing is written, as this only plans. Other reasons a plan fails are found when it runs for real, so a pending proposal can wait for them to change.
+pub fn validate_entities<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<ValidatorResult, StoreError> {
+    let name = "entity";
+    if !crate::entity::touches_entities(ops) {
+        return Ok(pass(name));
+    }
+    let mut n = 0u64;
+    let mut ids = || {
+        n += 1;
+        ObjectId(format!("validation-{n}"))
+    };
+    match plan(snap, ops, "validator", &ObjectId("validation".into()), 0, &[], &mut ids) {
+        Err(PlanError::Invalid(detail)) => Ok(fail(name, detail)),
+        Err(PlanError::Store(e)) => Err(e),
+        _ => Ok(pass(name)),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlanError {
     /// A base version no longer matches. It carries the current row, for the caller to rebase on.
@@ -235,6 +257,8 @@ pub enum PlanError {
     },
     Missing(RowKey),
     Exists(RowKey),
+    /// Something only known at this point isn't allowed, such as a value its type refuses.
+    Invalid(String),
     Store(StoreError),
 }
 
@@ -405,8 +429,12 @@ pub fn plan<S: Snapshot>(
                 s.metadata = metadata.clone();
                 out.push(Mutation::Put(Row::Source(s)));
             }
+            // Planned together below, since they depend on each other and on the claims above.
+            Op::DefineEntityType { .. } | Op::CreateEntity { .. } | Op::SetEntityAliases { .. } | Op::MergeEntities { .. } | Op::SplitEntity { .. } => {}
         }
     }
+    let entities = crate::entity::plan_entities(snap, ops, &out, creator, changeset, now_ms, edge_id)?;
+    out.extend(entities);
     // A contradiction is kept and linked, so both claims stay visible.
     for (new_claim, old_claim) in contradictions {
         out.push(Mutation::Put(Row::Edge(EdgeRow {
@@ -510,6 +538,11 @@ pub fn kinds_of<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Vec<OpKind>, StoreE
                 _ => OpKind::EditSource,
             },
             Op::SetSourceMetadata { .. } => OpKind::EditSource,
+            Op::DefineEntityType { name, schema, .. } => crate::entity::schema_op_kind(snap, name, schema)?,
+            Op::CreateEntity { .. } => OpKind::CreateEntity,
+            Op::SetEntityAliases { .. } => OpKind::EditEntity,
+            Op::MergeEntities { .. } => OpKind::MergeEntities,
+            Op::SplitEntity { .. } => OpKind::SplitEntity,
         });
     }
     Ok(out)

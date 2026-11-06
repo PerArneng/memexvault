@@ -26,6 +26,13 @@ pub struct EvidenceInput {
     pub stance: Stance,
 }
 
+/// A claim moving to the new entity in a split, and the id its replacement takes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MovedClaim {
+    pub assertion: ObjectId,
+    pub new_id: ObjectId,
+}
+
 /// One requested change. A ChangeSet holds several, applied together or not at all.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -82,6 +89,38 @@ pub enum Op {
         base_version: u32,
         metadata: Value,
     },
+    /// A new type, or its next version. `base_version` is the version it builds on, and none means the type is new.
+    DefineEntityType {
+        name: String,
+        base_version: Option<u32>,
+        schema: Value,
+    },
+    /// The entity itself. Its field values are Assertions in the same ChangeSet, with the subject `entity:<id>`.
+    CreateEntity {
+        id: ObjectId,
+        type_name: String,
+        aliases: Vec<String>,
+    },
+    SetEntityAliases {
+        id: ObjectId,
+        base_version: u32,
+        aliases: Vec<String>,
+    },
+    /// `source` becomes a redirect to `target`, which takes over its claims and aliases.
+    MergeEntities {
+        source: ObjectId,
+        source_version: u32,
+        target: ObjectId,
+        target_version: u32,
+    },
+    /// Creates `new_id`, and moves the named claims and aliases there by superseding the claims. Anything else the new entity needs is an Assertion in the same ChangeSet.
+    SplitEntity {
+        id: ObjectId,
+        base_version: u32,
+        new_id: ObjectId,
+        moved: Vec<MovedClaim>,
+        aliases: Vec<String>,
+    },
 }
 
 /// What kind of change it is, for the risk table. It includes kinds whose ops arrive with later specs, so the always-review rules are in one place from the start.
@@ -102,6 +141,8 @@ pub enum OpKind {
     AdditiveSchemaChange,
     PromoteUntrustedSource,
     EditSource,
+    CreateEntity,
+    EditEntity,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

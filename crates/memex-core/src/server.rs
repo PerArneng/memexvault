@@ -1,3 +1,8 @@
+mod entities;
+pub use entities::{
+    ClaimEvidence, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, FieldInput, NewEntity, Redirect, SplitRequest, TypeDecision,
+};
+
 use crate::auth::{Caller, Decision, Operation, authorize};
 use crate::governance::{self, Author, NotReversible, PlanError};
 use crate::vector::{EMBED_ATTEMPTS, EmbedDocRef, EmbedInput, EmbedRequest, check_query_text, embed_missing, embeddable};
@@ -631,6 +636,7 @@ impl<E: ServerEdges> Server<E> {
             |kind: memex_types::DocKind| -> Vec<ObjectId> { input.docs.iter().filter(|d: &&EmbedDocRef| d.kind == kind).map(|d| d.id.clone()).collect() };
         let mut ops = crate::lexical::segment_ops(&snap, &ids_of(memex_types::DocKind::Segment)).map_err(EmbedJobError::retry)?;
         ops.extend(crate::lexical::assertion_ops(&snap, &ids_of(memex_types::DocKind::Claim)).map_err(EmbedJobError::retry)?);
+        ops.extend(crate::entity::entity_ops(&snap, &ids_of(memex_types::DocKind::Entity)).map_err(EmbedJobError::retry)?);
         let docs: Vec<memex_types::IndexDoc> = ops
             .into_iter()
             .filter_map(|op| match op {
@@ -817,7 +823,8 @@ impl<E: ServerEdges> Server<E> {
         }
         let quote = governance::validate_quotes(snap, &p.ops)?;
         let (dedup, check) = governance::validate_dedup(snap, &p.ops)?;
-        Ok((vec![schema, evidence, quote, dedup], check.contradictions))
+        let entity = governance::validate_entities(snap, &p.ops)?;
+        Ok((vec![schema, evidence, quote, dedup, entity], check.contradictions))
     }
 
     fn commit_changeset(&self, lease: &WriterLease, actor: &str, changeset: ChangeSetRow, mutations: Vec<Mutation>) -> Result<(), ServerError> {
@@ -839,6 +846,7 @@ impl<E: ServerEdges> Server<E> {
             PlanError::Stale { key, current, base } => ServerError::StaleVersion { key, current, base },
             PlanError::Missing(k) => ServerError::Invalid(format!("{:?} {} doesn't exist", k.table, k.id)),
             PlanError::Exists(k) => ServerError::Conflict(format!("{:?} {} already exists", k.table, k.id)),
+            PlanError::Invalid(m) => ServerError::Invalid(m),
             PlanError::Store(s) => s.into(),
         }
     }
@@ -998,6 +1006,7 @@ impl<E: ServerEdges> Server<E> {
         if row.state != ChangeSetState::Pending {
             return Err(ServerError::Conflict(format!("this ChangeSet is already {:?}", row.state)));
         }
+        self.only_a_person(caller, &snap, &row)?;
         let now = self.now();
         let actor = caller.principal.id.clone();
         // Validators run again, since the vault may have moved on during review.
@@ -1056,7 +1065,10 @@ impl<E: ServerEdges> Server<E> {
         self.vault_exists(vault)?;
         let row = self.changeset(vault, id)?;
         let snap = self.engine.store().snapshot(vault)?;
-        let blocked = governance::check_reversible(&snap, &row)?.err().map(|e| Self::why_not(&e));
+        let mut blocked = governance::check_reversible(&snap, &row)?.err().map(|e| Self::why_not(&e));
+        if blocked.is_none() {
+            blocked = entities::type_revert_blocked(&snap, &row)?;
+        }
         Ok((row.inverse, blocked))
     }
 
@@ -1079,6 +1091,10 @@ impl<E: ServerEdges> Server<E> {
         let snap = self.engine.store().snapshot(vault)?;
         if let Err(e) = governance::check_reversible(&snap, &target)? {
             return Err(ServerError::NotReversible(Self::why_not(&e)));
+        }
+        self.only_a_person(caller, &snap, &target)?;
+        if let Some(why) = entities::type_revert_blocked(&snap, &target)? {
+            return Err(ServerError::NotReversible(why));
         }
         let now = self.now();
         let actor = caller.principal.id.clone();

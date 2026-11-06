@@ -1,8 +1,8 @@
 //! Keeps a vault's keyword index up to date with its log, and rebuilds it when it can't be trusted.
 use crate::lexical::{CommitPolicy, LexicalIndex, Touched, assertion_ops, segment_ops};
 use crate::{Clock, PAGE_LIMIT, Snapshot, Store, StoreError, UpcastError};
-use memex_types::{Event, Generation, IndexHealth, IndexOp, LexicalError, ObjectId, Row, Table, VaultId, VectorError};
-use std::collections::HashMap;
+use memex_types::{Event, Generation, IndexHealth, IndexOp, LexicalError, ObjectId, Row, RowKey, Table, VaultId, VectorError, entity_of_subject};
+use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::time::Duration;
 
@@ -99,7 +99,7 @@ pub struct LexicalProjector {
     vaults: HashMap<VaultId, VaultState>,
 }
 
-const SCAN_ORDER: [Table; 2] = [Table::Segment, Table::Assertion];
+const SCAN_ORDER: [Table; 3] = [Table::Segment, Table::Assertion, Table::Entity];
 
 fn ids_of(set: impl IntoIterator<Item = ObjectId>) -> Vec<ObjectId> {
     set.into_iter().collect()
@@ -120,7 +120,9 @@ pub(crate) fn ops_for_events<S: Snapshot>(snap: &S, events: &[Event]) -> Result<
                 let Some(last) = page.last() else { break };
                 after = Some(last.header.id.clone());
                 let ids: Vec<memex_types::ObjectId> = page.into_iter().map(|s| s.header.id).collect();
-                touched.assertions.extend(snap.evidence_citing(&ids)?.into_iter().map(|e| e.assertion_id));
+                let citing: Vec<ObjectId> = snap.evidence_citing(&ids)?.into_iter().map(|e| e.assertion_id).collect();
+                touched.entities.extend(entities_behind(snap, &citing)?);
+                touched.assertions.extend(citing);
                 touched.segments.extend(ids);
             }
         }
@@ -134,6 +136,16 @@ pub(crate) fn ops_for_events<S: Snapshot>(snap: &S, events: &[Event]) -> Result<
             touched.segments.extend(page.into_iter().map(|s| s.header.id));
         }
     }
+    for name in std::mem::take(&mut touched.entity_types) {
+        // An entity's document depends on its type's annotations. Rare, as with a changed source, and a brand-new type has nothing to write.
+        let mut after = None;
+        loop {
+            let page = snap.entities_of_type(&name, after.as_ref(), PAGE_LIMIT)?;
+            let Some(last) = page.last() else { break };
+            after = Some(last.header.id.clone());
+            touched.entities.extend(page.into_iter().map(|e| e.header.id));
+        }
+    }
     let mut ops = vec![];
     for chunk in ids_of(touched.segments).chunks(PAGE_LIMIT) {
         ops.extend(segment_ops(snap, chunk)?);
@@ -141,7 +153,59 @@ pub(crate) fn ops_for_events<S: Snapshot>(snap: &S, events: &[Event]) -> Result<
     for chunk in ids_of(touched.assertions).chunks(PAGE_LIMIT) {
         ops.extend(assertion_ops(snap, chunk)?);
     }
+    for chunk in ids_of(touched.entities).chunks(PAGE_LIMIT) {
+        ops.extend(crate::entity::entity_ops(snap, chunk)?);
+    }
     Ok(ops)
+}
+
+/// The current entities these claims are about, following merges. Two store calls, and one more per hop of a merge.
+fn entities_behind<S: Snapshot>(snap: &S, claims: &[ObjectId]) -> Result<Vec<ObjectId>, ProjectError> {
+    let keys: Vec<RowKey> = claims
+        .iter()
+        .map(|id| RowKey {
+            table: Table::Assertion,
+            id: id.clone(),
+        })
+        .collect();
+    if keys.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut at: BTreeSet<ObjectId> = snap
+        .get_many(&keys)?
+        .into_iter()
+        .filter_map(|r| match r {
+            Some(Row::Assertion(a)) => entity_of_subject(&a.subject),
+            _ => None,
+        })
+        .collect();
+    let mut found = vec![];
+    // Bounded, as a merge chain is, so a bad row can't hold the projector.
+    for _ in 0..64 {
+        if at.is_empty() {
+            break;
+        }
+        let keys: Vec<RowKey> = at
+            .iter()
+            .map(|id| RowKey {
+                table: Table::Entity,
+                id: id.clone(),
+            })
+            .collect();
+        let mut next = BTreeSet::new();
+        for row in snap.get_many(&keys)?.into_iter().flatten() {
+            if let Row::Entity(e) = row {
+                match e.redirect_to {
+                    Some(to) => {
+                        next.insert(to);
+                    }
+                    None => found.push(e.header.id),
+                }
+            }
+        }
+        at = next;
+    }
+    Ok(found)
 }
 
 impl LexicalProjector {
@@ -316,6 +380,7 @@ impl LexicalProjector {
                 let ids: Vec<ObjectId> = page.iter().map(|r| r.header().id.clone()).collect();
                 let ops = match page.first() {
                     Some(Row::Assertion(_)) => assertion_ops(snap, &ids)?,
+                    Some(Row::Entity(_)) => crate::entity::entity_ops(snap, &ids)?,
                     _ => segment_ops(snap, &ids)?,
                 };
                 index.write(vault, Generation::Building, &ops)?;

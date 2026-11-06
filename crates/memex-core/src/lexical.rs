@@ -34,9 +34,15 @@ pub const MAX_SEARCH_LIMIT: usize = 1000;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QueryError {
     Empty,
-    TooLong { limit: usize },
-    TooManyTerms { limit: usize },
+    TooLong {
+        limit: usize,
+    },
+    TooManyTerms {
+        limit: usize,
+    },
     UnbalancedQuote,
+    /// A search within one entity field asked for the vector signal alone.
+    VectorHasNoFields,
 }
 
 impl fmt::Display for QueryError {
@@ -46,6 +52,7 @@ impl fmt::Display for QueryError {
             Self::TooLong { limit } => write!(f, "the query is over the limit of {limit} bytes"),
             Self::TooManyTerms { limit } => write!(f, "the query is over the limit of {limit} terms"),
             Self::UnbalancedQuote => f.write_str("the query has a quote that isn't closed"),
+            Self::VectorHasNoFields => f.write_str("a search within an entity field can't use the vector mode"),
         }
     }
 }
@@ -136,6 +143,9 @@ pub struct Touched {
     pub renditions: BTreeSet<ObjectId>,
     /// Sources changed after they were recorded, such as a new trust tier, which their segments and claims carry.
     pub sources: BTreeSet<ObjectId>,
+    pub entities: BTreeSet<ObjectId>,
+    /// Types with a new or removed version, whose entities' documents depend on it.
+    pub entity_types: BTreeSet<String>,
 }
 
 impl Touched {
@@ -177,6 +187,20 @@ impl Touched {
             Mutation::Put(Row::Source(r)) if r.header.version > 1 => {
                 self.sources.insert(r.header.id);
             }
+            Mutation::Put(Row::Entity(r)) => {
+                self.entities.insert(r.header.id);
+            }
+            Mutation::Put(Row::EntityType(r)) => {
+                self.entity_types.insert(r.name);
+            }
+            Mutation::Delete(RowKey { table: Table::Entity, id }) => {
+                self.entities.insert(id);
+            }
+            Mutation::Delete(RowKey { table: Table::EntityType, id }) => {
+                if let Some(name) = memex_types::type_of_row_id(&id) {
+                    self.entity_types.insert(name.to_string());
+                }
+            }
             Mutation::Delete(RowKey { table: Table::Segment, id }) => {
                 self.segments.insert(id);
             }
@@ -188,7 +212,12 @@ impl Touched {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.segments.is_empty() && self.assertions.is_empty() && self.renditions.is_empty() && self.sources.is_empty()
+        self.segments.is_empty()
+            && self.assertions.is_empty()
+            && self.renditions.is_empty()
+            && self.sources.is_empty()
+            && self.entities.is_empty()
+            && self.entity_types.is_empty()
     }
 }
 
@@ -217,6 +246,7 @@ pub(crate) fn segment_doc(s: SegmentRow, source: Option<&SourceRow>) -> IndexDoc
         valid_to_ms: None,
         doc_type: source.map(|r| r.media_type.clone()),
         trust_tiers: source.map(|r| r.trust_tier.clone()).into_iter().collect(),
+        attrs: vec![],
     }
 }
 
@@ -243,6 +273,9 @@ pub fn filter_passes(doc: &IndexDoc, f: &LexicalFilter) -> bool {
         && (f.epistemic.is_empty() || doc.epistemic.as_ref().is_some_and(|e| f.epistemic.contains(e)))
         && (f.types.is_empty() || doc.doc_type.as_ref().is_some_and(|t| f.types.contains(t)))
         && (f.trust_tiers.is_empty() || doc.trust_tiers.iter().any(|t| f.trust_tiers.contains(t)))
+        && f.attr
+            .as_ref()
+            .is_none_or(|scope| doc.attrs.iter().any(|a| a.type_name == scope.type_name && a.field == scope.field))
         && f.valid_at_ms
             .is_none_or(|t| doc.valid_from_ms.is_none_or(|from| from <= t) && doc.valid_to_ms.is_none_or(|to| t < to))
 }
@@ -301,7 +334,7 @@ pub fn segment_ops<S: Snapshot>(snap: &S, ids: &[ObjectId]) -> Result<Vec<IndexO
 }
 
 /// Strings as they are, and everything else in the claim's value flattened to its leaves.
-fn value_text(value: &serde_json::Value, out: &mut String) {
+pub(crate) fn value_text(value: &serde_json::Value, out: &mut String) {
     use serde_json::Value as V;
     match value {
         V::Null => {}
@@ -400,6 +433,7 @@ pub(crate) fn assertion_doc(
         valid_to_ms: a.valid_to_ms,
         doc_type: Some(a.predicate.clone()),
         trust_tiers: trust_tiers.into_iter().collect(),
+        attrs: vec![],
     }
 }
 
@@ -408,6 +442,7 @@ pub fn fence_hits<S: Snapshot>(snap: &S, results: LexicalResults) -> Result<Lexi
     let table = |kind| match kind {
         DocKind::Segment => Table::Segment,
         DocKind::Claim => Table::Assertion,
+        DocKind::Entity => Table::Entity,
     };
     let lookups: Vec<RowKey> = results
         .hits
@@ -436,6 +471,7 @@ pub fn fence_hits<S: Snapshot>(snap: &S, results: LexicalResults) -> Result<Lexi
         .filter(|(_, row)| match row {
             Some(Row::Segment(s)) => segment_is_current(s, &stale),
             Some(Row::Assertion(a)) => a.header.status == Status::Active && a.superseded_by.is_none(),
+            Some(Row::Entity(e)) => e.is_current(),
             _ => false,
         })
         .map(|(hit, _)| hit)

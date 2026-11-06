@@ -1,8 +1,8 @@
 use crate::migrate::{LATEST_SERVER_VERSION, LATEST_VAULT_VERSION, SERVER_MIGRATIONS, VAULT_MIGRATIONS};
 use crate::net::net_mutations;
 use memex_types::{
-    AssertionRow, ChangeSetRow, EdgeRow, Event, EvidenceRow, Header, JobRow, JobState, Mutation, ObjectId, PageRow, RenditionRow, Row, RowKey, SegmentRow,
-    SourceRow, Status, Table, VaultId,
+    AssertionRow, ChangeSetRow, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, FilterValue, Header, JobRow, JobState, Mutation, ObjectId,
+    PageRow, RenditionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Status, Table, ValueMatch, VaultId,
 };
 use postgres::{Client, NoTls, Statement, types::ToSql};
 use serde_json::Value;
@@ -352,6 +352,9 @@ impl PgStore {
             "evidence",
             "changesets",
             "jobs",
+            "entity_types",
+            "entities",
+            "entity_fields",
         ] {
             client.batch_execute(&format!("VACUUM {schema}.{t}")).map_err(backend)?;
         }
@@ -484,6 +487,8 @@ fn table_name(t: Table) -> &'static str {
         Table::ChangeSet => "changesets",
         Table::Job => "jobs",
         Table::Rendition => "renditions",
+        Table::EntityType => "entity_types",
+        Table::Entity => "entities",
     }
 }
 
@@ -554,8 +559,44 @@ fn upsert_json_row(t: &mut postgres::Transaction<'_>, cache: &mut Statements, sc
             &format!("INSERT INTO {schema}.changesets (id, row, state, idempotency_key, proposer) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET row = excluded.row, state = excluded.state"),
             &[&id, &json, &format!("{:?}", x.state).to_lowercase(), &x.idempotency_key, &x.proposer],
         ),
+        Row::EntityType(x) => exec(
+            t,
+            cache,
+            &format!("INSERT INTO {schema}.entity_types (id, row, name, version_no) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET row = excluded.row"),
+            &[&id, &json, &x.name, &(x.version_no as i32)],
+        ),
+        Row::Entity(x) => return upsert_entity(t, cache, schema, x, &json),
         _ => return Ok(()),
     }
+    .map_err(backend)?;
+    Ok(())
+}
+
+/// The row and its values in the field table, which are replaced whole, so the table can't drift from the row.
+fn upsert_entity(t: &mut postgres::Transaction<'_>, cache: &mut Statements, schema: &str, x: &EntityRow, json: &Value) -> Result<(), PgError> {
+    let id = x.header.id.0.as_str();
+    exec(
+        t,
+        cache,
+        &format!("INSERT INTO {schema}.entities (id, row, type_name, current) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET row = excluded.row, type_name = excluded.type_name, current = excluded.current"),
+        &[&id, json, &x.type_name, &x.is_current()],
+    )
+    .map_err(backend)?;
+    exec(t, cache, &format!("DELETE FROM {schema}.entity_fields WHERE entity_id = $1"), &[&id]).map_err(backend)?;
+    let values = x.value_rows();
+    if values.is_empty() {
+        return Ok(());
+    }
+    let fields: Vec<&str> = values.iter().map(|v| v.field.as_str()).collect();
+    let texts: Vec<Option<&str>> = values.iter().map(|v| v.text.as_deref()).collect();
+    let numbers: Vec<Option<f64>> = values.iter().map(|v| v.number).collect();
+    let times: Vec<Option<i64>> = values.iter().map(|v| v.time_ms).collect();
+    exec(
+        t,
+        cache,
+        &format!("INSERT INTO {schema}.entity_fields (entity_id, type_name, field, text_value, number_value, time_value) SELECT $1, $2, * FROM unnest($3::text[], $4::text[], $5::float8[], $6::bigint[])"),
+        &[&id, &x.type_name, &fields, &texts, &numbers, &times],
+    )
     .map_err(backend)?;
     Ok(())
 }
@@ -685,7 +726,7 @@ fn json_row(r: &postgres::Row) -> Row {
 fn row_from(table: Table, r: &postgres::Row) -> Row {
     if matches!(
         table,
-        Table::Segment | Table::Assertion | Table::Evidence | Table::ChangeSet | Table::Job | Table::Rendition
+        Table::Segment | Table::Assertion | Table::Evidence | Table::ChangeSet | Table::Job | Table::Rendition | Table::EntityType | Table::Entity
     ) {
         return json_row(r);
     }
@@ -715,7 +756,9 @@ fn row_from(table: Table, r: &postgres::Row) -> Row {
             to: ObjectId(r.get("to_id")),
             kind: r.get("kind"),
         }),
-        Table::Segment | Table::Assertion | Table::Evidence | Table::ChangeSet | Table::Job | Table::Rendition => unreachable!("handled above"),
+        Table::Segment | Table::Assertion | Table::Evidence | Table::ChangeSet | Table::Job | Table::Rendition | Table::EntityType | Table::Entity => {
+            unreachable!("handled above")
+        }
     }
 }
 
@@ -918,6 +961,132 @@ impl PgSnapshot<'_> {
         Ok(rows
             .iter()
             .filter_map(|r| if let Row::Assertion(a) = json_row(r) { Some(a) } else { None })
+            .collect())
+    }
+
+    /// One query, in id order.
+    pub fn assertions_about(&self, subjects: &[String]) -> Result<Vec<AssertionRow>, PgError> {
+        let sql = format!("SELECT row FROM {}.assertions WHERE active AND subject = ANY($1) ORDER BY id", self.schema);
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&subjects]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Assertion(a) = json_row(r) { Some(a) } else { None })
+            .collect())
+    }
+
+    pub fn entity_type_versions(&self, names: &[String]) -> Result<Vec<EntityTypeRow>, PgError> {
+        let sql = format!("SELECT row FROM {}.entity_types WHERE name = ANY($1) ORDER BY name, version_no", self.schema);
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&names]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::EntityType(t) = json_row(r) { Some(t) } else { None })
+            .collect())
+    }
+
+    pub fn latest_entity_types(&self, after: Option<&str>, limit: usize) -> Result<Vec<EntityTypeRow>, PgError> {
+        let sql = format!(
+            "SELECT DISTINCT ON (name) row FROM {}.entity_types WHERE ($1::text IS NULL OR name > $1) ORDER BY name, version_no DESC LIMIT $2",
+            self.schema
+        );
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&after, &(limit as i64)]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::EntityType(t) = json_row(r) { Some(t) } else { None })
+            .collect())
+    }
+
+    pub fn entities_of_type(&self, type_name: &str, after: Option<&ObjectId>, limit: usize) -> Result<Vec<EntityRow>, PgError> {
+        let sql = format!(
+            "SELECT row FROM {}.entities WHERE current AND type_name = $1 AND ($2::text IS NULL OR id > $2) ORDER BY id LIMIT $3",
+            self.schema
+        );
+        let after = after.map(|a| a.0.as_str());
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&type_name, &after, &(limit as i64)]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Entity(e) = json_row(r) { Some(e) } else { None })
+            .collect())
+    }
+
+    /// One query. The first filter drives it through its B-tree, and any others join on the entity. Only current entities have values here.
+    pub fn entities_matching(&self, type_name: &str, filters: &[FieldFilter], after: Option<&ObjectId>, limit: usize) -> Result<Vec<EntityRow>, PgError> {
+        let mut params: Vec<Box<dyn ToSql + Sync>> = vec![Box::new(type_name.to_string()), Box::new(after.map(|a| a.0.clone())), Box::new(limit as i64)];
+        let mut from = String::new();
+        let mut conditions = String::new();
+        for (i, f) in filters.iter().enumerate() {
+            let alias = format!("f{i}");
+            if i == 0 {
+                from.push_str(&format!("{}.entity_fields f0", self.schema));
+            } else {
+                from.push_str(&format!(" JOIN {}.entity_fields {alias} ON {alias}.entity_id = f0.entity_id", self.schema));
+            }
+            params.push(Box::new(f.field.clone()));
+            let field_param = params.len();
+            let (column, value): (&str, Box<dyn ToSql + Sync>) = match &f.value {
+                FilterValue::Text(t) => ("text_value", Box::new(t.clone())),
+                FilterValue::Number(n) => ("number_value", Box::new(*n)),
+                FilterValue::Time(t) => ("time_value", Box::new(*t)),
+            };
+            params.push(value);
+            let value_param = params.len();
+            conditions.push_str(&format!(
+                " AND {alias}.type_name = $1 AND {alias}.field = ${field_param} AND {alias}.{column} {op} ${value_param} AND {alias}.{column} IS NOT NULL",
+                op = f.op.as_sql()
+            ));
+        }
+        let sql = format!(
+            "SELECT e.row FROM (SELECT DISTINCT f0.entity_id FROM {from} WHERE ($2::text IS NULL OR f0.entity_id > $2){conditions} ORDER BY f0.entity_id LIMIT $3) m JOIN {s}.entities e ON e.id = m.entity_id ORDER BY e.id",
+            s = self.schema
+        );
+        let refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref() as &(dyn ToSql + Sync)).collect();
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &refs))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Entity(e) = json_row(r) { Some(e) } else { None })
+            .collect())
+    }
+
+    pub fn entities_with_value(&self, text: &str, limit: usize) -> Result<Vec<ValueMatch>, PgError> {
+        let sql = format!(
+            "SELECT entity_id, type_name, field FROM {}.entity_fields WHERE text_value = $1 ORDER BY entity_id LIMIT $2",
+            self.schema
+        );
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&text, &(limit as i64)]))?;
+        Ok(rows
+            .iter()
+            .map(|r| ValueMatch {
+                entity_id: ObjectId(r.get(0)),
+                type_name: r.get(1),
+                field: r.get(2),
+            })
+            .collect())
+    }
+
+    pub fn shared_values(
+        &self,
+        type_name: &str,
+        fields: &[String],
+        after: Option<(&str, &str)>,
+        limit: usize,
+        max_ids: usize,
+    ) -> Result<Vec<SharedValue>, PgError> {
+        let sql = format!(
+            "SELECT field, text_value, (array_agg(DISTINCT entity_id ORDER BY entity_id))[1:$6] FROM {}.entity_fields
+             WHERE type_name = $1 AND field = ANY($2) AND text_value IS NOT NULL AND ($3::text IS NULL OR (field, text_value) > ($3, $4))
+             GROUP BY field, text_value HAVING count(DISTINCT entity_id) > 1 ORDER BY field, text_value LIMIT $5",
+            self.schema
+        );
+        let (after_field, after_text) = (after.map(|a| a.0), after.map(|a| a.1));
+        let rows = self.with_statement(&sql, |c, st| {
+            c.query(st, &[&type_name, &fields, &after_field, &after_text, &(limit as i64), &(max_ids as i32)])
+        })?;
+        Ok(rows
+            .iter()
+            .map(|r| SharedValue {
+                field: r.get(0),
+                text: r.get(1),
+                entity_ids: r.get::<_, Vec<String>>(2).into_iter().map(ObjectId).collect(),
+            })
             .collect())
     }
 

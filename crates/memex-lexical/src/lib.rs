@@ -5,10 +5,11 @@ mod analysis;
 
 use analysis::{EXACT, FOLDED, STEMMED, normalize, tokens};
 use memex_types::{
-    DocKind, Generation, IndexDoc, IndexHealth, IndexOp, LexicalError, LexicalFilter, LexicalHit, LexicalQuery, LexicalResults, ObjectId, QueryTerm, VaultId,
+    AttrScope, DocKind, Generation, IndexDoc, IndexHealth, IndexOp, LexicalError, LexicalFilter, LexicalHit, LexicalQuery, LexicalResults, ObjectId, QueryTerm,
+    VaultId,
 };
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::ops::Bound;
@@ -17,12 +18,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tantivy::collector::TopDocs;
 use tantivy::query::{BooleanQuery, ConstScoreQuery, Occur, PhraseQuery, Query, RangeQuery, TermQuery};
-use tantivy::schema::{FAST, Field, INDEXED, IndexRecordOption, STRING, Schema, TextFieldIndexing, TextOptions};
+use tantivy::schema::{FAST, Field, INDEXED, IndexRecordOption, JsonObjectOptions, OwnedValue, STRING, Schema, TextFieldIndexing, TextOptions};
 use tantivy::tokenizer::TextAnalyzer;
 use tantivy::{DocAddress, Index, IndexReader, IndexWriter, ReloadPolicy, Score, Searcher, TantivyDocument, TantivyError, Term};
 
 /// Bump this when the schema or analysis changes. An older generation is then rebuilt, not misread.
-const SCHEMA_VERSION: u64 = 2;
+const SCHEMA_VERSION: u64 = 3;
 
 #[derive(Debug, Clone, Copy)]
 pub struct WriterBudget {
@@ -52,6 +53,8 @@ struct Fields {
     valid_to: Field,
     exact: Field,
     folded: Field,
+    /// An entity's searchable fields, as `<type>.<field>`, with folded words. A new type adds paths, and needs no change to the schema.
+    attrs: Field,
     stems: [Field; STEMMED.len()],
 }
 
@@ -76,6 +79,14 @@ fn schema() -> (Schema, Fields) {
         valid_to: b.add_i64_field("valid_to", INDEXED | FAST),
         exact: b.add_text_field(EXACT, analyzed(EXACT)),
         folded: b.add_text_field(FOLDED, analyzed(FOLDED)),
+        attrs: b.add_json_field(
+            "attrs",
+            JsonObjectOptions::default().set_indexing_options(
+                TextFieldIndexing::default()
+                    .set_tokenizer(FOLDED)
+                    .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+            ),
+        ),
         stems: STEMMED.map(|(_, name, _)| b.add_text_field(name, analyzed(name))),
     };
     (b.build(), fields)
@@ -288,6 +299,19 @@ fn to_document(fields: Fields, doc: &IndexDoc) -> TantivyDocument {
     {
         out.add_text(fields.stems[i], &text);
     }
+    if !doc.attrs.is_empty() {
+        let mut by_type: BTreeMap<String, BTreeMap<String, OwnedValue>> = BTreeMap::new();
+        for a in &doc.attrs {
+            by_type
+                .entry(a.type_name.clone())
+                .or_default()
+                .insert(a.field.clone(), OwnedValue::Str(normalize(&a.text)));
+        }
+        out.add_object(
+            fields.attrs,
+            by_type.into_iter().map(|(t, f)| (t, OwnedValue::Object(f.into_iter().collect()))).collect(),
+        );
+    }
     out
 }
 
@@ -304,6 +328,24 @@ enum Clause {
 
 fn field_clause(field: Field, words: &[String]) -> Option<Clause> {
     let mut terms: Vec<Term> = words.iter().map(|t| Term::from_field_text(field, t)).collect();
+    match terms.len() {
+        0 => None,
+        1 => Some(Clause::One(terms.remove(0))),
+        _ => Some(Clause::Phrase(terms)),
+    }
+}
+
+/// One word or phrase within one entity field. Type and field names have no dots, so the path can't be misread.
+fn attr_clause(field: Field, scope: &AttrScope, words: &[String]) -> Option<Clause> {
+    let path = format!("{}.{}", scope.type_name, scope.field);
+    let mut terms: Vec<Term> = words
+        .iter()
+        .map(|w| {
+            let mut term = Term::from_field_json_path(field, &path, false);
+            term.append_type_and_str(w);
+            term
+        })
+        .collect();
     match terms.len() {
         0 => None,
         1 => Some(Clause::One(terms.remove(0))),
@@ -408,6 +450,10 @@ fn build_query(index: &Index, searcher: &Searcher, fields: Fields, query: &Lexic
             QueryTerm::Word(w) => (normalize(w), false),
             QueryTerm::Phrase(words) => (normalize(&words.join(" ")), true),
         };
+        if let Some(scope) = &query.filter.attr {
+            add(attr_clause(fields.attrs, scope, &tokens(&mut folded, &text)));
+            continue;
+        }
         // A document spelled as asked matches here and in the folded field, so it beats one matching only after folding, with no boost needed.
         add(field_clause(fields.exact, &tokens(&mut exact, &text)));
         let folded_tokens = tokens(&mut folded, &text);

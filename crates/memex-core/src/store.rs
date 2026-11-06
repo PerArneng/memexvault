@@ -1,11 +1,13 @@
 use memex_types::{
-    AssertionRow, ChangeSetRow, EdgeRow, Event, EvidenceRow, JobRow, JobState, Mutation, ObjectId, RenditionRow, Row, RowKey, SegmentRow, SourceRow, Table,
-    VaultId,
+    AssertionRow, ChangeSetRow, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, JobRow, JobState, Mutation, ObjectId, RenditionRow, Row,
+    RowKey, SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
 };
 use std::fmt;
 
 /// The most rows or events one read returns. Callers page through with `after`.
 pub const PAGE_LIMIT: usize = 1000;
+/// The most entities one suggested group names.
+pub const MAX_SHARED_IDS: usize = 50;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreError {
@@ -108,6 +110,20 @@ pub trait Snapshot {
     fn changeset_by_key(&self, key: &str) -> Result<Option<ChangeSetRow>, StoreError>;
     /// Active assertions matching any of these canonical hashes or subject and predicate pairs. One store call.
     fn assertions_matching(&self, hashes: &[String], pairs: &[(String, String)]) -> Result<Vec<AssertionRow>, StoreError>;
+    /// Active assertions about any of these subjects, in id order. One store call.
+    fn assertions_about(&self, subjects: &[String]) -> Result<Vec<AssertionRow>, StoreError>;
+    /// Stored versions of these types, by name and then oldest first. One store call. Seed types' built-in first versions aren't stored.
+    fn entity_type_versions(&self, names: &[String]) -> Result<Vec<EntityTypeRow>, StoreError>;
+    /// Each stored type's newest version, in name order, after the given name.
+    fn latest_entity_types(&self, after: Option<&str>, limit: usize) -> Result<Vec<EntityTypeRow>, StoreError>;
+    /// Current entities of a type, in id order, after the given id.
+    fn entities_of_type(&self, type_name: &str, after: Option<&ObjectId>, limit: usize) -> Result<Vec<EntityRow>, StoreError>;
+    /// Current entities of a type passing every filter, in id order, after the given id. At least one filter. One store call.
+    fn entities_matching(&self, type_name: &str, filters: &[FieldFilter], after: Option<&ObjectId>, limit: usize) -> Result<Vec<EntityRow>, StoreError>;
+    /// Current entities with this folded text in any field or alias, in id order. One store call.
+    fn entities_with_value(&self, text: &str, limit: usize) -> Result<Vec<ValueMatch>, StoreError>;
+    /// Folded values held by more than one current entity of a type, in these fields, by field and value, after the given pair. At most `MAX_SHARED_IDS` ids each.
+    fn shared_values(&self, type_name: &str, fields: &[String], after: Option<(&str, &str)>, limit: usize) -> Result<Vec<SharedValue>, StoreError>;
 }
 
 /// The system of record. Synchronous, so pure crates stay free of an async runtime.

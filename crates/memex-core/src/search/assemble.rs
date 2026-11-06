@@ -1,12 +1,13 @@
 //! Fences candidates against the store and turns them into evidence items. Every read is batched, so the store calls don't grow with the number of hits.
 use super::budget::item_cost;
 use super::fusion::Fused;
+use crate::entity::{current_claims, entity_doc, latest_types};
 use crate::governance::CONTRADICTS;
 use crate::lexical::{assertion_doc, claim_text, current_rendition, filter_passes, segment_doc};
 use crate::{Snapshot, StoreError};
 use memex_types::{
-    AnchorStatus, AssertionRow, Citation, Conflict, DocKind, EvidenceItem, EvidenceRow, FacetCount, Facets, IndexDoc, ItemKind, LexicalFilter, ObjectId,
-    RenditionRow, Row, RowKey, SegmentRow, SourceRow, Status, Table,
+    AnchorStatus, AssertionRow, Citation, Conflict, DocKind, EntityRow, EntityTypeRow, EvidenceItem, EvidenceRow, FacetCount, Facets, IndexDoc, ItemKind,
+    LexicalFilter, ObjectId, RenditionRow, Row, RowKey, SegmentRow, SourceRow, Status, Table,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -20,6 +21,9 @@ pub struct Fenced {
     pub rerank_score: Option<f32>,
 }
 
+/// How many citations one entity carries. There's one per value at most this many, and the rest are a call away on the entity itself.
+const ENTITY_CITATIONS: usize = 5;
+
 fn key(table: Table, id: &ObjectId) -> RowKey {
     RowKey { table, id: id.clone() }
 }
@@ -28,6 +32,7 @@ fn table_of(kind: DocKind) -> Table {
     match kind {
         DocKind::Segment => Table::Segment,
         DocKind::Claim => Table::Assertion,
+        DocKind::Entity => Table::Entity,
     }
 }
 
@@ -44,6 +49,8 @@ fn epistemic(a: &AssertionRow) -> Option<String> {
 struct Loaded {
     segments: HashMap<ObjectId, SegmentRow>,
     assertions: HashMap<ObjectId, AssertionRow>,
+    entities: HashMap<ObjectId, EntityRow>,
+    entity_types: HashMap<String, EntityTypeRow>,
     sources: HashMap<ObjectId, SourceRow>,
     renditions: HashMap<ObjectId, RenditionRow>,
     evidence: HashMap<ObjectId, Vec<EvidenceRow>>,
@@ -60,6 +67,9 @@ impl Loaded {
                 }
                 Row::Assertion(a) => {
                     self.assertions.insert(a.header.id.clone(), a);
+                }
+                Row::Entity(e) => {
+                    self.entities.insert(e.header.id.clone(), e);
                 }
                 Row::Source(s) => {
                     self.sources.insert(s.header.id.clone(), s);
@@ -83,6 +93,22 @@ impl Loaded {
         let mut l = Self::default();
         let keys: Vec<RowKey> = candidates.iter().map(|c| key(table_of(c.kind), &c.id)).collect();
         Self::read(snap, &keys, &mut l)?;
+        l.entities.retain(|_, e| e.is_current());
+        if !l.entities.is_empty() {
+            // An entity's citations are the evidence behind its values, and its conflicts are the claims those values beat.
+            let keys: Vec<RowKey> = l
+                .entities
+                .values()
+                .flat_map(|e| e.fields.iter())
+                .flat_map(|f| std::iter::once(&f.assertion_id).chain(f.others.iter().map(|o| &o.assertion_id)))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .map(|id| key(Table::Assertion, id))
+                .collect();
+            Self::read(snap, &keys, &mut l)?;
+            let names: Vec<String> = l.entities.values().map(|e| e.type_name.clone()).collect::<BTreeSet<_>>().into_iter().collect();
+            l.entity_types = latest_types(snap, &names)?;
+        }
         let claims: Vec<ObjectId> = l.assertions.values().filter(|a| claim_is_current(a)).map(|a| a.header.id.clone()).collect();
         if !claims.is_empty() {
             let mut rivals = BTreeSet::new();
@@ -248,6 +274,57 @@ impl Loaded {
         })
     }
 
+    fn entity_doc(&self, e: &EntityRow) -> Option<IndexDoc> {
+        let t = self.entity_types.get(&e.type_name)?;
+        let cited: Vec<&EvidenceRow> = current_claims(e).flat_map(|c| self.cited(c)).collect();
+        Some(entity_doc(e, &t.schema, &cited, &self.segments, &self.sources))
+    }
+
+    /// Text and types as the card has them, one citation per current value, up to a limit, and the claims that lost.
+    fn entity_item(&self, e: &EntityRow, score: f32, doc: &IndexDoc) -> EvidenceItem {
+        let mut citations: Vec<Citation> = current_claims(e)
+            .flat_map(|c| self.cited(c))
+            .take(ENTITY_CITATIONS)
+            .map(|x| self.evidence_citation(x))
+            .collect();
+        if citations.is_empty() {
+            citations.push(Self::no_anchor());
+        }
+        let mut conflicts = vec![];
+        for f in &e.fields {
+            for other in f.others.iter().filter(|o| o.value != f.value) {
+                let Some(a) = self.assertions.get(&other.assertion_id) else { continue };
+                let sources: BTreeSet<ObjectId> = self
+                    .cited(&other.assertion_id)
+                    .iter()
+                    .filter_map(|x| self.segments.get(&x.segment_id))
+                    .map(|s| s.source_id.clone())
+                    .collect();
+                conflicts.push(Conflict {
+                    claim_id: other.assertion_id.clone(),
+                    text: claim_text(a).trim_end().to_string(),
+                    epistemic: epistemic(a),
+                    source_ids: sources.into_iter().collect(),
+                });
+            }
+        }
+        finish(EvidenceItem {
+            id: e.header.id.clone(),
+            kind: ItemKind::Entity,
+            text: doc.text.clone(),
+            heading: Some(e.type_name.clone()),
+            language: doc.language.clone(),
+            epistemic: None,
+            trust_tiers: doc.trust_tiers.clone(),
+            valid_from_ms: None,
+            valid_to_ms: None,
+            score: Some(score),
+            estimated_tokens: 0,
+            citations,
+            conflicts,
+        })
+    }
+
     fn claim_item(&self, a: &AssertionRow, score: f32, doc: &IndexDoc) -> EvidenceItem {
         let mut citations: Vec<Citation> = self.cited(&a.header.id).iter().map(|e| self.evidence_citation(e)).collect();
         if citations.is_empty() {
@@ -293,6 +370,10 @@ pub fn fence<S: Snapshot>(snap: &S, candidates: Vec<Fused>, filter: &LexicalFilt
                 let cited = loaded.cited(&a.header.id);
                 let doc = assertion_doc(a, &cited, &loaded.segments, &loaded.sources);
                 (loaded.claim_item(a, fused.score, &doc), doc)
+            }),
+            DocKind::Entity => loaded.entities.get(&fused.id).and_then(|e| {
+                let doc = loaded.entity_doc(e)?;
+                Some((loaded.entity_item(e, fused.score, &doc), doc))
             }),
         };
         if let Some((item, doc)) = built

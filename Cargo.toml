@@ -12,6 +12,8 @@ memex-types = { path = "crates/memex-types" }
 memex-core = { path = "crates/memex-core" }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query"] }
 getrandom = "0.3"
+# No default features: they would bring HTTP and file retrieval of remote `$ref`s, which a type schema must never reach.
+jsonschema = { version = "0.60", default-features = false }
 memex-ocr = { path = "crates/memex-ocr" }
 memex-api = { path = "crates/memex-api" }
 memex-http = { path = "crates/memex-http" }

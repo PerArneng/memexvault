@@ -512,6 +512,7 @@ fn search_fences_a_hit_retracted_after_it_was_indexed() {
         valid_to_ms: None,
         doc_type: None,
         trust_tiers: vec![],
+        attrs: vec![],
     };
     s.lexical().write(&v, Generation::Live, &[IndexOp::Upsert(ghost)]).unwrap();
     s.lexical().commit(&v, Generation::Live, Some(1)).unwrap();

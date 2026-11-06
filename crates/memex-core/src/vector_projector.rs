@@ -69,7 +69,7 @@ struct VaultState {
     build: Option<Build>,
 }
 
-const SCAN_ORDER: [Table; 2] = [Table::Segment, Table::Assertion];
+const SCAN_ORDER: [Table; 3] = [Table::Segment, Table::Assertion, Table::Entity];
 
 /// One projector per server. Its state is only progress: all of it comes back from the index and the log after a restart.
 #[derive(Debug, Default)]
@@ -94,6 +94,7 @@ fn event_ops<S: Snapshot>(snap: &S, events: &[Event]) -> Result<Vec<IndexOp>, Pr
                     match doc.kind {
                         DocKind::Segment => touched.segments.insert(doc.id),
                         DocKind::Claim => touched.assertions.insert(doc.id),
+                        DocKind::Entity => touched.entities.insert(doc.id),
                     };
                 }
             }
@@ -106,6 +107,10 @@ fn event_ops<S: Snapshot>(snap: &S, events: &[Event]) -> Result<Vec<IndexOp>, Pr
     let assertions: Vec<ObjectId> = touched.assertions.into_iter().collect();
     for chunk in assertions.chunks(PAGE_LIMIT) {
         ops.extend(assertion_ops(snap, chunk)?);
+    }
+    let entities: Vec<ObjectId> = touched.entities.into_iter().collect();
+    for chunk in entities.chunks(PAGE_LIMIT) {
+        ops.extend(crate::entity::entity_ops(snap, chunk)?);
     }
     Ok(ops)
 }
@@ -249,6 +254,7 @@ where
             let ids: Vec<ObjectId> = page.iter().map(|r| r.header().id.clone()).collect();
             let ops = match page.first() {
                 Some(Row::Assertion(_)) => assertion_ops(snap, &ids)?,
+                Some(Row::Entity(_)) => crate::entity::entity_ops(snap, &ids)?,
                 _ => segment_ops(snap, &ids)?,
             };
             let plan = plan_ops(snap, index, vault, &build.model.name, ops)?;

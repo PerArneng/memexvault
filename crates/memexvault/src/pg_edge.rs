@@ -78,6 +78,50 @@ impl Snapshot for PostgresSnapshot<'_> {
         self.inner.assertions_matching(hashes, pairs).map_err(|e| translate(&self.vault, e))
     }
 
+    fn assertions_about(&self, subjects: &[String]) -> Result<Vec<AssertionRow>, StoreError> {
+        self.inner.assertions_about(subjects).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn entity_type_versions(&self, names: &[String]) -> Result<Vec<memex_types::EntityTypeRow>, StoreError> {
+        self.inner.entity_type_versions(names).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn latest_entity_types(&self, after: Option<&str>, limit: usize) -> Result<Vec<memex_types::EntityTypeRow>, StoreError> {
+        self.inner.latest_entity_types(after, limit).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn entities_of_type(&self, type_name: &str, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::EntityRow>, StoreError> {
+        self.inner.entities_of_type(type_name, after, limit).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn entities_matching(
+        &self,
+        type_name: &str,
+        filters: &[memex_types::FieldFilter],
+        after: Option<&ObjectId>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::EntityRow>, StoreError> {
+        self.inner
+            .entities_matching(type_name, filters, after, limit)
+            .map_err(|e| translate(&self.vault, e))
+    }
+
+    fn entities_with_value(&self, text: &str, limit: usize) -> Result<Vec<memex_types::ValueMatch>, StoreError> {
+        self.inner.entities_with_value(text, limit).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn shared_values(
+        &self,
+        type_name: &str,
+        fields: &[String],
+        after: Option<(&str, &str)>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::SharedValue>, StoreError> {
+        self.inner
+            .shared_values(type_name, fields, after, limit, memex_core::MAX_SHARED_IDS)
+            .map_err(|e| translate(&self.vault, e))
+    }
+
     fn edges_touching(&self, ids: &[ObjectId], kind: &str) -> Result<Vec<memex_types::EdgeRow>, StoreError> {
         self.inner.edges_touching(ids, kind).map_err(|e| translate(&self.vault, e))
     }

@@ -50,10 +50,196 @@ pub fn run_all<S: Store>(store: &S, prefix: &str) {
     paging_returns_everything_once(store, &name("page"));
     compact_changes_no_reads(store, &name("compact"));
     edges_and_sections_read_in_batches(store, &name("sections"));
+    entity_reads(store, &name("entity"));
     batches_are_all_or_nothing(store, &name("batch"));
     deleting_a_vault_removes_it(store, &name("gone"));
     vaults_are_isolated(store, &name("iso-a"), &name("iso-b"));
     unknown_vault_is_refused(store, &name("never-opened"));
+}
+
+fn entity_reads<S: Store>(store: &S, v: &VaultId) {
+    use memex_types::{ClaimedValue, EntityField, EntityRow, EntityTypeRow, FieldFilter, FieldLookup, FieldOp, FilterValue, Header, Status};
+    let lease = store.open_vault(v).expect("open");
+    let header = |id: &str, status| Header {
+        id: ObjectId(id.into()),
+        creator: "t".into(),
+        status,
+        version: 1,
+        acl_id: None,
+    };
+    let text = |t: &str| FieldLookup {
+        text: Some(t.into()),
+        number: None,
+        time_ms: None,
+    };
+    let number = |n: i64| FieldLookup {
+        text: None,
+        number: Some(n.into()),
+        time_ms: None,
+    };
+    let time = |t: i64| FieldLookup {
+        text: None,
+        number: None,
+        time_ms: Some(t),
+    };
+    let field = |name: &str, lookups: Vec<FieldLookup>| EntityField {
+        field: name.into(),
+        value: json!(1),
+        assertion_id: ObjectId(format!("a-{name}")),
+        why: "w".into(),
+        others: vec![ClaimedValue {
+            assertion_id: ObjectId("o".into()),
+            value: json!(2),
+        }],
+        lookups,
+    };
+    let entity = |id: &str, type_name: &str, name: &str, price: i64, at: i64, aliases: &[&str]| EntityRow {
+        header: header(id, Status::Active),
+        type_name: type_name.into(),
+        type_version: 1,
+        aliases: aliases.iter().map(|a| (*a).to_string()).collect(),
+        alias_keys: aliases.iter().map(|a| (*a).to_string()).collect(),
+        fields: vec![
+            field("name", vec![text(name)]),
+            field("price", vec![number(price)]),
+            field("at", vec![time(at)]),
+            field("tags", vec![text("red"), text("blue")]),
+        ],
+        merged_from: vec![],
+        redirect_to: None,
+        changeset_id: ObjectId("c".into()),
+        updated_at_ms: 0,
+    };
+    let mut gone = entity("e9", "T", "pump", 1, 1, &["old"]);
+    gone.header.status = Status::Superseded;
+    gone.redirect_to = Some(ObjectId("e1".into()));
+    let ty = |name: &str, version_no: u32| EntityTypeRow {
+        header: header(&format!("{name}@{version_no:06}"), Status::Active),
+        name: name.into(),
+        version_no,
+        schema: json!({"v": version_no}),
+        changeset_id: None,
+        created_at_ms: 0,
+        change: "new".into(),
+        reasons: vec![],
+    };
+    let claim = |id: &str, subject: &str, status| memex_types::AssertionRow {
+        header: header(id, status),
+        subject: subject.into(),
+        predicate: "name".into(),
+        value: json!("v"),
+        epistemic: memex_types::Epistemic::Asserted,
+        machine: false,
+        confidence_permille: 0,
+        valid_from_ms: None,
+        valid_to_ms: None,
+        canonical_hash: id.into(),
+        changeset_id: ObjectId("c".into()),
+        superseded_by: None,
+    };
+    let put = |r: Row| Mutation::Put(r);
+    let mutations = vec![
+        put(Row::EntityType(ty("T", 1))),
+        put(Row::EntityType(ty("T", 2))),
+        put(Row::EntityType(ty("U", 1))),
+        put(Row::Entity(entity("e1", "T", "pump", 10, 100, &["acme"]))),
+        put(Row::Entity(entity("e2", "T", "valve", 20, 200, &["acme"]))),
+        put(Row::Entity(entity("e3", "T", "pump", 30, 300, &[]))),
+        put(Row::Entity(entity("e4", "U", "pump", 10, 100, &[]))),
+        put(Row::Entity(gone)),
+        put(Row::Assertion(claim("a1", "entity:e1", Status::Active))),
+        put(Row::Assertion(claim("a2", "entity:e2", Status::Active))),
+        put(Row::Assertion(claim("a3", "entity:e1", Status::Superseded))),
+    ];
+    let event = Event {
+        seq: 0,
+        vault: v.clone(),
+        actor: "t".into(),
+        time_ms: 1,
+        kind: "state.recorded".into(),
+        schema_version: 1,
+        payload: json!({"mutations": mutations}),
+    };
+    store.commit(&lease, &event, &mutations).expect("commit");
+    let s = store.snapshot(v).expect("snapshot");
+    let ids = |rows: Vec<EntityRow>| rows.into_iter().map(|r| r.header.id.0).collect::<Vec<_>>();
+    let filter = |f: &str, op, value| FieldFilter { field: f.into(), op, value };
+    // Types: versions in order, and the newest of each.
+    let versions: Vec<u32> = s.entity_type_versions(&["T".to_string()]).unwrap().iter().map(|t| t.version_no).collect();
+    assert_eq!(versions, [1, 2]);
+    let latest = s.latest_entity_types(None, 10).unwrap();
+    assert_eq!(latest.iter().map(|t| (t.name.as_str(), t.version_no)).collect::<Vec<_>>(), [("T", 2), ("U", 1)]);
+    assert_eq!(s.latest_entity_types(Some("T"), 10).unwrap().len(), 1);
+    assert_eq!(s.latest_entity_types(None, 1).unwrap().len(), 1);
+    // A merged entity is never current.
+    assert_eq!(ids(s.entities_of_type("T", None, 10).unwrap()), ["e1", "e2", "e3"]);
+    assert_eq!(ids(s.entities_of_type("T", Some(&ObjectId("e1".into())), 1).unwrap()), ["e2"]);
+    // Exact, range, several together, an array field, and other types stay out.
+    let eq = |t: &str| filter("name", FieldOp::Eq, FilterValue::Text(t.into()));
+    assert_eq!(ids(s.entities_matching("T", &[eq("pump")], None, 10).unwrap()), ["e1", "e3"]);
+    assert_eq!(ids(s.entities_matching("U", &[eq("pump")], None, 10).unwrap()), ["e4"]);
+    assert_eq!(ids(s.entities_matching("T", &[eq("pump")], Some(&ObjectId("e1".into())), 10).unwrap()), ["e3"]);
+    assert_eq!(ids(s.entities_matching("T", &[eq("pump")], None, 1).unwrap()), ["e1"]);
+    let price = |op, n| filter("price", op, FilterValue::Number(n));
+    assert_eq!(ids(s.entities_matching("T", &[price(FieldOp::Lt, 20.0)], None, 10).unwrap()), ["e1"]);
+    assert_eq!(ids(s.entities_matching("T", &[price(FieldOp::Lte, 20.0)], None, 10).unwrap()), ["e1", "e2"]);
+    assert_eq!(ids(s.entities_matching("T", &[price(FieldOp::Gt, 20.0)], None, 10).unwrap()), ["e3"]);
+    assert_eq!(ids(s.entities_matching("T", &[price(FieldOp::Gte, 20.0)], None, 10).unwrap()), ["e2", "e3"]);
+    assert_eq!(
+        ids(s.entities_matching("T", &[eq("pump"), price(FieldOp::Gt, 20.0)], None, 10).unwrap()),
+        ["e3"]
+    );
+    let at = filter("at", FieldOp::Gte, FilterValue::Time(200));
+    assert_eq!(ids(s.entities_matching("T", &[at], None, 10).unwrap()), ["e2", "e3"]);
+    let tag = filter("tags", FieldOp::Eq, FilterValue::Text("red".into()));
+    assert_eq!(
+        ids(s.entities_matching("T", &[tag], None, 10).unwrap()),
+        ["e1", "e2", "e3"],
+        "an entity with a matching array item, once each"
+    );
+    // Lookup by value, which sees aliases and not merged entities.
+    let m = s.entities_with_value("acme", 10).unwrap();
+    assert_eq!(
+        m.iter().map(|x| (x.entity_id.0.as_str(), x.field.as_str())).collect::<Vec<_>>(),
+        [("e1", "$alias"), ("e2", "$alias")]
+    );
+    assert!(s.entities_with_value("old", 10).unwrap().is_empty());
+    assert_eq!(s.entities_with_value("pump", 2).unwrap().len(), 2);
+    // Shared values.
+    let fields = ["name".to_string(), "$alias".to_string()];
+    let shared = s.shared_values("T", &fields, None, 10).unwrap();
+    let as_pairs: Vec<(&str, &str, usize)> = shared.iter().map(|x| (x.field.as_str(), x.text.as_str(), x.entity_ids.len())).collect();
+    assert_eq!(as_pairs, [("$alias", "acme", 2), ("name", "pump", 2)]);
+    assert_eq!(s.shared_values("T", &fields, Some(("$alias", "acme")), 10).unwrap().len(), 1);
+    assert_eq!(s.shared_values("T", &fields, None, 1).unwrap().len(), 1);
+    // Claims about subjects.
+    let about: Vec<String> = s
+        .assertions_about(&["entity:e1".to_string()])
+        .unwrap()
+        .into_iter()
+        .map(|a| a.header.id.0)
+        .collect();
+    assert_eq!(about, ["a1"], "only active ones");
+    drop(s);
+    // A row's values follow it: replacing a row replaces them, and deleting it removes them.
+    let mutations = vec![
+        put(Row::Entity(entity("e1", "T", "changed", 10, 100, &[]))),
+        Mutation::Delete(RowKey {
+            table: Table::Entity,
+            id: ObjectId("e3".into()),
+        }),
+    ];
+    let event = Event {
+        seq: 1,
+        payload: json!({"mutations": mutations}),
+        ..event
+    };
+    store.commit(&lease, &event, &mutations).expect("commit");
+    let s = store.snapshot(v).expect("snapshot");
+    assert!(s.entities_matching("T", &[eq("pump")], None, 10).unwrap().is_empty());
+    assert_eq!(ids(s.entities_matching("T", &[eq("changed")], None, 10).unwrap()), ["e1"]);
+    drop(s);
+    store.close_vault(&lease).expect("close");
 }
 
 fn edges_and_sections_read_in_batches<S: Store>(store: &S, v: &VaultId) {

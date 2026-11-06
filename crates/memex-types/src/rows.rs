@@ -1,4 +1,5 @@
 use crate::ObjectId;
+use crate::entity::{EntityRow, EntityTypeRow};
 use crate::governance::{ChangeSetState, Epistemic, Op, RiskDecision, Stance, ValidatorResult};
 use crate::jobs::JobRow;
 use crate::rendition::{Anchor, RenditionRow};
@@ -17,10 +18,12 @@ pub enum Table {
     ChangeSet,
     Job,
     Rendition,
+    EntityType,
+    Entity,
 }
 
 impl Table {
-    pub const ALL: [Table; 9] = [
+    pub const ALL: [Table; 11] = [
         Table::Source,
         Table::Page,
         Table::Edge,
@@ -30,6 +33,8 @@ impl Table {
         Table::ChangeSet,
         Table::Job,
         Table::Rendition,
+        Table::EntityType,
+        Table::Entity,
     ];
 }
 
@@ -182,6 +187,8 @@ pub enum Row {
     ChangeSet(ChangeSetRow),
     Job(JobRow),
     Rendition(RenditionRow),
+    EntityType(EntityTypeRow),
+    Entity(EntityRow),
 }
 
 impl Row {
@@ -196,6 +203,8 @@ impl Row {
             Row::ChangeSet(r) => &r.header,
             Row::Job(r) => &r.header,
             Row::Rendition(r) => &r.header,
+            Row::EntityType(r) => &r.header,
+            Row::Entity(r) => &r.header,
         }
     }
 
@@ -210,6 +219,8 @@ impl Row {
             Row::ChangeSet(_) => Table::ChangeSet,
             Row::Job(_) => Table::Job,
             Row::Rendition(_) => Table::Rendition,
+            Row::EntityType(_) => Table::EntityType,
+            Row::Entity(_) => Table::Entity,
         };
         RowKey {
             table,

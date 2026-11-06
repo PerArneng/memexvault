@@ -45,6 +45,7 @@ fn doc(id: &str, language: Option<&str>, text: &str) -> IndexOp {
         valid_to_ms: None,
         doc_type: None,
         trust_tiers: vec![],
+        attrs: vec![],
     })
 }
 

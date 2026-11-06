@@ -15,6 +15,7 @@ fn doc(id: &str, text: &str) -> IndexDoc {
         valid_to_ms: None,
         doc_type: None,
         trust_tiers: vec![],
+        attrs: vec![],
     }
 }
 
@@ -62,6 +63,7 @@ pub fn run_all<L: LexicalIndex>(l: &L, prefix: &str) {
     diacritics_fold_and_exact_ranks_first(l, &v("fold"));
     phrases_need_their_order(l, &v("phrase"));
     filters_restrict(l, &v("filter"));
+    a_scope_searches_one_entity_field(l, &v("attr"));
     limit_and_order(l, &v("limit"));
     generations_flip_and_roll_back(l, &v("gen"));
     flip_needs_a_committed_build(l, &v("flip"));
@@ -139,6 +141,49 @@ fn phrases_need_their_order<L: LexicalIndex>(l: &L, v: &VaultId) {
     live(l, v, &[up("a", "the red bike is here"), up("b", "the bike is red")], Some(0));
     assert_eq!(ids(l, v, r#""red bike""#), ["a"]);
     assert_eq!(ids(l, v, "red bike"), ["a", "b"]);
+}
+
+fn a_scope_searches_one_entity_field<L: LexicalIndex>(l: &L, v: &VaultId) {
+    let attr = |type_name: &str, field: &str, text: &str| memex_types::AttrValue {
+        type_name: type_name.into(),
+        field: field.into(),
+        text: text.into(),
+    };
+    let entity = IndexDoc {
+        kind: DocKind::Entity,
+        doc_type: Some("Product".into()),
+        attrs: vec![attr("Product", "description", "a stainless pump"), attr("Product", "name", "Acme Mix-9")],
+        ..doc("product", "Product: Acme Mix-9 a stainless pump")
+    };
+    let other = IndexDoc {
+        kind: DocKind::Entity,
+        doc_type: Some("Person".into()),
+        attrs: vec![attr("Person", "description", "sells a pump")],
+        ..doc("person", "Person: sells a pump")
+    };
+    live(l, v, &[IndexOp::Upsert(entity), IndexOp::Upsert(other), up("plain", "a pump")], Some(1));
+    let scoped = |type_name: &str, field: &str, text: &str| -> Vec<String> {
+        let filter = LexicalFilter {
+            attr: Some(memex_types::AttrScope {
+                type_name: type_name.into(),
+                field: field.into(),
+            }),
+            ..LexicalFilter::default()
+        };
+        let q = crate::lexical::build_query(text, filter, 10).unwrap();
+        l.search(v, &q).unwrap().hits.into_iter().map(|h| h.id.0).collect()
+    };
+    assert_eq!(scoped("Product", "description", "pump"), ["product"]);
+    assert_eq!(scoped("Person", "description", "pump"), ["person"]);
+    assert_eq!(scoped("Product", "name", "pump"), Vec::<String>::new());
+    assert_eq!(scoped("Product", "description", "\"stainless pump\""), ["product"]);
+    assert_eq!(scoped("Product", "name", "acme"), ["product"]);
+    assert_eq!(scoped("Nobody", "name", "acme"), Vec::<String>::new());
+    assert_eq!(
+        ids(l, v, "stainless"),
+        ["product"],
+        "and the whole document's text still finds it without a scope"
+    );
 }
 
 fn filters_restrict<L: LexicalIndex>(l: &L, v: &VaultId) {

@@ -328,7 +328,7 @@ fn debug_of(plan: &QueryPlan, signals: Signals, before: usize, candidates: &[Fen
 
 /// An id could be either kind, and the fence drops whichever it isn't.
 fn exact_candidates(id: &ObjectId) -> Vec<Fused> {
-    [DocKind::Segment, DocKind::Claim]
+    [DocKind::Segment, DocKind::Claim, DocKind::Entity]
         .map(|kind| Fused {
             id: id.clone(),
             kind,
@@ -339,6 +339,38 @@ fn exact_candidates(id: &ObjectId) -> Vec<Fused> {
             vector_score: None,
         })
         .to_vec()
+}
+
+/// A query longer than this isn't anyone's name, so it isn't looked up.
+const LOOKUP_MAX_BYTES: usize = 200;
+const LOOKUP_LIMIT: usize = 20;
+
+/// The third signal: a query that is exactly an entity's identity value or alias ranks that entity as a first-place hit. One store call, and one more only on a match.
+fn with_entity_lookup<S: Snapshot>(snap: &S, mut fused: Vec<Fused>, text: &str, filter: &LexicalFilter) -> Result<Vec<Fused>, ServerError> {
+    if text.len() > LOOKUP_MAX_BYTES || filter.attr.is_some() || !(filter.kinds.is_empty() || filter.kinds.contains(&DocKind::Entity)) {
+        return Ok(fused);
+    }
+    let matches = crate::entity::identity_matches(snap, &crate::entity::fold_key(text), LOOKUP_LIMIT)?;
+    if matches.is_empty() {
+        return Ok(fused);
+    }
+    for id in matches.into_iter().map(|m| m.entity_id).collect::<std::collections::BTreeSet<_>>() {
+        let boost = 1.0 / (RRF_K + 1.0);
+        match fused.iter_mut().find(|f| f.kind == DocKind::Entity && f.id == id) {
+            Some(f) => f.score += boost,
+            None => fused.push(Fused {
+                id,
+                kind: DocKind::Entity,
+                score: boost,
+                lexical_rank: None,
+                lexical_score: None,
+                vector_rank: None,
+                vector_score: None,
+            }),
+        }
+    }
+    fused.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)));
+    Ok(fused)
 }
 
 /// Everything after the candidates: the page, its context and the report on it.
@@ -366,8 +398,9 @@ impl<C: Clock> Finish<'_, '_, C> {
         let costs: Vec<usize> = candidates.iter().map(|c| c.cost).collect();
         let page = fit(&costs, self.offset, self.req.limit, self.req.budget_tokens);
         let on_page: Vec<&Fenced> = candidates[page.start..page.end].iter().collect();
-        let mut items: Vec<EvidenceItem> = on_page.iter().filter(|c| c.item.kind == ItemKind::Claim).map(|c| c.item.clone()).collect();
-        items.extend(on_page.iter().filter(|c| c.item.kind != ItemKind::Claim).map(|c| c.item.clone()));
+        let leads = |c: &&&Fenced| matches!(c.item.kind, ItemKind::Claim | ItemKind::Entity);
+        let mut items: Vec<EvidenceItem> = on_page.iter().filter(leads).map(|c| c.item.clone()).collect();
+        items.extend(on_page.iter().filter(|c| !leads(c)).map(|c| c.item.clone()));
         let mut report: BudgetReport = page.report;
         // Context comes only when the page isn't short of room.
         if self.context && !report.truncated && !on_page.is_empty() {
@@ -518,9 +551,10 @@ where
     let gathered = gather(e.lexical, e.vector, e.embedder, vault, &req.text, &plan, &req.filter)?;
     stages.mark("candidates");
     let fused = fuse(&gathered.lexical, &gathered.vector, plan.lexical_weight, plan.vector_weight, RRF_K);
-    let before_fence = fused.len().min(fence_window(req, offset));
     // The snapshot is taken after the candidates on purpose: anything retracted while they were gathered is gone from it.
     let snap = e.store.snapshot(vault)?;
+    let fused = with_entity_lookup(&snap, fused, &req.text, &req.filter)?;
+    let before_fence = fused.len().min(fence_window(req, offset));
     let (mut candidates, more_unread) = fence_page(&snap, fused, req, offset)?;
     stages.mark("fence");
     // Read before any reranking, so asking for it never changes the verdict.

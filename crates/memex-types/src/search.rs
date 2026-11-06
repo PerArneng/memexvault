@@ -95,6 +95,7 @@ impl QueryPath {
 pub enum ItemKind {
     Claim,
     Segment,
+    Entity,
     /// The segments around a hit under the same heading, for context.
     Section,
 }
@@ -104,6 +105,7 @@ impl ItemKind {
         match self {
             Self::Claim => "claim",
             Self::Segment => "segment",
+            Self::Entity => "entity",
             Self::Section => "section",
         }
     }
@@ -112,6 +114,7 @@ impl ItemKind {
         match kind {
             DocKind::Claim => Self::Claim,
             DocKind::Segment => Self::Segment,
+            DocKind::Entity => Self::Entity,
         }
     }
 }
@@ -242,7 +245,7 @@ pub struct Facets {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EvidencePackage {
     pub path: QueryPath,
-    /// Claims first, then segments, then context sections.
+    /// Claims and entities first, then segments, then context sections.
     pub items: Vec<EvidenceItem>,
     /// Nothing here looks like an answer. The caller shouldn't treat these items as one.
     pub low_relevance: bool,

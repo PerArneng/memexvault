@@ -1,3 +1,5 @@
+mod entities;
+
 use crate::error::ApiError;
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{DefaultBodyLimit, Extension, Path, Query, Request, State};
@@ -143,7 +145,9 @@ struct ApiDoc;
 
 /// The generated contract. The console's types come from this.
 pub fn openapi() -> utoipa::openapi::OpenApi {
-    ApiDoc::openapi()
+    let mut doc = ApiDoc::openapi();
+    doc.merge(entities::EntityDoc::openapi());
+    doc
 }
 
 pub fn router<E>(server: App<E>) -> Router
@@ -202,6 +206,7 @@ where
         .route("/principals/{id}/disable", post(disable_principal::<E>))
         .route("/tokens", get(list_tokens::<E>).post(create_token::<E>))
         .route("/tokens/{id}", axum::routing::delete(revoke_token::<E>));
+    let api = entities::add_routes::<E>(api);
     Router::new()
         .nest("/api/v1", api)
         .fallback(not_found)
