@@ -16,6 +16,8 @@ impl ServerEdges for Fakes {
     type Seed = SeededRandom;
     type Rasterizer = memex_core::testing::FakeRasterizer;
     type Lexical = memex_core::testing::MemLexical;
+    type Vector = memex_core::testing::MemVector;
+    type Embedder = memex_core::testing::FakeEmbedder;
 }
 
 struct World {
@@ -33,7 +35,7 @@ fn world() -> World {
         MemBlobStore::new(ManualClock::starting_at(0)),
         ManualClock::starting_at(1_000_000),
         SeededRandom::new(9),
-        memex_core::testing::MemLexical::new(),
+        memex_core::testing::mem_search(),
     );
     let admin = s.authenticate(&s.bootstrap("root").unwrap().token).unwrap();
     let v = s.create_vault(&admin, "v").unwrap().id;

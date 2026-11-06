@@ -38,6 +38,7 @@ pub const SERVER_MIGRATIONS: &[&str] = &[
         target text NOT NULL
     );
     ",
+    "CREATE EXTENSION IF NOT EXISTS vector;",
 ];
 
 pub const VAULT_MIGRATIONS: &[&str] = &[
@@ -153,6 +154,22 @@ pub const VAULT_MIGRATIONS: &[&str] = &[
     CREATE INDEX ON {s}.segments (rendition_id, id);
     ALTER TABLE {s}.evidence ADD COLUMN anchor_broken boolean NOT NULL DEFAULT false;
     CREATE INDEX ON {s}.evidence (id) WHERE anchor_broken;
+",
+    "
+    CREATE TABLE {s}.vector_generations (
+        gen integer PRIMARY KEY,
+        model text NOT NULL,
+        dim integer NOT NULL,
+        role text NOT NULL,
+        watermark bigint
+    );
+    CREATE UNIQUE INDEX ON {s}.vector_generations (role);
+    CREATE TABLE {s}.embeddings (
+        model text COLLATE \"C\" NOT NULL,
+        content_hash text COLLATE \"C\" NOT NULL,
+        vector halfvec NOT NULL,
+        PRIMARY KEY (model, content_hash)
+    );
 ",
 ];
 

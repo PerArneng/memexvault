@@ -20,6 +20,8 @@ impl ServerEdges for Fakes {
     type Seed = SeededRandom;
     type Rasterizer = memex_core::testing::FakeRasterizer;
     type Lexical = memex_core::testing::MemLexical;
+    type Vector = memex_core::testing::MemVector;
+    type Embedder = memex_core::testing::FakeEmbedder;
 }
 
 fn server() -> Arc<Server<Fakes>> {
@@ -29,7 +31,7 @@ fn server() -> Arc<Server<Fakes>> {
         MemBlobStore::new(ManualClock::starting_at(0)),
         ManualClock::starting_at(1_700_000_000_000),
         SeededRandom::new(7),
-        memex_core::testing::MemLexical::new(),
+        memex_core::testing::mem_search(),
     ))
 }
 

@@ -1682,6 +1682,12 @@ dependencies = [
 [[package]]
 name = "memex-inference"
 version = "0.1.0"
+dependencies = [
+ "memex-core",
+ "memex-types",
+ "ort",
+ "tokenizers",
+]
 
 [[package]]
 name = "memex-lexical"
@@ -1739,6 +1745,12 @@ dependencies = [
 [[package]]
 name = "memex-vector"
 version = "0.1.0"
+dependencies = [
+ "memex-store-postgres",
+ "memex-types",
+ "postgres",
+ "serde_json",
+]
 
 [[package]]
 name = "memexvault"
@@ -1748,11 +1760,13 @@ dependencies = [
  "memex-blob-fs",
  "memex-core",
  "memex-http",
+ "memex-inference",
  "memex-lexical",
  "memex-ocr",
  "memex-pdf",
  "memex-store-postgres",
  "memex-types",
+ "memex-vector",
  "postgres",
  "serde",
  "serde_json",

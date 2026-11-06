@@ -12,6 +12,8 @@ sha2.workspace = true
 ureq = "3"
 memex-core.workspace = true
 memex-http.workspace = true
+memex-inference = { path = "../memex-inference" }
+memex-vector = { path = "../memex-vector" }
 memex-lexical = { path = "../memex-lexical" }
 memex-ocr.workspace = true
 memex-pdf = { path = "../memex-pdf" }

@@ -91,6 +91,38 @@ where
     threads
 }
 
+/// Creates embeddings. Results go to the embedding store rather than the job, since replaying the log must not need them.
+pub struct EmbedHandler<E: ServerEdges> {
+    pub server: Arc<Server<E>>,
+}
+
+impl<E> JobHandler for EmbedHandler<E>
+where
+    E: ServerEdges,
+    Server<E>: Send + Sync,
+{
+    fn run(&self, vault: &VaultId, job: &JobRow) -> Result<Vec<Mutation>, JobFailure> {
+        self.server.run_embed_job(vault, job).map(|_| vec![]).map_err(|e| JobFailure {
+            message: e.message,
+            retryable: e.retryable,
+        })
+    }
+}
+
+/// Keeps every vault's vector index following its log. It has its own thread, since building a graph can take a while and keyword search shouldn't lag behind that.
+pub fn start_vector_projector<E>(server: Arc<Server<E>>, stop: Arc<AtomicBool>) -> JoinHandle<()>
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
+    std::thread::spawn(move || {
+        while !stop.load(Ordering::Relaxed) {
+            let pause = step_all(&server, Server::project_vector, "vector index");
+            std::thread::sleep(pause);
+        }
+    })
+}
+
 /// Keeps every vault's keyword index following its log, in one thread of its own.
 pub fn start_projector<E>(server: Arc<Server<E>>, stop: Arc<AtomicBool>) -> JoinHandle<()>
 where
@@ -99,14 +131,14 @@ where
 {
     std::thread::spawn(move || {
         while !stop.load(Ordering::Relaxed) {
-            let pause = project_all(&server);
+            let pause = step_all(&server, Server::project_lexical, "keyword index");
             std::thread::sleep(pause);
         }
     })
 }
 
 /// Steps each vault once, and says how long to wait before the next round.
-fn project_all<E: ServerEdges>(server: &Server<E>) -> Duration {
+fn step_all<E: ServerEdges>(server: &Server<E>, step: impl Fn(&Server<E>, &VaultId) -> Result<StepOutcome, memex_core::ProjectError>, what: &str) -> Duration {
     let vaults = match server.vault_ids() {
         Ok(v) => v,
         Err(e) => {
@@ -116,11 +148,11 @@ fn project_all<E: ServerEdges>(server: &Server<E>) -> Duration {
     };
     let (mut busy, mut failed) = (false, false);
     for vault in vaults {
-        match server.project_lexical(&vault) {
+        match step(server, &vault) {
             Ok(StepOutcome::Progress) => busy = true,
             Ok(StepOutcome::Idle) => {}
             Err(e) => {
-                tracing::warn!(vault = %vault, error = %e, "keyword index step failed, and will be retried");
+                tracing::warn!(vault = %vault, error = %e, "{what} step failed, and will be retried");
                 failed = true;
             }
         }
@@ -153,6 +185,8 @@ mod tests {
         type Seed = SeededRandom;
         type Rasterizer = memex_core::testing::FakeRasterizer;
         type Lexical = memex_core::testing::MemLexical;
+        type Vector = memex_core::testing::MemVector;
+        type Embedder = memex_core::testing::FakeEmbedder;
     }
 
     fn setup(n: u32) -> (Arc<Server<Fakes>>, memex_types::VaultId) {
@@ -162,7 +196,7 @@ mod tests {
             MemBlobStore::new(ManualClock::starting_at(0)),
             ManualClock::starting_at(1000),
             SeededRandom::new(5),
-            memex_core::testing::MemLexical::new(),
+            memex_core::testing::mem_search(),
         ));
         let c = s.authenticate(&s.bootstrap("root").unwrap().token).unwrap();
         let v = s.create_vault(&c, "v").unwrap().id;

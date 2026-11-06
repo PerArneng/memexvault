@@ -22,6 +22,8 @@ pub mod sources;
 mod store;
 pub mod testing;
 mod upcast;
+pub mod vector;
+pub mod vector_projector;
 
 pub use auth::{Caller, Decision, Operation, authorize};
 pub use batch::{BatchLimits, Pending, plan_batch};
@@ -38,9 +40,11 @@ pub use replay::{ReplayError, all_events, replay};
 pub use seed::Seed;
 pub use server::{
     ClaimRef, CreatedToken, EvidenceLineage, Lineage, NewToken, PIPELINE_VERSION, PageList, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT,
-    RenditionInput, Server, ServerEdges, ServerError,
+    RenditionInput, SearchEdges, Server, ServerEdges, ServerError,
 };
 pub use settings::{Backends, Settings, SettingsError};
 pub use sources::{ALLOWED_MEDIA_TYPES, UNTRUSTED, UploadLimits, UploadOutcome, UploadRequest, sniff_media_type};
 pub use store::{CommitItem, PAGE_LIMIT, Receipt, Snapshot, Store, StoreError, WriterLease};
 pub use upcast::{CURRENT_VERSIONS, UpcastError, upcast};
+pub use vector::{EMBED_JOB, EmbedJobError, Embedder, VectorIndex};
+pub use vector_projector::VectorProjector;

@@ -6,6 +6,10 @@ license.workspace = true
 publish = false
 
 [dependencies]
+memex-core.workspace = true
+memex-types.workspace = true
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "tls-rustls"] }
+tokenizers = { version = "0.23", default-features = false, features = ["onig"] }
 
 [lints]
 workspace = true

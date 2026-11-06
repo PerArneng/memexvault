@@ -15,7 +15,24 @@ pub struct ModelFile {
     pub size: u64,
 }
 
-/// What OCR needs. Spec 019 and spec 020 add the embedding and reranking models here.
+/// What embedding needs. Spec 020 adds the reranker.
+pub const EMBED_DIR: &str = "multilingual-e5-small";
+pub const EMBED_MODELS: [ModelFile; 2] = [
+    ModelFile {
+        file: "multilingual-e5-small/model.onnx",
+        url: "https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/onnx/model.onnx",
+        sha256: "ca456c06b3a9505ddfd9131408916dd79290368331e7d76bb621f1cba6bc8665",
+        size: 470268510,
+    },
+    ModelFile {
+        file: "multilingual-e5-small/tokenizer.json",
+        url: "https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/tokenizer.json",
+        sha256: "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
+        size: 17082730,
+    },
+];
+
+/// What OCR needs.
 pub const OCR_MODELS: [ModelFile; 3] = [
     ModelFile {
         file: memex_ocr::DETECTOR,
@@ -93,6 +110,9 @@ pub fn fetch(dir: &Path, models: &[ModelFile]) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     for m in models {
         let target = dir.join(m.file);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
         if hash_file(&target).is_ok_and(|h| h == m.sha256) {
             continue;
         }

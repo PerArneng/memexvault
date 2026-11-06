@@ -37,6 +37,10 @@ pub struct Settings {
     pub models_dir: PathBuf,
     pub http_bind: String,
     pub backends: Backends,
+    /// CPU threads for each embedding run, so background embedding can't take the whole machine.
+    pub embed_threads: usize,
+    /// How many queries can be embedded at once. Each one holds a copy of the model in memory.
+    pub embed_query_sessions: usize,
 }
 
 impl Default for Settings {
@@ -47,6 +51,8 @@ impl Default for Settings {
             models_dir: PathBuf::from("./memex-models"),
             http_bind: "127.0.0.1:8080".into(),
             backends: Backends::default(),
+            embed_threads: 4,
+            embed_query_sessions: 2,
         }
     }
 }
@@ -60,6 +66,8 @@ impl fmt::Debug for Settings {
             .field("models_dir", &self.models_dir)
             .field("http_bind", &self.http_bind)
             .field("backends", &self.backends)
+            .field("embed_threads", &self.embed_threads)
+            .field("embed_query_sessions", &self.embed_query_sessions)
             .finish()
     }
 }
@@ -77,6 +85,10 @@ pub enum SettingsError {
     InvalidBind {
         value: String,
     },
+    InvalidNumber {
+        name: &'static str,
+        value: String,
+    },
 }
 
 impl fmt::Display for SettingsError {
@@ -85,6 +97,7 @@ impl fmt::Display for SettingsError {
             Self::UnknownBackend { trait_name, name, known } => write!(f, "unknown {trait_name} backend '{name}', known: {}", known.join(", ")),
             Self::Empty { name } => write!(f, "{name} is set but empty"),
             Self::InvalidBind { value } => write!(f, "MEMEX_HTTP_BIND must be host:port, got '{value}'"),
+            Self::InvalidNumber { name, value } => write!(f, "{name} must be a whole number of at least 1, got '{value}'"),
         }
     }
 }
@@ -108,6 +121,14 @@ impl Settings {
         if let Some(v) = text("MEMEX_MODELS_DIR")? {
             s.models_dir = PathBuf::from(v);
         }
+        let count = |name: &'static str, value: Option<String>, default: usize| -> Result<usize, SettingsError> {
+            match value {
+                None => Ok(default),
+                Some(v) => v.parse().ok().filter(|n| *n >= 1).ok_or(SettingsError::InvalidNumber { name, value: v }),
+            }
+        };
+        s.embed_threads = count("MEMEX_EMBED_THREADS", text("MEMEX_EMBED_THREADS")?, s.embed_threads)?;
+        s.embed_query_sessions = count("MEMEX_EMBED_QUERY_SESSIONS", text("MEMEX_EMBED_QUERY_SESSIONS")?, s.embed_query_sessions)?;
         if let Some(v) = text("MEMEX_HTTP_BIND")? {
             let port_ok = v.rsplit_once(':').is_some_and(|(host, port)| !host.is_empty() && port.parse::<u16>().is_ok());
             if !port_ok {
@@ -208,5 +229,18 @@ mod tests {
     fn debug_never_shows_the_password() {
         let s = from(&[("MEMEX_DATABASE_URL", "postgres://u:hunter2@h/d")]).unwrap();
         assert!(!format!("{s:?}").contains("hunter2"));
+    }
+
+    #[test]
+    fn embedding_limits_parse_and_refuse_nonsense() {
+        let s = from(&[("MEMEX_EMBED_THREADS", "2"), ("MEMEX_EMBED_QUERY_SESSIONS", "3")]).unwrap();
+        assert_eq!((s.embed_threads, s.embed_query_sessions), (2, 3));
+        assert_eq!(from(&[]).unwrap().embed_threads, 4);
+        for bad in ["0", "many", "-1"] {
+            assert!(
+                matches!(from(&[("MEMEX_EMBED_THREADS", bad)]), Err(SettingsError::InvalidNumber { .. })),
+                "{bad}"
+            );
+        }
     }
 }

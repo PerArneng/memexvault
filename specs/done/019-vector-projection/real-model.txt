@@ -1,0 +1,13 @@
+
+running 1 test
+loaded in 1.5 s
+lowest cosine against spec 004's query vectors over 200 queries: 1.00000
+query p50 11.5 ms, p95 17.7 ms, 1 client
+query p50 22.6 ms, p95 37.6 ms, 4 clients on 2 sessions
+25 passages/s, batches of 32, 4 threads
+query p50 11.2 ms, p95 17.0 ms, during background embedding
+resident memory with 3 sessions: 1.17 GB
+test real_model_matches_the_spike_and_is_fast_enough ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 34.34s
+

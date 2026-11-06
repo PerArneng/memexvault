@@ -2,14 +2,16 @@
 // Reading env and args and printing to the terminal are this file's job.
 #![allow(clippy::disallowed_methods, clippy::disallowed_macros)]
 use memex_blob_fs::{FsBlobs, RealFs};
-use memex_core::{Server, ServerEdges, Settings};
+use memex_core::{SearchEdges, Server, ServerEdges, Settings};
+use memex_inference::OnnxEmbedder;
 use memex_lexical::TantivyLexical;
 use memex_store_postgres::PgStore;
-use memexvault::edges::{FsBlobStore, SystemClock, SystemSeed, TantivyIndex};
+use memex_vector::PgVectors;
+use memexvault::edges::{FsBlobStore, PgVectorIndex, SystemClock, SystemSeed, TantivyIndex};
 use memexvault::pg_edge::PostgresStore;
 use memexvault::registry_edge::PostgresRegistry;
 use memexvault::rendition_job::{ChildRasterizer, EXIT_UNPARSEABLE, RenditionHandler, WorkerCommand};
-use memexvault::workers::{self, Pool};
+use memexvault::workers::{self, EmbedHandler, Pool};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,6 +28,8 @@ impl ServerEdges for Production {
     type Seed = SystemSeed;
     type Rasterizer = ChildRasterizer;
     type Lexical = TantivyIndex;
+    type Vector = PgVectorIndex;
+    type Embedder = OnnxEmbedder;
 }
 
 fn fail(message: impl std::fmt::Display) -> ExitCode {
@@ -42,7 +46,15 @@ fn build(settings: &Settings) -> Result<(Arc<PgStore>, Server<Production>), Stri
         FsBlobStore(FsBlobs::new(&settings.data_dir, RealFs)),
         SystemClock::default(),
         SystemSeed,
-        TantivyIndex(TantivyLexical::new(&settings.data_dir)),
+        SearchEdges {
+            lexical: TantivyIndex(TantivyLexical::new(&settings.data_dir)),
+            vector: PgVectorIndex(PgVectors::new(pg.clone())),
+            embedder: OnnxEmbedder::new(
+                settings.models_dir.join(memexvault::models::EMBED_DIR),
+                settings.embed_threads,
+                settings.embed_query_sessions,
+            ),
+        },
     );
     Ok((pg, server))
 }
@@ -135,8 +147,12 @@ fn render_worker(args: &[String]) -> ExitCode {
 fn models_command(args: &[String], settings: &Settings) -> ExitCode {
     let dir = &settings.models_dir;
     let result = match args.first().map(String::as_str) {
-        Some("fetch") => memexvault::models::fetch(dir, &memexvault::models::OCR_MODELS),
-        Some("check") => memexvault::models::verify(dir, &memexvault::models::OCR_MODELS),
+        Some("fetch") => {
+            memexvault::models::fetch(dir, &memexvault::models::OCR_MODELS).and_then(|()| memexvault::models::fetch(dir, &memexvault::models::EMBED_MODELS))
+        }
+        Some("check") => {
+            memexvault::models::verify(dir, &memexvault::models::OCR_MODELS).and_then(|()| memexvault::models::verify(dir, &memexvault::models::EMBED_MODELS))
+        }
         _ => Err("usage: memexvault models fetch | check".to_string()),
     };
     match result {
@@ -214,6 +230,15 @@ fn main() -> ExitCode {
             if let Err(e) = memexvault::models::check_present(&settings.models_dir, &memexvault::models::OCR_MODELS) {
                 return fail(e);
             }
+            if let Err(e) = memexvault::models::check_present(&settings.models_dir, &memexvault::models::EMBED_MODELS) {
+                return fail(e);
+            }
+            if let Err(e) = server.check_embedding_models() {
+                return fail(e);
+            }
+            if let Err(e) = server.embedder().load() {
+                return fail(e);
+            }
             let worker = WorkerCommand {
                 program: program.clone(),
                 args: vec!["pdf-worker".into()],
@@ -237,13 +262,22 @@ fn main() -> ExitCode {
                 ocr: Some(ocr),
             };
             let stop = Arc::new(AtomicBool::new(false));
-            let pools = vec![Pool {
-                kind: memex_core::RENDITION_JOB.into(),
-                workers: 2,
-                handler: Arc::new(handler),
-            }];
+            // One embedding worker: its CPU use is capped by the session's threads, and identical text can't be embedded twice at once.
+            let pools = vec![
+                Pool {
+                    kind: memex_core::RENDITION_JOB.into(),
+                    workers: 2,
+                    handler: Arc::new(handler),
+                },
+                Pool {
+                    kind: memex_core::EMBED_JOB.into(),
+                    workers: 1,
+                    handler: Arc::new(EmbedHandler { server: server.clone() }),
+                },
+            ];
             let mut threads = workers::start(server.clone(), pools, stop.clone());
             threads.push(workers::start_projector(server.clone(), stop.clone()));
+            threads.push(workers::start_vector_projector(server.clone(), stop.clone()));
             let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
                 Ok(r) => r,
                 Err(e) => return fail(e),

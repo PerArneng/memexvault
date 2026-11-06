@@ -54,8 +54,8 @@ fn backend(e: postgres::Error) -> PgError {
 }
 
 /// A connection and its prepared statements. Preparing costs a round trip, so each statement is prepared once per connection.
-pub(crate) struct Conn {
-    pub(crate) client: Client,
+pub struct Conn {
+    pub client: Client,
     statements: HashMap<String, Statement>,
 }
 
@@ -67,17 +67,17 @@ impl Conn {
         }
     }
 
-    pub(crate) fn query(&mut self, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Result<Vec<postgres::Row>, postgres::Error> {
+    pub fn query(&mut self, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Result<Vec<postgres::Row>, postgres::Error> {
         let st = self.statement(sql)?;
         self.client.query(&st, params)
     }
 
-    pub(crate) fn query_one(&mut self, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Result<postgres::Row, postgres::Error> {
+    pub fn query_one(&mut self, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Result<postgres::Row, postgres::Error> {
         let st = self.statement(sql)?;
         self.client.query_one(&st, params)
     }
 
-    pub(crate) fn query_opt(&mut self, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Result<Option<postgres::Row>, postgres::Error> {
+    pub fn query_opt(&mut self, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Result<Option<postgres::Row>, postgres::Error> {
         let st = self.statement(sql)?;
         self.client.query_opt(&st, params)
     }
@@ -120,7 +120,7 @@ impl fmt::Debug for PgStore {
     }
 }
 
-pub(crate) fn schema_of_vault(vault: &VaultId) -> String {
+pub fn schema_of_vault(vault: &VaultId) -> String {
     let clean: String = vault
         .0
         .chars()
@@ -154,12 +154,17 @@ impl PgStore {
         Client::connect(&self.url, NoTls).map_err(backend)
     }
 
-    pub(crate) fn take_conn(&self) -> Result<Conn, PgError> {
+    pub fn take_conn(&self) -> Result<Conn, PgError> {
         let pooled = self.pool.lock().expect("lock").pop();
         match pooled {
             Some(c) if !c.client.is_closed() => Ok(c),
             _ => self.new_client().map(Conn::new),
         }
+    }
+
+    /// Returns a connection to the pool. It must have no open transaction.
+    pub fn give_conn(&self, conn: Conn) {
+        self.give_client(conn);
     }
 
     pub(crate) fn take_client(&self) -> Result<Conn, PgError> {

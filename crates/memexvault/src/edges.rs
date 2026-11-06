@@ -146,3 +146,60 @@ impl memex_core::LexicalIndex for TantivyIndex {
         self.0.delete_vault(vault)
     }
 }
+
+/// The default VectorIndex: `memex-vector` behind the core trait. Its types are already the trait's, so this only forwards.
+pub struct PgVectorIndex(pub memex_vector::PgVectors);
+
+impl memex_core::VectorIndex for PgVectorIndex {
+    fn health(&self, vault: &memex_types::VaultId) -> Result<memex_types::VectorHealth, memex_types::VectorError> {
+        self.0.health(vault)
+    }
+
+    fn watermark(&self, vault: &memex_types::VaultId, generation: memex_types::Generation) -> Result<Option<u64>, memex_types::VectorError> {
+        self.0.watermark(vault, generation)
+    }
+
+    fn begin_build(&self, vault: &memex_types::VaultId, model: &memex_types::ModelInfo) -> Result<(), memex_types::VectorError> {
+        self.0.begin_build(vault, model)
+    }
+
+    fn apply(
+        &self,
+        vault: &memex_types::VaultId,
+        generation: memex_types::Generation,
+        ops: &[memex_types::VectorOp],
+        watermark: Option<u64>,
+    ) -> Result<(), memex_types::VectorError> {
+        self.0.apply(vault, generation, ops, watermark)
+    }
+
+    fn flip(&self, vault: &memex_types::VaultId) -> Result<(), memex_types::VectorError> {
+        self.0.flip(vault)
+    }
+
+    fn rollback(&self, vault: &memex_types::VaultId) -> Result<(), memex_types::VectorError> {
+        self.0.rollback(vault)
+    }
+
+    fn search(&self, vault: &memex_types::VaultId, query: &memex_types::VectorQuery) -> Result<memex_types::LexicalResults, memex_types::VectorError> {
+        self.0.search(vault, query)
+    }
+
+    fn embeddings(
+        &self,
+        vault: &memex_types::VaultId,
+        model: &str,
+        hashes: &[String],
+    ) -> Result<std::collections::HashMap<String, Vec<f32>>, memex_types::VectorError> {
+        self.0.embeddings(vault, model, hashes)
+    }
+
+    fn store_embeddings(&self, vault: &memex_types::VaultId, model: &str, rows: &[(String, Vec<f32>)]) -> Result<(), memex_types::VectorError> {
+        self.0.store_embeddings(vault, model, rows)
+    }
+
+    /// The vectors live in the vault's schema, which deleting the vault in the store has already dropped.
+    fn delete_vault(&self, _: &memex_types::VaultId) -> Result<(), memex_types::VectorError> {
+        Ok(())
+    }
+}

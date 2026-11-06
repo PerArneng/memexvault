@@ -18,6 +18,8 @@ Have the user decide whether to accept pgvector's miss for mid-range filters, or
 
 **Assumption in force:** keep pgvector, because vectors share the transaction with everything else. Target for that band is revised to recall ≥0.93 and p95 ≤20 ms. Spec 019 builds on this, and spec 033 measures 1M. Lexical results and RRF also compensate for vector misses in hybrid search, which spec 020's golden set can quantify.
 
+**Measured since, through the real index code (spec 019).** Recall is unchanged. p95 at 8 clients is 12.6 ms with no filter, 16.0 ms at 50%, 18.6 ms at 20%, 20.8 ms at 10%, 22.4 ms at 5%, and about 11 ms at 1 to 2%. So 50% and 5% now miss ≤15 ms too, and 10% misses the revised ≤20 ms by 0.8 ms. Hybrid's own target of ≤50 ms still has room.
+
 ## Approach
 Ask the user: accept, or switch the default `VectorIndex` to `usearch` with an exact path for small filter sets. Switching stays possible later behind the trait.
 

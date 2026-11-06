@@ -6,6 +6,10 @@ license.workspace = true
 publish = false
 
 [dependencies]
+memex-store-postgres = { path = "../memex-store-postgres" }
+memex-types.workspace = true
+postgres.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

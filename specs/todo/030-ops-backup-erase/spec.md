@@ -25,6 +25,8 @@ everywhere it spread, with zero hits for the purged text.
 - Metrics and a status API: lag, queue depth, sizes and cache stats.
 - Erasure gets an impact preview route listing what it would remove. The cascade is a list of steps, so spec 049 can add chat threads. A route lists claims invalidated by erasure. Whole-vault deletion from spec 012 runs through the same cascade and drops the vault's schema, blobs and indexes.
 
+- Erasure also covers what spec 019 stores: rows in `embeddings` for erased text, vectors in every generation, and the old generation kept for rollback. `compact` must include those tables, and `drop_vault` should set a lock timeout (spec 018).
+
 ## Verification
 1. Backup during ingest, restore elsewhere, then reconcile reports no differences up to the backup's sequence.
 2. Deleting an index directory and restarting rebuilds it with identical query results, and time is recorded.

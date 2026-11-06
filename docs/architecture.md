@@ -190,7 +190,9 @@ the store.
 - **Projectors** alone write indexes, keyed by object id so they are idempotent. Tantivy keeps its watermark in the
   commit payload. pgvector keeps it in a table, and an embedded vector index would use an atomically renamed manifest. Startup replays anything above the
   watermark.
+- **Embeddings** are stored by model and content hash, and made by retryable jobs that read each object's current text. A job's completion is the log event that tells the projector to write the vector, so vectors never enter the log and a rebuild embeds nothing.
 - **Rebuilds** go into a new generation directory and then flip a pointer. The old generation stays for rollback.
+  They page through tables with a fresh snapshot per page and catch up from the starting head, so no snapshot stays open for long.
 - **Readers** fence every hit against store status. Writes return a sequence number, and `min_seq` gives read-your-writes.
 - **Erasure** removes payloads and blobs, compacts the affected tables, keeps the event envelope and appends an `Erased` event.
 - **Event evolution** uses upcasters, pinned by golden replay fixtures.
@@ -249,6 +251,10 @@ matching, and other scripts aren't supported yet. Documents can mix languages, a
 - **Keyword search.** Every segment goes into a language-neutral field and a diacritic-folded field, so `ORA-00904` matches
   literally and `Goteborg` still finds `Göteborg`. Segments in a tested language also go into that language's stemmed field,
   with å, ä, ö, ü, ß and ñ kept. A query runs against all these fields, because its language can't be reliably detected.
+- **Common terms.** With at least 10,000 documents, a query drops single-term clauses matching over 4% of documents, unless all of
+  them are common. Spec 018 needed this for whole-sentence queries to meet the latency target.
+- **Current rows only.** The keyword index holds Active, non-superseded rows on the current rendition, so it has no status field.
+  `as_of` for retracted rows needs another route (spec 020).
 - **Compound words.** German and Swedish join words, and stemming doesn't split them. Decompounding is added only if the golden
   set shows a measured need.
 - **Vector search and reranking** use multilingual models, so a question in one language can find text in another.

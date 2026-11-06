@@ -22,6 +22,8 @@ impl ServerEdges for Fakes {
     type Seed = SeededRandom;
     type Rasterizer = memex_core::testing::FakeRasterizer;
     type Lexical = memex_core::testing::MemLexical;
+    type Vector = memex_core::testing::MemVector;
+    type Embedder = memex_core::testing::FakeEmbedder;
 }
 
 fn fixture(name: &str) -> Vec<u8> {
@@ -42,7 +44,7 @@ fn world() -> World {
         MemBlobStore::new(ManualClock::starting_at(0)),
         ManualClock::starting_at(1_000_000),
         SeededRandom::new(15),
-        memex_core::testing::MemLexical::new(),
+        memex_core::testing::mem_search(),
     ));
     let c = s.authenticate(&s.bootstrap("root").unwrap().token).unwrap();
     let v = s.create_vault(&c, "v").unwrap().id;

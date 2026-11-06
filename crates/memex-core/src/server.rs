@@ -1,11 +1,12 @@
 use crate::auth::{Caller, Decision, Operation, authorize};
 use crate::governance::{self, Author, NotReversible, PlanError};
+use crate::vector::{EMBED_ATTEMPTS, EmbedDocRef, EmbedInput, EmbedRequest, check_query_text, embed_missing, embeddable};
 use crate::{
     ALLOWED_DPI, ChangeSetRecorded, PageImage, Rasterizer, Snapshot, StateRecorded, THUMBNAIL_DPI, UploadLimits, UploadOutcome, UploadRequest, jobs, rendition,
     sources,
 };
 use crate::{ApplyError, BlobStore, BlobStoreError, Clock, Engine, Receipt, Registry, RegistryError, Seed, Store, StoreError, WriterLease};
-use crate::{LexicalIndex, LexicalProjector, ProjectError, StepOutcome};
+use crate::{EMBED_JOB, EmbedJobError, Embedder, LexicalIndex, LexicalProjector, ProjectError, StepOutcome, VectorIndex, VectorProjector};
 use memex_types::{
     Audit, ChangeSetRow, ChangeSetState, Event, EventDraft, Grant, Header, JobRow, JobState, LexicalError, LexicalFilter, LexicalResults, Mutation, ObjectId,
     Principal, PrincipalKind, Rect, RenditionRow, RiskDecision, Row, RowKey, SegmentRow, SourceRow, Status, Table, TokenRow, ValidatorResult, VaultId,
@@ -35,6 +36,15 @@ pub trait ServerEdges {
     type Seed: Seed;
     type Rasterizer: Rasterizer + Default;
     type Lexical: LexicalIndex;
+    type Vector: VectorIndex;
+    type Embedder: Embedder;
+}
+
+/// The edges that answer searches, which travel together.
+pub struct SearchEdges<L, V, Em> {
+    pub lexical: L,
+    pub vector: V,
+    pub embedder: Em,
 }
 
 #[derive(Debug)]
@@ -100,6 +110,18 @@ impl From<RegistryError> for ServerError {
 
 impl From<StoreError> for ServerError {
     fn from(e: StoreError) -> Self {
+        Self::Unavailable(e.to_string())
+    }
+}
+
+impl From<memex_types::VectorError> for ServerError {
+    fn from(e: memex_types::VectorError) -> Self {
+        Self::Unavailable(e.to_string())
+    }
+}
+
+impl From<memex_types::EmbedError> for ServerError {
+    fn from(e: memex_types::EmbedError) -> Self {
         Self::Unavailable(e.to_string())
     }
 }
@@ -220,6 +242,9 @@ pub struct Server<E: ServerEdges> {
     rasterizer: E::Rasterizer,
     lexical: E::Lexical,
     projector: Mutex<LexicalProjector>,
+    vector: E::Vector,
+    embedder: E::Embedder,
+    vector_projector: Mutex<VectorProjector>,
     leases: Mutex<HashMap<VaultId, WriterLease>>,
     /// Decisions read state and then commit, so they run one at a time per vault. The writer lease stops other processes.
     write_locks: Mutex<HashMap<VaultId, Arc<Mutex<()>>>>,
@@ -243,15 +268,25 @@ fn check_name(name: &str) -> Result<(), ServerError> {
 }
 
 impl<E: ServerEdges> Server<E> {
-    pub fn new(registry: E::Registry, store: E::Store, blobs: E::Blobs, clock: E::Clock, seed: E::Seed, lexical: E::Lexical) -> Self {
+    pub fn new(
+        registry: E::Registry,
+        store: E::Store,
+        blobs: E::Blobs,
+        clock: E::Clock,
+        seed: E::Seed,
+        search: SearchEdges<E::Lexical, E::Vector, E::Embedder>,
+    ) -> Self {
         Self {
             registry,
             engine: Engine::new(store, clock),
             blobs,
             seed,
             rasterizer: E::Rasterizer::default(),
-            lexical,
+            lexical: search.lexical,
             projector: Mutex::new(LexicalProjector::default()),
+            vector: search.vector,
+            embedder: search.embedder,
+            vector_projector: Mutex::new(VectorProjector::default()),
             leases: Mutex::new(HashMap::new()),
             write_locks: Mutex::new(HashMap::new()),
             machine_auto_commit: AtomicBool::new(false),
@@ -458,6 +493,8 @@ impl<E: ServerEdges> Server<E> {
         self.blobs.delete_vault(id)?;
         self.projector.lock().expect("lock").forget(id);
         self.lexical.delete_vault(id)?;
+        self.vector_projector.lock().expect("lock").forget(id);
+        self.vector.delete_vault(id)?;
         Ok(())
     }
 
@@ -486,6 +523,140 @@ impl<E: ServerEdges> Server<E> {
 
     pub fn lexical(&self) -> &E::Lexical {
         &self.lexical
+    }
+
+    /// Finds text by meaning, with hits current as of this call. The query is embedded by the model of the generation it runs against, so scores are always comparable.
+    pub fn search_vector(&self, caller: &Caller, vault: &VaultId, text: &str, filter: LexicalFilter, limit: usize) -> Result<LexicalResults, ServerError> {
+        self.allow(caller, Operation::VaultContentRead(vault))?;
+        self.vault_exists(vault)?;
+        check_query_text(text).map_err(|e| ServerError::Invalid(e.to_string()))?;
+        // A flip can land between embedding the query and running it, which costs one more try.
+        let mut last = None;
+        for _ in 0..2 {
+            let model = match self.vector.health(vault)? {
+                memex_types::VectorHealth::Ready { model, .. } => model,
+                memex_types::VectorHealth::Missing => return Err(ServerError::Unavailable("the vector index is still being built".into())),
+            };
+            let vector = self
+                .embedder
+                .embed(&model.name, memex_types::EmbedPurpose::Query, &[text.to_string()])?
+                .pop()
+                .ok_or_else(|| ServerError::Unavailable("the embedder returned nothing".into()))?;
+            let query = memex_types::VectorQuery {
+                model: model.name,
+                vector,
+                filter: filter.clone(),
+                limit: limit.min(crate::lexical::MAX_SEARCH_LIMIT),
+            };
+            match self.vector.search(vault, &query) {
+                Ok(results) => {
+                    let snap = self.engine.store().snapshot(vault)?;
+                    return Ok(crate::lexical::fence_hits(&snap, results)?);
+                }
+                Err(e @ memex_types::VectorError::ModelMismatch { .. }) => last = Some(e),
+                Err(e) => return Err(e.into()),
+            }
+        }
+        Err(last.map_or_else(|| ServerError::Unavailable("the vector index changed model".into()), Into::into))
+    }
+
+    /// One bounded piece of vector index work for this vault. Only the projector thread calls it.
+    pub fn project_vector(&self, vault: &VaultId) -> Result<StepOutcome, ProjectError> {
+        let mut enqueue = |requests: &[EmbedRequest]| self.enqueue_embeds(vault, requests).map_err(|e| e.to_string());
+        self.vector_projector
+            .lock()
+            .expect("lock")
+            .step(self.engine.store(), &self.vector, &self.embedder, vault, &mut enqueue)
+    }
+
+    /// Creates the jobs that don't exist yet, in one event.
+    fn enqueue_embeds(&self, vault: &VaultId, requests: &[EmbedRequest]) -> Result<(), ServerError> {
+        let lease = self.lease(vault)?;
+        let lock = self.vault_lock(vault);
+        let _guard = lock.lock().expect("lock");
+        let now = self.now();
+        let mut mutations = vec![];
+        {
+            let snap = self.engine.store().snapshot(vault)?;
+            for r in requests {
+                if snap.job_by_dedupe(&r.dedupe_key)?.is_none() {
+                    let input = serde_json::to_value(&r.input).map_err(|e| ServerError::Invalid(e.to_string()))?;
+                    let job = jobs::new_job(ObjectId(self.new_id()), "embedder", EMBED_JOB, input, r.dedupe_key.clone(), EMBED_ATTEMPTS, now);
+                    mutations.push(Mutation::Put(Row::Job(job)));
+                }
+            }
+        }
+        if !mutations.is_empty() {
+            self.state_event(&lease, "embedder", mutations)?;
+        }
+        Ok(())
+    }
+
+    /// An embed job's work. It reads the objects' current text and keeps its results in the embedding store, so the job's completion only has to announce them.
+    pub fn run_embed_job(&self, vault: &VaultId, job: &JobRow) -> Result<usize, EmbedJobError> {
+        let input: EmbedInput = serde_json::from_value(job.input.clone()).map_err(EmbedJobError::permanent)?;
+        let snap = self.engine.store().snapshot(vault).map_err(EmbedJobError::retry)?;
+        let ids_of =
+            |kind: memex_types::DocKind| -> Vec<ObjectId> { input.docs.iter().filter(|d: &&EmbedDocRef| d.kind == kind).map(|d| d.id.clone()).collect() };
+        let mut ops = crate::lexical::segment_ops(&snap, &ids_of(memex_types::DocKind::Segment)).map_err(EmbedJobError::retry)?;
+        ops.extend(crate::lexical::assertion_ops(&snap, &ids_of(memex_types::DocKind::Claim)).map_err(EmbedJobError::retry)?);
+        let docs: Vec<memex_types::IndexDoc> = ops
+            .into_iter()
+            .filter_map(|op| match op {
+                memex_types::IndexOp::Upsert(d) => Some(d),
+                memex_types::IndexOp::Delete(_) => None,
+            })
+            .collect();
+        let docs = embeddable(&snap, docs).map_err(EmbedJobError::retry)?;
+        drop(snap);
+        embed_missing(&self.vector, &self.embedder, vault, &input.model, docs)
+    }
+
+    /// Refuses to start on a generation the embedder can't serve: a model that's gone, or one whose dimension changed under the same name.
+    pub fn check_embedding_models(&self) -> Result<(), ServerError> {
+        for vault in self.vault_ids()? {
+            if let memex_types::VectorHealth::Ready { model, .. } = self.vector.health(&vault)? {
+                match self.embedder.model(&model.name) {
+                    None => {
+                        return Err(ServerError::Invalid(format!(
+                            "vault {vault} is indexed with embedding model {}, which isn't available",
+                            model.name
+                        )));
+                    }
+                    Some(offered) if offered.dimension != model.dimension => {
+                        return Err(ServerError::Invalid(format!(
+                            "vault {vault} is indexed with {} at {} dimensions, and the model now has {}",
+                            model.name, model.dimension, offered.dimension
+                        )));
+                    }
+                    Some(_) => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Builds a new vector index generation from stored embeddings. The current one keeps serving until it's ready.
+    pub fn rebuild_vector(&self, vault: &VaultId) {
+        self.vector_projector.lock().expect("lock").request_rebuild(vault, self.embedder.active());
+    }
+
+    /// Forgets the vector projector's progress, as a restart would.
+    pub fn reset_vector_projector_for_tests(&self) {
+        *self.vector_projector.lock().expect("lock") = VectorProjector::default();
+    }
+
+    /// The writer lease this server holds on a vault, for tests that write directly.
+    pub fn vault_lease_for_tests(&self, vault: &VaultId) -> Result<WriterLease, ServerError> {
+        self.lease(vault)
+    }
+
+    pub fn vector(&self) -> &E::Vector {
+        &self.vector
+    }
+
+    pub fn embedder(&self) -> &E::Embedder {
+        &self.embedder
     }
 
     pub fn create_principal(&self, caller: &Caller, name: &str, kind: PrincipalKind, server_admin: bool) -> Result<Principal, ServerError> {

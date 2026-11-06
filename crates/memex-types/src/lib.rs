@@ -8,6 +8,7 @@ mod lexical;
 mod registry;
 mod rendition;
 mod rows;
+mod vector;
 
 pub use blob::{BlobHash, BlobHashError};
 pub use event::{Event, EventDraft};
@@ -18,3 +19,4 @@ pub use lexical::{DocKind, Generation, IndexDoc, IndexHealth, IndexOp, LexicalEr
 pub use registry::{Audit, Grant, Principal, PrincipalKind, Scope, TokenRow, VaultRow};
 pub use rendition::{Anchor, PageClass, PageFacts, PageFlag, PageOutcome, PageRoute, ParsedDocument, Rect, RenditionRow, Word};
 pub use rows::{AssertionRow, ChangeSetRow, EdgeRow, EvidenceRow, Header, Mutation, PageRow, Row, RowKey, SegmentRow, SourceRow, Status, Table};
+pub use vector::{EmbedError, EmbedPurpose, ModelInfo, VectorDoc, VectorError, VectorHealth, VectorOp, VectorQuery};

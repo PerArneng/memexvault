@@ -1,7 +1,7 @@
 //! Keeps a vault's keyword index up to date with its log, and rebuilds it when it can't be trusted.
 use crate::lexical::{CommitPolicy, LexicalIndex, Touched, assertion_ops, segment_ops};
 use crate::{Clock, PAGE_LIMIT, Snapshot, Store, StoreError, UpcastError};
-use memex_types::{Event, Generation, IndexHealth, IndexOp, LexicalError, ObjectId, Row, Table, VaultId};
+use memex_types::{Event, Generation, IndexHealth, IndexOp, LexicalError, ObjectId, Row, Table, VaultId, VectorError};
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
@@ -11,6 +11,9 @@ pub enum ProjectError {
     Store(StoreError),
     Index(LexicalError),
     Upcast(UpcastError),
+    Vector(VectorError),
+    /// Embed jobs couldn't be queued.
+    Enqueue(String),
 }
 
 impl fmt::Display for ProjectError {
@@ -19,6 +22,8 @@ impl fmt::Display for ProjectError {
             Self::Store(e) => write!(f, "{e}"),
             Self::Index(e) => write!(f, "{e}"),
             Self::Upcast(e) => write!(f, "{e}"),
+            Self::Vector(e) => write!(f, "{e}"),
+            Self::Enqueue(m) => write!(f, "can't queue embedding: {m}"),
         }
     }
 }
@@ -28,6 +33,12 @@ impl std::error::Error for ProjectError {}
 impl From<StoreError> for ProjectError {
     fn from(e: StoreError) -> Self {
         Self::Store(e)
+    }
+}
+
+impl From<VectorError> for ProjectError {
+    fn from(e: VectorError) -> Self {
+        Self::Vector(e)
     }
 }
 
@@ -95,7 +106,7 @@ fn ids_of(set: impl IntoIterator<Item = ObjectId>) -> Vec<ObjectId> {
 }
 
 /// Everything these events change in the index.
-fn ops_for_events<S: Snapshot>(snap: &S, events: &[Event]) -> Result<Vec<IndexOp>, ProjectError> {
+pub(crate) fn ops_for_events<S: Snapshot>(snap: &S, events: &[Event]) -> Result<Vec<IndexOp>, ProjectError> {
     let mut touched = Touched::default();
     for e in events {
         touched.add_event(e).map_err(ProjectError::Upcast)?;

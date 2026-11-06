@@ -7,4 +7,4 @@ mod store;
 pub use migrate::{LATEST_SERVER_VERSION, LATEST_VAULT_VERSION};
 pub use net::{NetMutations, net_mutations};
 pub use registry::{PgRegistryError, schema_for};
-pub use store::{PgError, PgLease, PgSnapshot, PgStore};
+pub use store::{Conn, PgError, PgLease, PgSnapshot, PgStore, schema_of_vault};

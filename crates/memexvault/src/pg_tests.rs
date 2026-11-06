@@ -473,6 +473,8 @@ impl memex_core::ServerEdges for JobEdges {
     type Seed = crate::edges::SystemSeed;
     type Rasterizer = crate::rendition_job::ChildRasterizer;
     type Lexical = memex_core::testing::MemLexical;
+    type Vector = memex_core::testing::MemVector;
+    type Embedder = memex_core::testing::FakeEmbedder;
 }
 
 fn job_server(data: &str, offset_ms: i64) -> memex_core::Server<JobEdges> {
@@ -483,7 +485,7 @@ fn job_server(data: &str, offset_ms: i64) -> memex_core::Server<JobEdges> {
         crate::edges::FsBlobStore(memex_blob_fs::FsBlobs::new(data, memex_blob_fs::RealFs)),
         OffsetClock(offset_ms),
         crate::edges::SystemSeed,
-        memex_core::testing::MemLexical::new(),
+        memex_core::testing::mem_search(),
     )
 }
 
