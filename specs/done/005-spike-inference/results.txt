@@ -1,0 +1,35 @@
+# evaluate.py
+[exited with code 0]
+Thu Nov  5 23:38:08 CET 2026
+Installed 1 package in 28ms
+items 434
+mini-q8 {'dim': 384, 'q_p50_4t': 3.284, 'q_p95_4t': 5.604, 'q_p95_1t': 5.427, 'passages_per_s': 82.699, 'rss_gb': 0.572, 'load_s': 0.217, 'size_mb': 118.412, 'same': np.float64(0.804), 'cross': np.float64(0.784)}
+   {'en->en': 0.843, 'sv->sv': 0.782, 'de->de': 0.786, 'es->es': 0.802}
+mini-f32 {'dim': 384, 'q_p50_4t': 5.565, 'q_p95_4t': 9.434, 'q_p95_1t': 13.707, 'passages_per_s': 39.901, 'rss_gb': 1.22, 'load_s': 0.47, 'size_mb': 470.302, 'same': np.float64(0.805), 'cross': np.float64(0.783)}
+   {'en->en': 0.832, 'sv->sv': 0.791, 'de->de': 0.792, 'es->es': 0.807}
+e5s {'dim': 384, 'q_p50_4t': 5.96, 'q_p95_4t': 9.404, 'q_p95_1t': 15.504, 'passages_per_s': 40.343, 'rss_gb': 1.411, 'load_s': 0.319, 'size_mb': 470.269, 'same': np.float64(0.914), 'cross': np.float64(0.832)}
+   {'en->en': 0.936, 'sv->sv': 0.897, 'de->de': 0.913, 'es->es': 0.911}
+e5s-q8 {'dim': 384, 'q_p50_4t': 3.63, 'q_p95_4t': 5.847, 'q_p95_1t': 6.138, 'passages_per_s': 82.11, 'rss_gb': 0.6, 'load_s': 0.112, 'size_mb': 118.101, 'same': np.float64(0.899), 'cross': np.float64(0.802)}
+   {'en->en': 0.931, 'sv->sv': 0.874, 'de->de': 0.897, 'es->es': 0.893}
+e5b {'dim': 768, 'q_p50_4t': 15.776, 'q_p95_4t': 25.259, 'q_p95_1t': 56.109, 'passages_per_s': 12.391, 'rss_gb': 2.638, 'load_s': 1.019, 'size_mb': 1110.059, 'same': np.float64(0.926), 'cross': np.float64(0.881)}
+   {'en->en': 0.945, 'sv->sv': 0.913, 'de->de': 0.92, 'es->es': 0.926}
+rerank base e5b
+mmarco-q8 p50 544 p95 627 rss 1.47 size_mb 119 before->after {'sv->sv': (0.913, 0.925), 'de->de': (0.914, 0.924), 'es->es': (0.927, 0.916), 'en->en': (0.95, 0.955), 'sv->en': (0.863, 0.834), 'en->sv': (0.895, 0.879), 'de->es': (0.857, 0.842), 'es->de': (0.871, 0.834)}
+mmarco-f32 p50 1234 p95 1381 rss 1.72 size_mb 471 before->after {'sv->sv': (0.913, 0.926), 'de->de': (0.914, 0.928), 'es->es': (0.927, 0.919), 'en->en': (0.95, 0.955), 'sv->en': (0.863, 0.826), 'en->sv': (0.895, 0.888), 'de->es': (0.857, 0.841), 'es->de': (0.871, 0.825)}
+bgem3-q8 p50 4338 p95 4972 rss 3.84 size_mb 571 before->after {'sv->sv': (0.913, 0.959), 'de->de': (0.914, 0.951), 'es->es': (0.927, 0.957), 'en->en': (0.95, 0.962), 'sv->en': (0.863, 0.839), 'en->sv': (0.895, 0.931), 'de->es': (0.857, 0.901), 'es->de': (0.871, 0.879)}
+done
+
+[exited with code 0]
+
+# rerank_options.py (e5s top-k, 40 queries per pair; CoreML 6 queries; before->after nDCG@10)
+mmarco-q8 cpu len 128 k 50 p95 [285, 288, 287] {'sv->sv': (0.908, 0.947), 'de->de': (0.913, 0.919), 'sv->en': (0.755, 0.819)}
+mmarco-q8 cpu len 128 k 20 p95 [125, 127, 133] {'sv->sv': (0.908, 0.935), 'de->de': (0.913, 0.911), 'sv->en': (0.755, 0.83)}
+mmarco-f32 coreml len 256 k 50 p95 [195156, 187004, 177008] {'sv->sv': (0.877, 1.0), 'de->de': (1.0, 1.0), 'sv->en': (0.731, 0.905)}
+bgem3-q8 cpu len 128 k 20 p95 [962, 906, 958] {'sv->sv': (0.908, 0.969), 'de->de': (0.913, 0.942), 'sv->en': (0.755, 0.832)}
+bgem3-q8 cpu len 128 k 10 p95 [463, 495, 471] {'sv->sv': (0.908, 0.969), 'de->de': (0.913, 0.942), 'sv->en': (0.755, 0.779)}
+bgem3-q8 cpu len 64 k 10 p95 [253, 262, 265] {'sv->sv': (0.908, 0.922), 'de->de': (0.913, 0.924), 'sv->en': (0.755, 0.8)}
+
+[exited with code 0]
+
+# CoreML embed e5s: query p95 40.1 ms (cpu 9.4), passages 5.6/s (cpu 40.3). Network blocked by sandbox-exec: query p95 8.0 ms, curl blocked.
+# e5s f32 8 threads MAX_LEN=128: 92 passages/s

@@ -1,0 +1,11 @@
+[package]
+name = "infer-bench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+[workspace]
+[dependencies]
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "ndarray", "download-binaries", "tls-rustls", "coreml"] }
+ndarray = "0.17"
+tokenizers = { version = "0.22", default-features = false, features = ["onig"] }
+serde_json = "1"

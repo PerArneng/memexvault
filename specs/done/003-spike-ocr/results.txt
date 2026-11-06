@@ -1,0 +1,70 @@
+
+### v5m: 44 pages/min, regions with word boxes 4465/4467
+synthetic CER: {'de': '0.14%', 'deg:blur': '0.11%', 'deg:clean': '0.19%', 'deg:noise': '0.26%', 'deg:skew3': '0.09%', 'deg:skew5': '0.33%', 'en': '0.18%', 'es': '0.32%', 'sv': '0.17%'}
+real CER: {'de': '3.28%', 'en': '2.65%', 'es': '7.96%', 'sv': '1.41%'} all 3.70%
+accented error rate synth: {'de': '0.00% of 1192', 'en': '0.00% of 3', 'es': '0.30% of 1320', 'sv': '0.09% of 3467'}
+accented error rate real: {'de': '15.38% of 182', 'en': '0.00% of 1', 'es': '7.73% of 220', 'sv': '15.71% of 592'}
+combined CER per language: {'en': '0.58%', 'sv': '0.35%', 'de': '0.56%', 'es': '1.39%'}
+accented errors per real page: {'de_00': (10, 41), 'de_02': (12, 31), 'de_03': (5, 16), 'de_05': (1, 25), 'es_00': (1, 17), 'es_02': (16, 70), 'sv_01': (1, 124), 'sv_02': (63, 69), 'sv_03': (1, 80), 'sv_05': (5, 63), 'sv_06': (16, 33), 'sv_07': (7, 112)}
+line IoU median: {'blur': 0.645, 'clean': 0.675, 'noise': 0.645, 'skew3': 0.803, 'skew5': 0.851} all 0.719
+worst real pages: [(0.224, 'es_02'), (0.08, 'sv_02'), (0.079, 'en_00'), (0.079, 'de_02'), (0.055, 'de_05'), (0.045, 'sv_06'), (0.04, 'en_02'), (0.025, 'de_06')]
+
+### v5s: 29 pages/min, regions with word boxes 4516/4517
+synthetic CER: {'de': '0.14%', 'deg:blur': '0.10%', 'deg:clean': '0.18%', 'deg:noise': '0.30%', 'deg:skew3': '0.08%', 'deg:skew5': '0.17%', 'en': '0.09%', 'es': '0.31%', 'sv': '0.17%'}
+real CER: {'de': '3.30%', 'en': '4.13%', 'es': '5.37%', 'sv': '1.46%'} all 3.55%
+accented error rate synth: {'de': '0.00% of 1192', 'en': '0.00% of 3', 'es': '0.30% of 1320', 'sv': '0.32% of 3467'}
+accented error rate real: {'de': '15.93% of 182', 'en': '0.00% of 1', 'es': '5.91% of 220', 'sv': '16.55% of 592'}
+combined CER per language: {'en': '0.74%', 'sv': '0.36%', 'de': '0.56%', 'es': '1.02%'}
+accented errors per real page: {'de_00': (12, 41), 'de_02': (12, 31), 'de_03': (5, 16), 'es_00': (1, 17), 'es_02': (12, 70), 'sv_00': (1, 57), 'sv_01': (1, 124), 'sv_02': (63, 69), 'sv_03': (1, 80), 'sv_05': (5, 63), 'sv_06': (18, 33), 'sv_07': (9, 112)}
+line IoU median: {'blur': 0.691, 'clean': 0.739, 'noise': 0.643, 'skew3': 0.807, 'skew5': 0.875} all 0.745
+worst real pages: [(0.135, 'en_00'), (0.125, 'es_02'), (0.095, 'es_03'), (0.083, 'sv_02'), (0.078, 'de_02'), (0.046, 'sv_06'), (0.046, 'de_05'), (0.039, 'en_02')]
+
+### v6s: 32 pages/min, regions with word boxes 4456/4456
+synthetic CER: {'de': '0.49%', 'deg:blur': '0.20%', 'deg:clean': '0.28%', 'deg:noise': '0.25%', 'deg:skew3': '0.16%', 'deg:skew5': '0.21%', 'en': '0.08%', 'es': '0.34%', 'sv': '0.04%'}
+real CER: {'de': '6.87%', 'en': '0.60%', 'es': '2.90%', 'sv': '1.69%'} all 2.76%
+accented error rate synth: {'de': '0.08% of 1192', 'en': '0.00% of 3', 'es': '1.67% of 1320', 'sv': '0.17% of 3467'}
+accented error rate real: {'de': '10.99% of 182', 'en': '0.00% of 1', 'es': '6.82% of 220', 'sv': '18.07% of 592'}
+combined CER per language: {'en': '0.16%', 'sv': '0.28%', 'de': '1.34%', 'es': '0.70%'}
+accented errors per real page: {'de_00': (12, 41), 'de_02': (3, 31), 'de_03': (5, 16), 'es_00': (2, 17), 'es_01': (1, 27), 'es_02': (9, 70), 'es_05': (3, 35), 'sv_00': (1, 57), 'sv_01': (1, 124), 'sv_02': (60, 69), 'sv_03': (1, 80), 'sv_05': (8, 63), 'sv_06': (21, 33), 'sv_07': (15, 112)}
+line IoU median: {'blur': 0.766, 'clean': 0.825, 'noise': 0.73, 'skew3': 0.891, 'skew5': 0.944} all 0.828
+worst real pages: [(0.117, 'de_02'), (0.111, 'de_05'), (0.092, 'sv_02'), (0.082, 'de_06'), (0.073, 'es_02'), (0.06, 'sv_06'), (0.058, 'de_04'), (0.054, 'de_00')]
+
+### v6m: 7 pages/min, regions with word boxes 4454/4454
+synthetic CER: {'de': '0.50%', 'deg:blur': '0.22%', 'deg:clean': '0.28%', 'deg:noise': '0.33%', 'deg:skew3': '0.13%', 'deg:skew5': '0.20%', 'en': '0.11%', 'es': '0.34%', 'sv': '0.05%'}
+real CER: {'de': '5.75%', 'en': '0.54%', 'es': '5.73%', 'sv': '1.57%'} all 3.13%
+accented error rate synth: {'de': '0.25% of 1192', 'en': '0.00% of 3', 'es': '0.00% of 1320', 'sv': '0.14% of 3467'}
+accented error rate real: {'de': '10.99% of 182', 'en': '0.00% of 1', 'es': '5.45% of 220', 'sv': '13.68% of 592'}
+combined CER per language: {'en': '0.18%', 'sv': '0.27%', 'de': '1.20%', 'es': '1.10%'}
+accented errors per real page: {'de_00': (10, 41), 'de_02': (5, 31), 'de_03': (5, 16), 'es_02': (12, 70), 'sv_00': (2, 57), 'sv_01': (1, 124), 'sv_02': (44, 69), 'sv_03': (1, 80), 'sv_05': (8, 63), 'sv_06': (14, 33), 'sv_07': (11, 112)}
+line IoU median: {'blur': 0.707, 'clean': 0.875, 'noise': 0.755, 'skew3': 0.91, 'skew5': 0.951} all 0.858
+worst real pages: [(0.159, 'es_02'), (0.101, 'sv_02'), (0.088, 'de_05'), (0.088, 'de_02'), (0.065, 'de_06'), (0.064, 'de_04'), (0.053, 'de_00'), (0.038, 'sv_06')]
+
+### v6s_l: 38 pages/min, regions with word boxes 4456/4457
+synthetic CER: {'de': '0.13%', 'deg:blur': '0.10%', 'deg:clean': '0.18%', 'deg:noise': '0.11%', 'deg:skew3': '0.07%', 'deg:skew5': '0.16%', 'en': '0.07%', 'es': '0.31%', 'sv': '0.01%'}
+real CER: {'de': '3.30%', 'en': '0.54%', 'es': '10.33%', 'sv': '1.41%'} all 3.63%
+accented error rate synth: {'de': '0.00% of 1192', 'en': '0.00% of 3', 'es': '0.30% of 1320', 'sv': '0.06% of 3467'}
+accented error rate real: {'de': '14.29% of 182', 'en': '0.00% of 1', 'es': '19.55% of 220', 'sv': '15.03% of 592'}
+combined CER per language: {'en': '0.15%', 'sv': '0.21%', 'de': '0.56%', 'es': '1.72%'}
+accented errors per real page: {'de_00': (10, 41), 'de_02': (11, 31), 'de_03': (5, 16), 'es_02': (43, 70), 'sv_00': (1, 57), 'sv_01': (1, 124), 'sv_02': (61, 69), 'sv_03': (1, 80), 'sv_05': (5, 63), 'sv_06': (14, 33), 'sv_07': (6, 112)}
+line IoU median: {'blur': 0.716, 'clean': 0.765, 'noise': 0.732, 'skew3': 0.821, 'skew5': 0.888} all 0.763
+worst real pages: [(0.296, 'es_02'), (0.079, 'de_02'), (0.078, 'sv_02'), (0.049, 'sv_06'), (0.044, 'de_05'), (0.038, 'en_02'), (0.032, 'de_06'), (0.022, 'de_03')]
+
+### v6m_l: 34 pages/min, regions with word boxes 4452/4454
+synthetic CER: {'de': '0.13%', 'deg:blur': '0.10%', 'deg:clean': '0.19%', 'deg:noise': '0.10%', 'deg:skew3': '0.08%', 'deg:skew5': '0.15%', 'en': '0.08%', 'es': '0.31%', 'sv': '0.01%'}
+real CER: {'de': '3.33%', 'en': '0.57%', 'es': '8.11%', 'sv': '1.45%'} all 3.14%
+accented error rate synth: {'de': '0.00% of 1192', 'en': '0.00% of 3', 'es': '0.38% of 1320', 'sv': '0.03% of 3467'}
+accented error rate real: {'de': '15.38% of 182', 'en': '0.00% of 1', 'es': '8.64% of 220', 'sv': '15.20% of 592'}
+combined CER per language: {'en': '0.16%', 'sv': '0.22%', 'de': '0.56%', 'es': '1.40%'}
+accented errors per real page: {'de_00': (11, 41), 'de_02': (13, 31), 'de_03': (4, 16), 'es_00': (2, 17), 'es_02': (16, 70), 'es_03': (1, 7), 'sv_00': (1, 57), 'sv_01': (1, 124), 'sv_02': (61, 69), 'sv_03': (1, 80), 'sv_05': (6, 63), 'sv_06': (13, 33), 'sv_07': (7, 112)}
+line IoU median: {'blur': 0.711, 'clean': 0.82, 'noise': 0.742, 'skew3': 0.855, 'skew5': 0.894} all 0.8
+worst real pages: [(0.229, 'es_02'), (0.081, 'sv_02'), (0.081, 'de_02'), (0.045, 'sv_06'), (0.04, 'de_05'), (0.039, 'en_02'), (0.034, 'de_06'), (0.02, 'de_03')]
+
+### v6s_lp: 34 pages/min, regions with word boxes 4455/4456
+synthetic CER: {'de': '0.14%', 'deg:blur': '0.12%', 'deg:clean': '0.19%', 'deg:noise': '0.14%', 'deg:skew3': '0.07%', 'deg:skew5': '0.15%', 'en': '0.08%', 'es': '0.32%', 'sv': '0.03%'}
+real CER: {'de': '3.36%', 'en': '0.62%', 'es': '2.85%', 'sv': '1.39%'} all 1.93%
+accented error rate synth: {'de': '0.08% of 1192', 'en': '0.00% of 3', 'es': '0.45% of 1320', 'sv': '0.03% of 3467'}
+accented error rate real: {'de': '17.58% of 182', 'en': '0.00% of 1', 'es': '4.55% of 220', 'sv': '14.86% of 592'}
+combined CER per language: {'en': '0.17%', 'sv': '0.23%', 'de': '0.57%', 'es': '0.67%'}
+accented errors per real page: {'de_00': (14, 41), 'de_02': (11, 31), 'de_03': (5, 16), 'de_06': (2, 24), 'es_00': (2, 17), 'es_02': (8, 70), 'sv_00': (2, 57), 'sv_01': (1, 124), 'sv_02': (59, 69), 'sv_03': (1, 80), 'sv_05': (7, 63), 'sv_06': (13, 33), 'sv_07': (5, 112)}
+line IoU median: {'blur': 0.766, 'clean': 0.825, 'noise': 0.73, 'skew3': 0.891, 'skew5': 0.944} all 0.828
+worst real pages: [(0.09, 'de_02'), (0.077, 'sv_02'), (0.073, 'es_02'), (0.045, 'sv_06'), (0.04, 'en_02'), (0.038, 'de_05'), (0.03, 'de_06'), (0.021, 'de_03')]

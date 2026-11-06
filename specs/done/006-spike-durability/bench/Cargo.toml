@@ -1,0 +1,13 @@
+[package]
+name = "durability-bench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+postgres = "0.19"
+tantivy = "0.27"
+serde_json = "1"
+fastrand = "2"

@@ -1,0 +1,16 @@
+[package]
+name = "vector-bench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+postgres = "0.19"
+pgvector = { version = "0.4", features = ["postgres"] }
+serde_json = "1"
+usearch = "2"
+
+[profile.release]
+opt-level = 3

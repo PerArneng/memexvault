@@ -1,0 +1,78 @@
+
+oxide: micro F1=0.9902 P=0.9948 R=0.9856 word median IoU=0.576 share IoU>=0.5=0.925
+ | file | words | F1 | median IoU |
+ |---|---|---|---|
+ | cropbox_offset | 1419 | 1.000 | 0.60 |
+ | encrypted_empty_password | 1200 | 1.000 | 0.60 |
+ | image_only | 0 | 1.000 | - |
+ | mixed_text_image | 600 | 1.000 | 0.60 |
+ | ocr_layer | 1049 | 1.000 | 1.00 |
+ | one_column_es_helv | 1200 | 1.000 | 0.59 |
+ | one_column_sv | 1200 | 1.000 | 0.60 |
+ | rotate180_crop | 1193 | 0.889 | 0.00 |
+ | rotate270_crop | 1200 | 1.000 | 0.59 |
+ | rotate90 | 1200 | 1.000 | 0.60 |
+ | table_es | 300 | 1.000 | 0.60 |
+ | table_sv | 300 | 1.000 | 0.60 |
+ | three_column_de | 1579 | 1.000 | 0.60 |
+ | two_column_en | 2077 | 1.000 | 0.60 |
+ | ArabicCIDTrueType | 12 | 0.000 | - |
+ | Type3WordSpacing | 17 | 0.000 | - |
+ | arial_unicode_en_cidfont | 8 | 1.000 | 0.75 |
+ | cid_cff | 3 | 1.000 | 0.64 |
+ | copy_paste_ligatures | 0 | 1.000 | - |
+ | empty_protected | 0 | 1.000 | - |
+ | hello_world_rotated | 10 | 1.000 | 0.59 |
+ | perf_images_scan_bilevel | 919 | 1.000 | 0.75 |
+ | perf_images_scan_gray | 932 | 1.000 | 0.75 |
+ | perf_text_cid_truetype | 1492 | 1.000 | 0.75 |
+ | perf_text_type3_bitmap | 913 | 1.000 | 0.53 |
+ | perf_text_type3_vector | 993 | 1.000 | 0.47 |
+ | rotated | 12 | 0.815 | 0.75 |
+ | rotation | 30 | 1.000 | 0.56 |
+ | scan-bad | 1 | 1.000 | 0.59 |
+ | simpletype3font | 1 | 0.000 | - |
+ | tracemonkey | 13581 | 0.987 | 0.56 |
+ files F1<0.98: {'rotate180_crop': 0.889, 'ArabicCIDTrueType': 0, 'Type3WordSpacing': 0, 'rotated': 0.815, 'simpletype3font': 0}
+ files IoU<0.8: {'cropbox_offset': 0.6, 'encrypted_empty_password': 0.6, 'mixed_text_image': 0.6, 'one_column_es_helv': 0.59, 'one_column_sv': 0.6, 'rotate180_crop': 0.0, 'rotate270_crop': 0.59, 'rotate90': 0.6, 'table_es': 0.6, 'table_sv': 0.6, 'three_column_de': 0.6, 'two_column_en': 0.6, 'arial_unicode_en_cidfont': 0.75, 'cid_cff': 0.64, 'hello_world_rotated': 0.59, 'perf_images_scan_bilevel': 0.75, 'perf_images_scan_gray': 0.75, 'perf_text_cid_truetype': 0.75, 'perf_text_type3_bitmap': 0.53, 'perf_text_type3_vector': 0.47, 'rotated': 0.75, 'rotation': 0.56, 'scan-bad': 0.59, 'tracemonkey': 0.56}
+ missing: [(',', 36), ('i', 15), ('übergröße', 13), ('führt', 12), ('.', 12), ('T', 12), ('v', 12), ('e', 11), ('t', 11), ('s', 11), ('rt', 9), ('dokumente', 9)]
+ extra: [('größere', 8), ('□△', 6), ('△□', 6), ('□△△□', 6), ('quelle', 5), ('jede', 5), (',1', 5), ('LO', 5), ('straße', 4), ('führt', 4), ('انواعالخطوطالعربية', 4), (',7', 4)]
+
+pdfium: micro F1=0.9923 P=0.9964 R=0.9882 word median IoU=0.993 share IoU>=0.5=0.998
+ | file | words | F1 | median IoU |
+ |---|---|---|---|
+ | cropbox_offset | 1419 | 1.000 | 0.99 |
+ | encrypted_empty_password | 1200 | 1.000 | 0.91 |
+ | image_only | 0 | 1.000 | - |
+ | mixed_text_image | 600 | 1.000 | 0.91 |
+ | ocr_layer | 1049 | 1.000 | 0.96 |
+ | one_column_es_helv | 1200 | 1.000 | 0.78 |
+ | one_column_sv | 1200 | 1.000 | 0.91 |
+ | rotate180_crop | 1193 | 0.943 | 1.00 |
+ | rotate270_crop | 1200 | 1.000 | 0.83 |
+ | rotate90 | 1200 | 1.000 | 0.86 |
+ | table_es | 300 | 1.000 | 0.90 |
+ | table_sv | 300 | 1.000 | 0.90 |
+ | three_column_de | 1579 | 1.000 | 0.90 |
+ | two_column_en | 2077 | 1.000 | 0.89 |
+ | ArabicCIDTrueType | 12 | 0.000 | - |
+ | Type3WordSpacing | 17 | 1.000 | 0.29 |
+ | arial_unicode_en_cidfont | 8 | 1.000 | 1.00 |
+ | cid_cff | 3 | 1.000 | 0.98 |
+ | copy_paste_ligatures | 0 | 1.000 | - |
+ | empty_protected | 0 | 1.000 | - |
+ | hello_world_rotated | 10 | 1.000 | 0.83 |
+ | perf_images_scan_bilevel | 919 | 1.000 | 1.00 |
+ | perf_images_scan_gray | 932 | 1.000 | 1.00 |
+ | perf_text_cid_truetype | 1492 | 1.000 | 1.00 |
+ | perf_text_type3_bitmap | 913 | 1.000 | 0.79 |
+ | perf_text_type3_vector | 993 | 1.000 | 0.75 |
+ | rotated | 12 | 1.000 | 1.00 |
+ | rotation | 30 | 1.000 | 0.81 |
+ | scan-bad | 1 | 1.000 | 0.83 |
+ | simpletype3font | 1 | 1.000 | 0.29 |
+ | tracemonkey | 13581 | 0.987 | 0.99 |
+ files F1<0.98: {'rotate180_crop': 0.943, 'ArabicCIDTrueType': 0}
+ files IoU<0.8: {'one_column_es_helv': 0.78, 'Type3WordSpacing': 0.29, 'perf_text_type3_bitmap': 0.79, 'perf_text_type3_vector': 0.75, 'simpletype3font': 0.29}
+ missing: [('i', 30), (',', 29), ('v', 13), ('t', 12), ('T', 12), ('e', 11), ('s', 11), ('1', 11), ('∗', 10), ('.', 10), ('2', 10), ('rt', 9)]
+ extra: [('LO', 5), ('انواع', 4), ('الخطوط', 4), ('العربية', 4), ('i7,', 4), ('i1,', 4), ('näıve', 3), ('T16.', 3), ('i5', 3), ('i2', 3), ('LR', 3), ('vs', 3)]

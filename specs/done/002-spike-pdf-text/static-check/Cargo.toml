@@ -1,0 +1,8 @@
+[package]
+name = "static-check"
+version = "0.0.0"
+edition = "2021"
+publish = false
+[workspace]
+[dependencies]
+pdfium-render = { version = "=0.9.5", default-features = false, features = ["static", "pdfium_7881", "libc++", "core_graphics", "image_latest", "thread_safe"] }

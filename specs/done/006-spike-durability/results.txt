@@ -1,0 +1,18 @@
+1 256 events/s 394 commit p50 2.23 p95 3.98 p99 6.46 ['fsync=on', 'synchronous_commit=on', 'wal_sync_method=fdatasync', 'full_page_writes=on']
+10 256 events/s 3528 commit p50 2.56 p95 4.27 p99 7.06 
+100 256 events/s 24663 commit p50 3.73 p95 6.19 p99 10.36 
+1000 256 events/s 78550 commit p50 12.07 p95 17.34 p99 22.54 
+1 4096 events/s 363 commit p50 2.44 p95 4.3 p99 7.65 ['fsync=on', 'synchronous_commit=on', 'wal_sync_method=fdatasync', 'full_page_writes=on']
+10 4096 events/s 2596 commit p50 3.63 p95 5.84 p99 9.7 
+100 4096 events/s 10746 commit p50 8.63 p95 14.04 p99 18.98 
+1000 4096 events/s 17040 commit p50 58.84 p95 65.71 p99 69.67 
+{"batch50_p50":0.734042,"batch50_p95":1.457333,"rows":50000,"single_p50":0.406,"single_p95":0.7691669999999999}
+{"batch50_p50":0.752417,"batch50_p95":1.543625,"rows":200000,"single_p50":0.409291,"single_p95":0.817917}
+{"build_s":0.460820917,"cases":[{"hits":3334,"p50":0.039459,"p95":0.045542,"q":"term"},{"hits":17,"p50":0.010292,"p95":0.010625,"q":"term_rare"},{"hits":350,"p50":0.051082999999999996,"p95":0.057584,"q":"range"},{"hits":834,"p50":0.040292,"p95":0.044167,"q":"range_int"},{"hits":1333,"p50":0.129792,"p95":0.140834,"q":"combo"}],"disk_mb":2,"docs":50000,"watermark":50000}
+{"build_s":0.71031225,"cases":[{"hits":13334,"p50":0.082792,"p95":0.10466700000000001,"q":"term"},{"hits":67,"p50":0.012,"p95":0.012292,"q":"term_rare"},{"hits":1400,"p50":0.132541,"p95":0.151583,"q":"range"},{"hits":3334,"p50":0.132292,"p95":0.142125,"q":"range_int"},{"hits":5333,"p50":0.386042,"p95":0.406042,"q":"combo"}],"disk_mb":11,"docs":200000,"watermark":200000}
+run 900 acked 84729 289s
+run 950 acked 89757 304s
+{"acked_lost":0,"events_above_watermark_total":39490,"gaps":0,"highest_acked":94598,"index_doc_mismatch":0,"minutes":5.338246718066667,"mode":"child","partial_tx":0,"pg_recover_p95_s":0.0,"reopen_failures":0,"runs":1000,"watermark_ahead":0}
+run 0 acked 94885 2s
+run 50 acked 100788 40s
+{"acked_lost":0,"events_above_watermark_total":941,"gaps":0,"highest_acked":107279,"index_doc_mismatch":0,"minutes":1.2977223500000001,"mode":"pg","partial_tx":0,"pg_recover_p95_s":0.316341875,"reopen_failures":0,"runs":100,"watermark_ahead":0}
