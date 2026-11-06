@@ -293,7 +293,12 @@ from it.
 - **Errors** use the one format from spec 012.
 - **Writes** to knowledge objects are proposals, as in [Governance](#governance).
 - **Browsers** authenticate with a session cookie (spec 037). API and MCP clients use bearer tokens. Both resolve to the same principal and
-  scopes.
+  scopes. `POST /api/v1/session` exchanges a token for a session, `DELETE` ends it, and `/api/v1/whoami` answers for both.
+- **Sessions** last 12 hours, are stored as hashes in `memex_server.sessions`, and pass the token's checks on every request, so revoking the token or disabling the principal ends them at once.
+- **CSRF.** The cookie is `SameSite=Strict`, and any state-changing request a cookie would authorize, and signing in, needs an `x-memex-csrf` header. A bearer header decides alone when present, and needs no such header.
+- **Failed sign-ins** are limited to 10 a minute per peer address, in memory, and then return 429 with `Retry-After`, even for the right token. Behind a proxy all clients share one count.
+- **TLS** belongs to a proxy in front. It must send `X-Forwarded-Proto: https`, which is what makes the cookie `Secure`.
+- **Every response** carries a CSP with `default-src 'self'` and `frame-ancestors 'none'`, plus `nosniff`. Original files download as attachments with a `sandbox` CSP. Unknown paths outside `/api` return the console's `index.html`.
 
 ## Live activity
 

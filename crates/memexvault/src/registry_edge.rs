@@ -1,7 +1,7 @@
 //! The Registry on PostgreSQL behind the core trait. Same connection pool as the store. It only translates.
 use memex_core::{Registry, RegistryError};
 use memex_store_postgres::{PgRegistryError, PgStore};
-use memex_types::{Audit, Principal, TokenRow, VaultId, VaultRow};
+use memex_types::{Audit, Principal, SessionRow, TokenRow, VaultId, VaultRow};
 use std::sync::Arc;
 
 pub struct PostgresRegistry(pub Arc<PgStore>);
@@ -47,6 +47,18 @@ impl Registry for PostgresRegistry {
     }
     fn touch_token(&self, id: &str, at: i64) -> Result<(), RegistryError> {
         self.0.reg_touch_token(id, at).map_err(e)
+    }
+    fn insert_session(&self, s: &SessionRow, a: &Audit) -> Result<(), RegistryError> {
+        self.0.reg_insert_session(s, a).map_err(e)
+    }
+    fn session_by_hash(&self, hash: &str) -> Result<Option<SessionRow>, RegistryError> {
+        self.0.reg_session_by_hash(hash).map_err(e)
+    }
+    fn delete_session(&self, hash: &str, a: &Audit) -> Result<(), RegistryError> {
+        self.0.reg_delete_session(hash, a).map_err(e)
+    }
+    fn delete_expired_sessions(&self, now_ms: i64) -> Result<u64, RegistryError> {
+        self.0.reg_delete_expired_sessions(now_ms).map_err(e)
     }
     fn insert_vault(&self, v: &VaultRow, a: &Audit) -> Result<(), RegistryError> {
         self.0.reg_insert_vault(v, a).map_err(e)

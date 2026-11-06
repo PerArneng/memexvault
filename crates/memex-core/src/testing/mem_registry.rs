@@ -1,5 +1,5 @@
 use crate::{Registry, RegistryError};
-use memex_types::{Audit, Principal, TokenRow, VaultId, VaultRow};
+use memex_types::{Audit, Principal, SessionRow, TokenRow, VaultId, VaultRow};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
@@ -7,6 +7,7 @@ use std::sync::Mutex;
 struct State {
     principals: BTreeMap<String, Principal>,
     tokens: BTreeMap<String, TokenRow>,
+    sessions: BTreeMap<String, SessionRow>,
     vaults: BTreeMap<VaultId, VaultRow>,
     audit: Vec<Audit>,
 }
@@ -33,7 +34,7 @@ impl MemRegistry {
                 ..t.clone()
             })
             .collect();
-        format!("{:?} {:?} {:?} {}", s.principals, tokens, s.vaults, s.audit.len())
+        format!("{:?} {:?} {:?} {:?} {}", s.principals, tokens, s.sessions, s.vaults, s.audit.len())
     }
 }
 
@@ -108,6 +109,31 @@ impl Registry for MemRegistry {
         let mut s = self.state.lock().expect("lock");
         s.tokens.get_mut(id).ok_or(RegistryError::NotFound)?.last_used_at_ms = Some(at_ms);
         Ok(())
+    }
+
+    fn insert_session(&self, session: &SessionRow, audit: &Audit) -> Result<(), RegistryError> {
+        let mut s = self.state.lock().expect("lock");
+        s.sessions.insert(session.hash.clone(), session.clone());
+        s.audit.push(audit.clone());
+        Ok(())
+    }
+
+    fn session_by_hash(&self, hash: &str) -> Result<Option<SessionRow>, RegistryError> {
+        Ok(self.state.lock().expect("lock").sessions.get(hash).cloned())
+    }
+
+    fn delete_session(&self, hash: &str, audit: &Audit) -> Result<(), RegistryError> {
+        let mut s = self.state.lock().expect("lock");
+        s.sessions.remove(hash).ok_or(RegistryError::NotFound)?;
+        s.audit.push(audit.clone());
+        Ok(())
+    }
+
+    fn delete_expired_sessions(&self, now_ms: i64) -> Result<u64, RegistryError> {
+        let mut s = self.state.lock().expect("lock");
+        let before = s.sessions.len();
+        s.sessions.retain(|_, row| row.expires_at_ms > now_ms);
+        Ok((before - s.sessions.len()) as u64)
     }
 
     fn insert_vault(&self, v: &VaultRow, audit: &Audit) -> Result<(), RegistryError> {

@@ -76,7 +76,8 @@ All vault content is untrusted, including document text, OCR output, entity fiel
 - No `dangerouslySetInnerHTML`. An ESLint rule enforces this.
 - Markdown goes through one sanitizing component, with raw HTML disabled.
 - No remote images or media in rendered content. This also stops data leaking out through image URLs.
-- The server sends a strict CSP with `default-src 'self'`.
+- The server sends a strict CSP with `default-src 'self'`, so the build inlines nothing (`assetsInlineLimit: 0`). Radix's modal scroll lock adds a `<style>` element, which the CSP blocks. See spec 037.
+- The console signs in through `POST /api/v1/session`, and sends `x-memex-csrf` on every state-changing request. Page script can't read the session cookie.
 - External links are visibly marked and open with `noopener`.
 - Trust tier and epistemic status are shown wherever claims appear.
 

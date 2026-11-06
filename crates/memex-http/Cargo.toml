@@ -11,6 +11,7 @@ futures-util = { version = "0.3", default-features = false }
 memex-api.workspace = true
 memex-core.workspace = true
 memex-types.workspace = true
+rust-embed = { version = "8.13", default-features = false, features = ["debug-embed"] }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

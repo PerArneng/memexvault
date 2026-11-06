@@ -279,6 +279,12 @@ pub struct WhoAmI {
     pub grants: Vec<GrantDto>,
 }
 
+/// Signs in a browser. No `Debug`, so the token can't reach a log by accident.
+#[derive(Deserialize, ToSchema)]
+pub struct LoginBody {
+    pub token: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct HealthDto {
     pub status: String,

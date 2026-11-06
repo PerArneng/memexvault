@@ -216,19 +216,69 @@ async fn the_scope_matrix_has_no_gaps_and_denials_change_nothing() {
     ];
     let roles = [Some(Scope::Read), Some(Scope::Propose), Some(Scope::Admin), None];
     let tokens: Vec<String> = roles.iter().enumerate().map(|(i, r)| token_with(&w, &format!("role{i}"), *r)).collect();
-    for case in &cases {
-        for (i, token) in tokens.iter().enumerate() {
-            let before = w.s.registry().fingerprint();
-            let (status, body, _) = call(&w.s, case.method, &case.path, Some(token), case.body.clone()).await;
-            assert_eq!(status, case.expected[i], "{} {} role {i}: {body}", case.method, case.path);
-            if !status.is_success() {
-                assert_eq!(w.s.registry().fingerprint(), before, "{} {} role {i} changed state", case.method, case.path);
-                assert!(body["error"]["request_id"].is_string(), "{body}");
-            } else if !case.changes_state {
-                assert_eq!(w.s.registry().fingerprint(), before, "{} {} role {i} changed state", case.method, case.path);
+    // Spec 037: the same cases through a session cookie must give the same results as bearer tokens.
+    let mut sessions = vec![];
+    for t in &tokens {
+        sessions.push(sign_in(&w.s, t).await);
+    }
+    let mut bearer_outcomes = vec![];
+    for through_cookie in [false, true] {
+        let mut outcomes = vec![];
+        for case in &cases {
+            for (i, token) in tokens.iter().enumerate() {
+                let before = w.s.registry().fingerprint();
+                let (status, body, _) = if through_cookie {
+                    call_with_cookie(&w.s, case.method, &case.path, &sessions[i], case.body.clone()).await
+                } else {
+                    call(&w.s, case.method, &case.path, Some(token), case.body.clone()).await
+                };
+                assert_eq!(
+                    status, case.expected[i],
+                    "cookie {through_cookie}: {} {} role {i}: {body}",
+                    case.method, case.path
+                );
+                if !status.is_success() {
+                    assert_eq!(w.s.registry().fingerprint(), before, "{} {} role {i} changed state", case.method, case.path);
+                    assert!(body["error"]["request_id"].is_string(), "{body}");
+                } else if !case.changes_state {
+                    assert_eq!(w.s.registry().fingerprint(), before, "{} {} role {i} changed state", case.method, case.path);
+                }
+                outcomes.push((status, body["error"]["code"].clone(), body["error"]["message"].clone()));
             }
         }
+        if through_cookie {
+            assert_eq!(outcomes, bearer_outcomes, "cookies and bearer tokens differ");
+        } else {
+            bearer_outcomes = outcomes;
+        }
     }
+}
+
+/// Signs in, and returns the value for a `Cookie` header.
+async fn sign_in(s: &Arc<Server<Fakes>>, token: &str) -> String {
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/session")
+        .header("content-type", "application/json")
+        .header("x-memex-csrf", "1")
+        .body(Body::from(json!({ "token": token }).to_string()))
+        .unwrap();
+    let res = router(s.clone()).oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::CREATED);
+    let cookie = res.headers()["set-cookie"].to_str().unwrap();
+    cookie.split(';').next().unwrap().to_string()
+}
+
+async fn call_with_cookie(s: &Arc<Server<Fakes>>, method: &str, path: &str, cookie: &str, body: Option<Value>) -> (StatusCode, Value, axum::http::HeaderMap) {
+    let req = Request::builder().method(method).uri(path).header("cookie", cookie).header("x-memex-csrf", "1");
+    let req = match body {
+        Some(b) => req.header("content-type", "application/json").body(Body::from(b.to_string())).unwrap(),
+        None => req.body(Body::empty()).unwrap(),
+    };
+    let res = router(s.clone()).oneshot(req).await.unwrap();
+    let (status, headers) = (res.status(), res.headers().clone());
+    let bytes = to_bytes(res.into_body(), 4 << 20).await.unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null), headers)
 }
 
 #[tokio::test]
@@ -437,7 +487,7 @@ async fn oversized_and_malformed_bodies_are_refused_in_the_one_format() {
         call(&w.s, "POST", "/api/v1/vaults", Some(&w.admin), Some(json!({"name": "vault-a"}))).await.0,
         StatusCode::CONFLICT
     );
-    assert_eq!(call(&w.s, "GET", "/nope", None, None).await.1["error"]["code"], "not_found");
+    assert_eq!(call(&w.s, "GET", "/api/v1/nope", None, None).await.1["error"]["code"], "not_found");
     assert_eq!(call(&w.s, "PUT", "/api/v1/whoami", None, None).await.0, StatusCode::METHOD_NOT_ALLOWED);
 }
 
