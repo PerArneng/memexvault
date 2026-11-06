@@ -1,0 +1,22 @@
+[package]
+name = "agui-bench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+adk-agent = "=2.3.0"
+adk-core = "=2.3.0"
+adk-model = { version = "=2.3.0", features = ["gemini", "openai"] }
+adk-runner = "=2.3.0"
+adk-session = "=2.3.0"
+async-stream = "0.3"
+async-trait = "0.1"
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net"] }
+tokio-util = "0.7"

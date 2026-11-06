@@ -299,7 +299,8 @@ A separate, opt-in surface (spec 049). It's off per vault until an admin enables
 search path stays free of LLMs, and the chat agent calls search like any other client.
 
 - **Protocol.** AG-UI over server-sent events. A pure mapping turns `AgentRunner` streaming events into AG-UI events, and `memex-http` serves
-  them with our own auth. ADK stays confined to `memex-agent-adk`.
+  them with our own auth. ADK stays confined to `memex-agent-adk`. ADK `=2.3.0` streams text deltas and tool events, and it streams only while the agent has no
+  output guardrails. See spec 034.
 - **Tools.** Search, read, provenance and propose. It holds `propose` scope only and can't fetch URLs.
 - **Changes** go to the normal review queue, and a human approves them. Runs don't pause for approval, and AG-UI interrupts aren't used.
 - **Threads** live in the vault's schema and aren't indexed for search. Erasing a Source deletes the threads that cite it, because a model's reply

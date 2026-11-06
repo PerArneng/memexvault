@@ -1,0 +1,6 @@
+{"type":"RUN_STARTED","threadId":"thread","runId":"run"}
+{"type":"TEXT_MESSAGE_START","messageId":"run-m1","role":"assistant"}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"one "}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"two "}
+{"type":"TEXT_MESSAGE_CONTENT","messageId":"run-m1","delta":"three "}
+{"type":"RUN_ERROR","message":"The model call failed.","code":"internal"}

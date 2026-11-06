@@ -12,6 +12,8 @@ A user chats with the agent and sees answers stream in, what the agent is doing,
 ## Background
 **Depends on:** 042, 046, 049. Design: `docs/frontend-architecture.md`, sections Decisions, Security.
 
+From spec 034: `abortRun()` makes the client synthesise `RUN_ERROR` with code `abort`, which Stop must show as stopped. `RUN_ERROR` can also arrive with a message still open.
+
 ## Approach
 - `AgentChannel` interface in `core`, `AgUiAgentChannel` in `edge-agui`, and `ScriptedAgentChannel` for tests. A pure reducer builds the transcript from protocol events.
 - A chat panel with streaming text, a stop button, and thread history. It opens as a side panel from any screen, and it only sees the current screen's object if the user adds it.
