@@ -1,7 +1,7 @@
 //! Pure: request and response types for the HTTP API, and their translation from domain data. No web framework.
 use memex_types::{
-    AssertionRow, ChangeSetRow, Event, EvidenceRow, Grant, JobRow, Op, Principal, PrincipalKind, RenditionRow, Scope, SegmentRow, SourceRow, TokenRow, VaultId,
-    VaultRow,
+    AssertionRow, ChangeSetRow, DocKind, Event, EvidenceRow, Grant, JobRow, LexicalFilter, LexicalResults, ObjectId, Op, Principal, PrincipalKind,
+    RenditionRow, Scope, SegmentRow, SourceRow, TokenRow, VaultId, VaultRow,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -836,5 +836,73 @@ mod tests {
         assert_eq!(page_of(vec![1, 2, 3], 2, |x: &i32| x.to_string()), (vec![1, 2], Some("2".into())));
         assert_eq!(page_of(vec![1, 2], 2, |x: &i32| x.to_string()), (vec![1, 2], None));
         assert_eq!(page_of(Vec::<i32>::new(), 2, |x: &i32| x.to_string()), (vec![], None));
+    }
+}
+
+/// A keyword search. `q` holds words and double-quoted phrases, and everything else is a typed filter.
+#[derive(Debug, Default, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct LexicalSearchParams {
+    pub q: String,
+    /// 1 to 1000. The default is 20.
+    pub limit: Option<u32>,
+    /// `segment` or `claim`. All kinds by default.
+    pub kind: Option<String>,
+    pub source_id: Option<String>,
+    pub epistemic: Option<String>,
+    /// Keeps what's valid at this time, in milliseconds since 1970.
+    pub valid_at_ms: Option<i64>,
+}
+
+impl LexicalSearchParams {
+    /// Pure validation. The text itself is checked by the core's parser.
+    pub fn validated(self) -> Result<(String, LexicalFilter, usize), String> {
+        let limit = self.limit.unwrap_or(20);
+        if !(1..=1000).contains(&limit) {
+            return Err(format!("limit must be from 1 to 1000, not {limit}"));
+        }
+        let kinds = match self.kind.as_deref() {
+            None => vec![],
+            Some(k) => vec![DocKind::parse(k).ok_or_else(|| format!("kind must be segment or claim, not {k}"))?],
+        };
+        let filter = LexicalFilter {
+            kinds,
+            source_ids: self.source_id.map(ObjectId).into_iter().collect(),
+            epistemic: self.epistemic.into_iter().collect(),
+            valid_at_ms: self.valid_at_ms,
+        };
+        Ok((self.q, filter, limit as usize))
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct LexicalHitDto {
+    pub id: String,
+    /// `segment` or `claim`.
+    pub kind: String,
+    pub score: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct LexicalResultsDto {
+    pub hits: Vec<LexicalHitDto>,
+    /// The last event this answer reflects, absent before the first.
+    pub watermark: Option<u64>,
+}
+
+impl From<LexicalResults> for LexicalResultsDto {
+    fn from(r: LexicalResults) -> Self {
+        Self {
+            hits: r
+                .hits
+                .into_iter()
+                .map(|h| LexicalHitDto {
+                    id: h.id.0,
+                    kind: h.kind.as_str().into(),
+                    score: h.score,
+                })
+                .collect(),
+            watermark: r.watermark,
+        }
     }
 }

@@ -6,6 +6,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+tracing.workspace = true
 memex-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true

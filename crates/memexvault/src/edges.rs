@@ -105,3 +105,44 @@ impl<O: memex_blob_fs::FsOps> memex_core::BlobStore for FsBlobStore<O> {
         }
     }
 }
+
+/// The default LexicalIndex: `memex-lexical` behind the core trait. Its types are already the trait's, so this only forwards.
+pub struct TantivyIndex(pub memex_lexical::TantivyLexical);
+
+impl memex_core::LexicalIndex for TantivyIndex {
+    fn health(&self, vault: &memex_types::VaultId, deep: bool) -> Result<memex_types::IndexHealth, memex_types::LexicalError> {
+        self.0.health(vault, deep)
+    }
+
+    fn watermark(&self, vault: &memex_types::VaultId, generation: memex_types::Generation) -> Result<Option<u64>, memex_types::LexicalError> {
+        self.0.watermark(vault, generation)
+    }
+
+    fn begin_build(&self, vault: &memex_types::VaultId) -> Result<(), memex_types::LexicalError> {
+        self.0.begin_build(vault)
+    }
+
+    fn write(&self, vault: &memex_types::VaultId, generation: memex_types::Generation, ops: &[memex_types::IndexOp]) -> Result<(), memex_types::LexicalError> {
+        self.0.write(vault, generation, ops)
+    }
+
+    fn commit(&self, vault: &memex_types::VaultId, generation: memex_types::Generation, watermark: Option<u64>) -> Result<(), memex_types::LexicalError> {
+        self.0.commit(vault, generation, watermark)
+    }
+
+    fn flip(&self, vault: &memex_types::VaultId) -> Result<(), memex_types::LexicalError> {
+        self.0.flip(vault)
+    }
+
+    fn rollback(&self, vault: &memex_types::VaultId) -> Result<(), memex_types::LexicalError> {
+        self.0.rollback(vault)
+    }
+
+    fn search(&self, vault: &memex_types::VaultId, query: &memex_types::LexicalQuery) -> Result<memex_types::LexicalResults, memex_types::LexicalError> {
+        self.0.search(vault, query)
+    }
+
+    fn delete_vault(&self, vault: &memex_types::VaultId) -> Result<(), memex_types::LexicalError> {
+        self.0.delete_vault(vault)
+    }
+}

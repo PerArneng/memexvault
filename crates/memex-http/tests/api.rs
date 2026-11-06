@@ -19,6 +19,7 @@ impl ServerEdges for Fakes {
     type Clock = ManualClock;
     type Seed = SeededRandom;
     type Rasterizer = memex_core::testing::FakeRasterizer;
+    type Lexical = memex_core::testing::MemLexical;
 }
 
 fn server() -> Arc<Server<Fakes>> {
@@ -28,6 +29,7 @@ fn server() -> Arc<Server<Fakes>> {
         MemBlobStore::new(ManualClock::starting_at(0)),
         ManualClock::starting_at(1_700_000_000_000),
         SeededRandom::new(7),
+        memex_core::testing::MemLexical::new(),
     ))
 }
 
@@ -1065,4 +1067,62 @@ async fn provenance_from_a_claim_to_the_region_and_back() {
         call(&w.s, "GET", &format!("{base}/sources/{tid}/pages/0/image"), Some(&reader), None).await.0,
         StatusCode::BAD_REQUEST
     );
+}
+
+#[tokio::test]
+async fn keyword_search_answers_refuses_and_stays_in_its_vault() {
+    use memex_core::{Snapshot as _, StepOutcome};
+    let w = world();
+    let c = w.s.authenticate(&w.admin).unwrap();
+    let url = |v: &VaultId, q: &str| format!("/api/v1/vaults/{}/search/lexical?{q}", v.0);
+
+    // Nothing has been built yet, and that's not the caller's fault.
+    let (status, body, _) = call(&w.s, "GET", &url(&w.a, "q=pump"), Some(&w.admin), None).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+
+    w.s.record_segment(
+        &c,
+        &w.a,
+        &memex_types::ObjectId("s1".into()),
+        &memex_types::ObjectId("src".into()),
+        None,
+        "the pump ORA-00904",
+    )
+    .unwrap();
+    w.s.record_segment(
+        &c,
+        &w.b,
+        &memex_types::ObjectId("s2".into()),
+        &memex_types::ObjectId("src".into()),
+        None,
+        "the pump elsewhere",
+    )
+    .unwrap();
+    for v in [&w.a, &w.b] {
+        let mut idle = 0;
+        while idle < 2 {
+            w.s.engine().clock().advance(std::time::Duration::from_secs(1));
+            idle = if w.s.project_lexical(v).unwrap() == StepOutcome::Idle { idle + 1 } else { 0 };
+        }
+    }
+    let (status, body, _) = call(&w.s, "GET", &url(&w.a, "q=pump"), Some(&w.admin), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["hits"].as_array().unwrap().len(), 1);
+    assert_eq!(body["hits"][0]["id"], "s1");
+    assert_eq!(body["hits"][0]["kind"], "segment");
+    assert_eq!(body["watermark"], w.s.engine().store().snapshot(&w.a).unwrap().head().unwrap().unwrap());
+
+    let (_, body, _) = call(&w.s, "GET", &url(&w.a, "q=ORA-00904&kind=claim"), Some(&w.admin), None).await;
+    assert_eq!(body["hits"].as_array().unwrap().len(), 0, "the filter applies");
+
+    for (q, needle) in [("q=%22open", "quote"), ("q=", "no words"), ("q=x&limit=0", "limit"), ("q=x&kind=nope", "kind")] {
+        let (status, body, _) = call(&w.s, "GET", &url(&w.a, q), Some(&w.admin), None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{q}: {body}");
+        assert!(body["error"]["message"].as_str().unwrap().contains(needle), "{q}: {body}");
+    }
+    let (status, _, _) = call(&w.s, "GET", &url(&w.a, "q=pump"), None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let reader = token_with(&w, "reader-b", Some(Scope::Read));
+    let (status, _, _) = call(&w.s, "GET", &url(&w.b, "q=pump"), Some(&reader), None).await;
+    assert!(status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND, "{status}");
 }

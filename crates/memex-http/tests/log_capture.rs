@@ -17,6 +17,7 @@ impl ServerEdges for Fakes {
     type Clock = ManualClock;
     type Seed = SeededRandom;
     type Rasterizer = memex_core::testing::FakeRasterizer;
+    type Lexical = memex_core::testing::MemLexical;
 }
 
 #[derive(Clone, Default)]
@@ -46,6 +47,7 @@ async fn tokens_do_not_appear_in_logs() {
         MemBlobStore::new(ManualClock::starting_at(0)),
         ManualClock::starting_at(5),
         SeededRandom::new(3),
+        memex_core::testing::MemLexical::new(),
     ));
     let token = s.bootstrap("root").unwrap().token;
     for (method, path) in [

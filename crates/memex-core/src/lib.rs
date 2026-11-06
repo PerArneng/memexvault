@@ -7,7 +7,9 @@ mod dump;
 mod engine;
 pub mod governance;
 pub mod jobs;
+pub mod lexical;
 pub mod ocr;
+pub mod projector;
 pub mod raster;
 mod reducer;
 mod registry;
@@ -27,6 +29,8 @@ pub use blob::{BlobInfo, BlobStore, BlobStoreError, BlobStored, Verified, sweepa
 pub use clock::Clock;
 pub use dump::{Dump, canonical_dump, dump_store};
 pub use engine::{ApplyError, Engine, NewSource, RecordSourceError};
+pub use lexical::{CommitPolicy, LexicalIndex, QueryError, Touched};
+pub use projector::{LexicalProjector, ProjectError, StepOutcome};
 pub use raster::{ALLOWED_DPI, PageImage, RasterError, Rasterizer, THUMBNAIL_DPI, rect_to_pixels};
 pub use reducer::{ChangeSetRecorded, ReduceError, StateRecorded, reduce};
 pub use registry::{Registry, RegistryError};

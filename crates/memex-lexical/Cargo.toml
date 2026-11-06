@@ -6,6 +6,11 @@ license.workspace = true
 publish = false
 
 [dependencies]
+memex-types.workspace = true
+serde_json.workspace = true
+tantivy = { version = "0.27", default-features = false, features = ["mmap", "lz4-compression", "stemmer"] }
+tracing.workspace = true
+unicode-normalization = "0.1"
 
 [lints]
 workspace = true

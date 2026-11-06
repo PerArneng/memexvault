@@ -3,8 +3,9 @@
 #![allow(clippy::disallowed_methods, clippy::disallowed_macros)]
 use memex_blob_fs::{FsBlobs, RealFs};
 use memex_core::{Server, ServerEdges, Settings};
+use memex_lexical::TantivyLexical;
 use memex_store_postgres::PgStore;
-use memexvault::edges::{FsBlobStore, SystemClock, SystemSeed};
+use memexvault::edges::{FsBlobStore, SystemClock, SystemSeed, TantivyIndex};
 use memexvault::pg_edge::PostgresStore;
 use memexvault::registry_edge::PostgresRegistry;
 use memexvault::rendition_job::{ChildRasterizer, EXIT_UNPARSEABLE, RenditionHandler, WorkerCommand};
@@ -24,6 +25,7 @@ impl ServerEdges for Production {
     type Clock = SystemClock;
     type Seed = SystemSeed;
     type Rasterizer = ChildRasterizer;
+    type Lexical = TantivyIndex;
 }
 
 fn fail(message: impl std::fmt::Display) -> ExitCode {
@@ -40,6 +42,7 @@ fn build(settings: &Settings) -> Result<(Arc<PgStore>, Server<Production>), Stri
         FsBlobStore(FsBlobs::new(&settings.data_dir, RealFs)),
         SystemClock::default(),
         SystemSeed,
+        TantivyIndex(TantivyLexical::new(&settings.data_dir)),
     );
     Ok((pg, server))
 }
@@ -239,7 +242,8 @@ fn main() -> ExitCode {
                 workers: 2,
                 handler: Arc::new(handler),
             }];
-            let threads = workers::start(server.clone(), pools, stop.clone());
+            let mut threads = workers::start(server.clone(), pools, stop.clone());
+            threads.push(workers::start_projector(server.clone(), stop.clone()));
             let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
                 Ok(r) => r,
                 Err(e) => return fail(e),

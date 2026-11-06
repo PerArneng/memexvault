@@ -66,6 +66,7 @@ type App<E> = Arc<Server<E>>;
         get_rendition,
         list_segments,
         get_segment,
+        search_lexical,
         list_reanchor_failures,
         list_flagged_pages,
         get_lineage,
@@ -119,6 +120,8 @@ type App<E> = Arc<Server<E>>;
         memex_api::RenditionList,
         memex_api::RenditionDetail,
         memex_api::SegmentDto,
+        memex_api::LexicalHitDto,
+        memex_api::LexicalResultsDto,
         memex_api::SegmentPage,
         memex_api::ReanchorFailureDto,
         memex_api::ReanchorFailurePage,
@@ -172,6 +175,7 @@ where
         .route("/vaults/{id}/renditions/{rid}", get(get_rendition::<E>))
         .route("/vaults/{id}/renditions/{rid}/segments", get(list_segments::<E>))
         .route("/vaults/{id}/segments/{seg}", get(get_segment::<E>))
+        .route("/vaults/{id}/search/lexical", get(search_lexical::<E>))
         .route("/vaults/{id}/reanchor-failures", get(list_reanchor_failures::<E>))
         .route("/vaults/{id}/flagged-pages", get(list_flagged_pages::<E>))
         .route("/vaults/{id}/assertions/{aid}/lineage", get(get_lineage::<E>))
@@ -1113,6 +1117,23 @@ where
 {
     let row = authed(server, headers, &rid, move |s, c| s.get_segment(c, &VaultId(id), &memex_types::ObjectId(seg))).await?;
     Ok(Json(row.into()))
+}
+
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/search/lexical", tag = "search", params(("id" = String, Path), memex_api::LexicalSearchParams), responses((status = 200, body = memex_api::LexicalResultsDto), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody), (status = 503, body = ErrorBody)))]
+async fn search_lexical<E>(
+    State(server): State<App<E>>,
+    Extension(rid): Extension<RequestId>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(params): Query<memex_api::LexicalSearchParams>,
+) -> Result<Json<memex_api::LexicalResultsDto>, ApiError>
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
+    let (text, filter, limit) = params.validated().map_err(|m| ApiError::from_server(ServerError::Invalid(m), &rid.0))?;
+    let results = authed(server, headers, &rid, move |s, c| s.search_lexical(c, &VaultId(id), &text, filter, limit)).await?;
+    Ok(Json(results.into()))
 }
 
 #[utoipa::path(get, path = "/api/v1/vaults/{id}/reanchor-failures", tag = "renditions", params(("id" = String, Path), ListParams), responses((status = 200, body = memex_api::ReanchorFailurePage), (status = 404, body = ErrorBody)))]

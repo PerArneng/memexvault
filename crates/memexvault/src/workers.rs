@@ -1,7 +1,7 @@
 //! The worker pool: threads separate from request handling, with a limit per job kind.
 // Workers wait on wall time between polls, which is this edge's job.
 #![allow(clippy::disallowed_methods)]
-use memex_core::{Server, ServerEdges};
+use memex_core::{Server, ServerEdges, StepOutcome};
 use memex_types::{JobRow, Mutation, VaultId};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
@@ -91,6 +91,49 @@ where
     threads
 }
 
+/// Keeps every vault's keyword index following its log, in one thread of its own.
+pub fn start_projector<E>(server: Arc<Server<E>>, stop: Arc<AtomicBool>) -> JoinHandle<()>
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
+    std::thread::spawn(move || {
+        while !stop.load(Ordering::Relaxed) {
+            let pause = project_all(&server);
+            std::thread::sleep(pause);
+        }
+    })
+}
+
+/// Steps each vault once, and says how long to wait before the next round.
+fn project_all<E: ServerEdges>(server: &Server<E>) -> Duration {
+    let vaults = match server.vault_ids() {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(error = %e, "can't list vaults");
+            return Duration::from_secs(1);
+        }
+    };
+    let (mut busy, mut failed) = (false, false);
+    for vault in vaults {
+        match server.project_lexical(&vault) {
+            Ok(StepOutcome::Progress) => busy = true,
+            Ok(StepOutcome::Idle) => {}
+            Err(e) => {
+                tracing::warn!(vault = %vault, error = %e, "keyword index step failed, and will be retried");
+                failed = true;
+            }
+        }
+    }
+    if failed {
+        Duration::from_secs(1)
+    } else if busy {
+        Duration::ZERO
+    } else {
+        Duration::from_millis(50)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,6 +152,7 @@ mod tests {
         type Clock = ManualClock;
         type Seed = SeededRandom;
         type Rasterizer = memex_core::testing::FakeRasterizer;
+        type Lexical = memex_core::testing::MemLexical;
     }
 
     fn setup(n: u32) -> (Arc<Server<Fakes>>, memex_types::VaultId) {
@@ -118,6 +162,7 @@ mod tests {
             MemBlobStore::new(ManualClock::starting_at(0)),
             ManualClock::starting_at(1000),
             SeededRandom::new(5),
+            memex_core::testing::MemLexical::new(),
         ));
         let c = s.authenticate(&s.bootstrap("root").unwrap().token).unwrap();
         let v = s.create_vault(&c, "v").unwrap().id;

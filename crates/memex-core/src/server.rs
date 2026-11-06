@@ -5,9 +5,11 @@ use crate::{
     sources,
 };
 use crate::{ApplyError, BlobStore, BlobStoreError, Clock, Engine, Receipt, Registry, RegistryError, Seed, Store, StoreError, WriterLease};
+use crate::{LexicalIndex, LexicalProjector, ProjectError, StepOutcome};
 use memex_types::{
-    Audit, ChangeSetRow, ChangeSetState, Event, EventDraft, Grant, Header, JobRow, JobState, Mutation, ObjectId, Principal, PrincipalKind, Rect, RenditionRow,
-    RiskDecision, Row, RowKey, SegmentRow, SourceRow, Status, Table, TokenRow, ValidatorResult, VaultId, VaultRow,
+    Audit, ChangeSetRow, ChangeSetState, Event, EventDraft, Grant, Header, JobRow, JobState, LexicalError, LexicalFilter, LexicalResults, Mutation, ObjectId,
+    Principal, PrincipalKind, Rect, RenditionRow, RiskDecision, Row, RowKey, SegmentRow, SourceRow, Status, Table, TokenRow, ValidatorResult, VaultId,
+    VaultRow,
 };
 use serde_json::Value;
 use serde_json::json;
@@ -32,6 +34,7 @@ pub trait ServerEdges {
     type Clock: Clock;
     type Seed: Seed;
     type Rasterizer: Rasterizer + Default;
+    type Lexical: LexicalIndex;
 }
 
 #[derive(Debug)]
@@ -97,6 +100,12 @@ impl From<RegistryError> for ServerError {
 
 impl From<StoreError> for ServerError {
     fn from(e: StoreError) -> Self {
+        Self::Unavailable(e.to_string())
+    }
+}
+
+impl From<LexicalError> for ServerError {
+    fn from(e: LexicalError) -> Self {
         Self::Unavailable(e.to_string())
     }
 }
@@ -209,6 +218,8 @@ pub struct Server<E: ServerEdges> {
     blobs: E::Blobs,
     seed: E::Seed,
     rasterizer: E::Rasterizer,
+    lexical: E::Lexical,
+    projector: Mutex<LexicalProjector>,
     leases: Mutex<HashMap<VaultId, WriterLease>>,
     /// Decisions read state and then commit, so they run one at a time per vault. The writer lease stops other processes.
     write_locks: Mutex<HashMap<VaultId, Arc<Mutex<()>>>>,
@@ -232,13 +243,15 @@ fn check_name(name: &str) -> Result<(), ServerError> {
 }
 
 impl<E: ServerEdges> Server<E> {
-    pub fn new(registry: E::Registry, store: E::Store, blobs: E::Blobs, clock: E::Clock, seed: E::Seed) -> Self {
+    pub fn new(registry: E::Registry, store: E::Store, blobs: E::Blobs, clock: E::Clock, seed: E::Seed, lexical: E::Lexical) -> Self {
         Self {
             registry,
             engine: Engine::new(store, clock),
             blobs,
             seed,
             rasterizer: E::Rasterizer::default(),
+            lexical,
+            projector: Mutex::new(LexicalProjector::default()),
             leases: Mutex::new(HashMap::new()),
             write_locks: Mutex::new(HashMap::new()),
             machine_auto_commit: AtomicBool::new(false),
@@ -443,7 +456,36 @@ impl<E: ServerEdges> Server<E> {
         self.leases.lock().expect("lock").remove(id);
         self.engine.store().delete_vault(&lease)?;
         self.blobs.delete_vault(id)?;
+        self.projector.lock().expect("lock").forget(id);
+        self.lexical.delete_vault(id)?;
         Ok(())
+    }
+
+    /// Words and quoted phrases, with hits current as of this call even if the index hasn't caught up. Filters are the typed ones: there's no query syntax for them.
+    pub fn search_lexical(&self, caller: &Caller, vault: &VaultId, text: &str, filter: LexicalFilter, limit: usize) -> Result<LexicalResults, ServerError> {
+        self.allow(caller, Operation::VaultContentRead(vault))?;
+        self.vault_exists(vault)?;
+        let query = crate::lexical::build_query(text, filter, limit).map_err(|e| ServerError::Invalid(e.to_string()))?;
+        let results = self.lexical.search(vault, &query)?;
+        let snap = self.engine.store().snapshot(vault)?;
+        Ok(crate::lexical::fence_hits(&snap, results)?)
+    }
+
+    /// One bounded piece of keyword index work for this vault. Only the projector thread calls it.
+    pub fn project_lexical(&self, vault: &VaultId) -> Result<StepOutcome, ProjectError> {
+        self.projector
+            .lock()
+            .expect("lock")
+            .step(self.engine.store(), &self.lexical, self.engine.clock(), vault)
+    }
+
+    /// Builds a new keyword index generation. The current one keeps serving until it's ready.
+    pub fn rebuild_lexical(&self, vault: &VaultId) {
+        self.projector.lock().expect("lock").request_rebuild(vault);
+    }
+
+    pub fn lexical(&self) -> &E::Lexical {
+        &self.lexical
     }
 
     pub fn create_principal(&self, caller: &Caller, name: &str, kind: PrincipalKind, server_admin: bool) -> Result<Principal, ServerError> {
