@@ -75,6 +75,8 @@ The p95 varied between runs: exact on one value was 2.04 to 2.88 ms at 200k, and
 
 Reading of it: a primary-key read on this setup already misses 2 ms, and a snapshot alone takes three quarters of the budget or more (p95 1.33 to 1.87 ms across runs), and spec 020 also found exact lookups over target behind Docker. Exact filters on one value cost about what a primary-key read does. Returning 20 rows costs more, in decoding JSONB. I didn't change the snapshot, since that's outside this spec, so I haven't shown the target can be met. Spec 062 reviews latency, and a run on a quiet machine or native Postgres is the check still owed.
 
+**Rerun after all workers finished.** One run at 200k on a fresh database, with the pass rule set beforehand (both exact lanes ≤2 ms), load average 7 to 9, so still not a quiet machine: exact unique p95 2.28 ms, ~0.1% of entities 3.34 ms, primary-key read control 2.36 ms, snapshot control 1.64 ms. Item 6 still fails.
+
 **Not run.** `pg_kill_postgres`, `pg_bad_cases` (deferred to landing, as it ends advisory locks across the whole server), `pg_child` and `pg_job_child` (helpers run by their harness) and `pg_full_disk_returns_an_error_and_data_stays_readable` (needs a small disk). The change touches the commit path these cover only by adding a table.
 
 **Decisions.**
