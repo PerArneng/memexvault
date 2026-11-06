@@ -7,7 +7,7 @@ Guidance for AI coding agents working in this repository.
 memexvault is a knowledge base, or "second brain", for AI agents.
 
 The repository holds this file, the license, the spec-driven workflow, the console's
-workspace in `web/`, the backend's Cargo workspace in `crates/`, and specs 002-062, which plan
+workspace in `web/`, the backend's Cargo workspace in `crates/`, and the specs in `specs/`, which plan
 the backend and web console and record what's done.
 [docs/architecture.md](docs/architecture.md) holds the backend's shared design, and
 [docs/frontend-architecture.md](docs/frontend-architecture.md) holds the console's.
@@ -26,7 +26,7 @@ are source material, not decisions: treat their claims as unverified.
 
 ## Start here
 
-Run `uv run .claude/skills/spec-driven/scripts/spec-manager.py list` to see what
+Run `uv run .claude/skills/gh-spec-driven/scripts/gh-spec-manager.py list` to see what
 is in progress and what is next. Respect each spec's `Depends on` line: spec 032,
 the Postgres store, comes right after 009 despite its id. Specs 035 and 036 run
 alongside the backend, and each console screen follows its backend spec.
@@ -43,10 +43,16 @@ alongside the backend, and each console screen follows its backend spec.
 
 All non-trivial work is done from a spec. That covers new features, design and
 technology decisions, changes to behavior, and tooling. Fixing a typo or a small
-note doesn't need a spec. The `spec-driven` skill
-(`.claude/skills/spec-driven/SKILL.md`) has the full workflow. Its script
-`.claude/skills/spec-driven/scripts/spec-manager.py` is the only way to create and
-move specs, and it finds `<repo>/specs` from any directory.
+note doesn't need a spec. The `gh-spec-driven` skill
+(`.claude/skills/gh-spec-driven/SKILL.md`) has the full workflow. Its script
+`.claude/skills/gh-spec-driven/scripts/gh-spec-manager.py` is the only way to create
+specs and change their status, and it finds `<repo>/specs` from any directory.
+
+Every spec is a GitHub issue. The issue number is the spec's id, and the issue holds its
+status, so status is the same from every branch and worktree. `specs/<id>-<name>/` holds
+only the content and never moves. The workflow needs `gh` logged in with write access to
+the repo; the product doesn't depend on GitHub. The repo is public, so issues are too:
+keep them to what could appear in the repo, and don't create test issues on it.
 
 Each spec's Verification section states its own concrete check. Backend commands, from
 the repository root:
@@ -69,7 +75,7 @@ The console's commands run from `web/`: `pnpm install`, `pnpm build`,
 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm run licenses`, `pnpm run contrast`
 and `pnpm e2e`. Write down what was measured, not just that it was done.
 Run `check` before committing spec changes, and name the spec in the commit
-message (`spec 001: ...`).
+message (`spec #63: ...`). Older commits use `spec 063: ...`.
 
 ## License
 
