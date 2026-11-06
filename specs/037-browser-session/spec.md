@@ -66,7 +66,7 @@ A browser can sign in and use every API route with a session cookie, and the bin
 
 `whoami` over one connection, 1,000 requests each, second round: bearer p50 1.25 ms, p95 2.28 ms. Cookie p50 1.47 ms, p95 2.78 ms, from one more lookup. The console adds 744 KB to the binary's 61 MB.
 
-Postgres tests on `memex_s037`: 10 of 10 selected passed. Not run on the final code: `pg_kill_postgres` (kills the shared container), `pg_bad_cases` (terminates advisory-lock holders across the server, deferred to landing), `pg_child` and `pg_job_child` (helpers for harnesses) and `pg_full_disk_returns_an_error_and_data_stays_readable` (needs a small disk). None of them cover sessions, though `pg_bad_cases` runs against this schema.
+Postgres tests on `memex_s037`: 10 of 10 selected passed. Not run on the final code: `pg_kill_postgres` (kills the shared container), `pg_child` and `pg_job_child` (helpers for harnesses) and `pg_full_disk_returns_an_error_and_data_stays_readable` (needs a small disk). None of them cover sessions, though `pg_bad_cases` runs against this schema. At landing, merged with spec 59, `pg_bad_cases` passed alone on a fresh database with nothing else on the server, and the 10 selected Postgres tests and all workspace checks passed again.
 
 `pg_kill_jobs_200_times` first failed here: its cleanup deletes tokens, and sessions blocked that. Sessions now cascade with their token and principal, shown in SQL and by that test passing with a session row present.
 
