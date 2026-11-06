@@ -1,4 +1,4 @@
-use memex_types::{Audit, Principal, TokenRow, VaultId, VaultRow};
+use memex_types::{Audit, Principal, SessionRow, TokenRow, VaultId, VaultRow};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +38,13 @@ pub trait Registry {
     fn revoke_token(&self, id: &str, at_ms: i64, audit: &Audit) -> Result<(), RegistryError>;
     /// Not audited: it records use, and doesn't change what anyone can do.
     fn touch_token(&self, id: &str, at_ms: i64) -> Result<(), RegistryError>;
+
+    fn insert_session(&self, s: &SessionRow, audit: &Audit) -> Result<(), RegistryError>;
+    fn session_by_hash(&self, hash: &str) -> Result<Option<SessionRow>, RegistryError>;
+    /// `NotFound` if it's already gone.
+    fn delete_session(&self, hash: &str, audit: &Audit) -> Result<(), RegistryError>;
+    /// Removes sessions expired at this time, and says how many. Not audited: nothing can use them any more.
+    fn delete_expired_sessions(&self, now_ms: i64) -> Result<u64, RegistryError>;
 
     fn insert_vault(&self, v: &VaultRow, audit: &Audit) -> Result<(), RegistryError>;
     fn vault(&self, id: &VaultId) -> Result<Option<VaultRow>, RegistryError>;

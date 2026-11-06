@@ -39,6 +39,16 @@ pub const SERVER_MIGRATIONS: &[&str] = &[
     );
     ",
     "CREATE EXTENSION IF NOT EXISTS vector;",
+    "
+    CREATE TABLE memex_server.sessions (
+        hash text PRIMARY KEY,
+        token_id text COLLATE \"C\" NOT NULL REFERENCES memex_server.tokens,
+        principal_id text COLLATE \"C\" NOT NULL REFERENCES memex_server.principals,
+        created_at_ms bigint NOT NULL,
+        expires_at_ms bigint NOT NULL
+    );
+    CREATE INDEX ON memex_server.sessions (expires_at_ms);
+    ",
 ];
 
 pub const VAULT_MIGRATIONS: &[&str] = &[

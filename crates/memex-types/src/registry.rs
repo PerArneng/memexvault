@@ -49,6 +49,16 @@ pub struct TokenRow {
     pub revoked_at_ms: Option<i64>,
 }
 
+/// A browser session as stored. The session id itself is never stored, only its hash, and what it can do comes from its token on every request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionRow {
+    pub hash: String,
+    pub token_id: String,
+    pub principal_id: String,
+    pub created_at_ms: i64,
+    pub expires_at_ms: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VaultRow {
     pub id: VaultId,

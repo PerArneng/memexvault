@@ -1,6 +1,6 @@
 //! The contract any Registry must meet. Names must be unique to each run, since a real backend keeps them.
 use crate::{Registry, RegistryError};
-use memex_types::{Audit, Grant, Principal, PrincipalKind, Scope, TokenRow, VaultId, VaultRow};
+use memex_types::{Audit, Grant, Principal, PrincipalKind, Scope, SessionRow, TokenRow, VaultId, VaultRow};
 
 fn audit(action: &str) -> Audit {
     Audit {
@@ -108,4 +108,26 @@ pub fn run_all<R: Registry>(r: &R, tag: &str) {
     assert_eq!(log[0].action, "token.revoke");
     assert_eq!(log[1].action, "token.create");
     assert_eq!(log[0].actor, "contract");
+
+    // Sessions. Far-future expiries for these two, so sweeping can't touch a concurrent run's rows by accident.
+    let session = |hash: &str, expires_at_ms: i64| SessionRow {
+        hash: id(hash),
+        token_id: id("t1"),
+        principal_id: id("p2"),
+        created_at_ms: 10,
+        expires_at_ms,
+    };
+    let live = session("s-live", i64::MAX);
+    r.insert_session(&live, &audit("session.create")).expect("insert");
+    r.insert_session(&session("s-old", 100), &audit("session.create")).expect("insert");
+    assert_eq!(r.session_by_hash(&id("s-live")).expect("get"), Some(live));
+    assert_eq!(r.session_by_hash("no such hash").expect("get"), None);
+    assert!(r.delete_expired_sessions(100).expect("sweep") >= 1);
+    assert_eq!(r.session_by_hash(&id("s-old")).expect("get"), None);
+    assert!(r.session_by_hash(&id("s-live")).expect("get").is_some());
+    r.delete_session(&id("s-live"), &audit("session.end")).expect("delete");
+    assert_eq!(r.audit_log(1).expect("audit")[0].action, "session.end");
+    assert_eq!(r.session_by_hash(&id("s-live")).expect("get"), None);
+    assert_eq!(r.delete_session(&id("s-live"), &audit("x")), Err(RegistryError::NotFound));
+    assert_eq!(r.delete_expired_sessions(100).expect("sweep"), 0);
 }
