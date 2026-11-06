@@ -1,2 +1,12 @@
 .env
 research/
+
+target/
+specs/**/corpus/
+specs/**/out/
+specs/**/models/
+web/**/node_modules/
+web/**/dist/
+web/**/test-results/
+web/**/playwright-report/
+vendor/

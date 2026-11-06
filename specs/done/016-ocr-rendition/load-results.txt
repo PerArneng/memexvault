@@ -1,0 +1,4 @@
+idle {'n': 5101, 'p50': 4.92, 'p95': 7.91}
+queue (True, True)
+during OCR {'n': 13824, 'p50': 4.9, 'p95': 7.0} pending (True, True) ratio 0.88
+jobs done so far 7

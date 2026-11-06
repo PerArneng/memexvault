@@ -1,0 +1,17 @@
+test pg_tests::pg_batched_lookups ... lookups at 50000 rows: load 1 s, batch of 50 p50 0.64 ms p95 1.24 ms, single p95 0.93 ms
+lookups at 200000 rows: load 5 s, batch of 50 p50 0.73 ms p95 1.66 ms, single p95 1.09 ms
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 12.07s
+test pg_tests::pg_group_commit_throughput ... group commit: 1 producers, 20 s: 239 events/s, ack p50 3.55 ms, p95 7.89 ms
+group commit: 16 producers, 60 s: 2121 events/s, ack p50 6.77 ms, p95 15.89 ms
+group commit: 64 producers, 20 s: 7693 events/s, ack p50 8.23 ms, p95 15.44 ms
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 100.51s
+test pg_tests::pg_replay_of_100k_events_matches_mem_store ... replay: 34130 applied, 65870 refused by the reducer, 129 s, hash ab882472f4415967ff636d7ae7f92253add18061774a958b82c163146a062494
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 129.39s
+kill harness kill-app: 1000 cycles in 3.1 min, highest acknowledged 64976, lost 0, partial 0, gaps 0, reopen failures 0, recovery p95 0.0 s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 183.69s
+kill harness kill-pg: 100 cycles in 1.2 min, highest acknowledged 7224, lost 0, partial 0, gaps 0, reopen failures 0, recovery p95 0.6 s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 69.13s
+test pg_tests::pg_kill_jobs_200_times ... job kill harness: 200 cycles in 0.5 min, 1500 jobs: done 1500, dead 0, open 0, derived 1500, duplicates 0, derived with no done job 0, done with no derived 0, jobs with more than one attempt 339, cycles that stopped mid-way 165
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 64.94s
+test pg_tests::pg_full_disk_returns_an_error_and_data_stays_readable ... full disk: 5 commits, then: store backend: 53100: could not extend file "pg_tblspc/16385/PG_18_202506291/16384/16513": No space left on device
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 20 filtered out; finished in 0.93s

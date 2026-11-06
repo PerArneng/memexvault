@@ -1,0 +1,502 @@
+[
+{
+"file": "rotate270_crop",
+"page": 1,
+"quote": "exacta año exacta",
+"x0": 58.9302,
+"y0": 431.06,
+"x1": 68.1802,
+"y1": 512.22,
+"rotation": 270
+},
+{
+"file": "rotate270_crop",
+"page": 1,
+"quote": "sistema documentos señor",
+"x0": 70.9302,
+"y0": 400.51,
+"x1": 80.1802,
+"y1": 520.0,
+"rotation": 270
+},
+{
+"file": "cropbox_offset",
+"page": 0,
+"quote": "appears the exact",
+"x0": 45.600582,
+"y0": 186.829927,
+"x1": 125.097647,
+"y1": 196.214692,
+"rotation": 0
+},
+{
+"file": "rotate90",
+"page": 0,
+"quote": "varje till systemet",
+"x0": 407.785308,
+"y0": 215.63964,
+"x1": 417.170073,
+"y1": 292.324208,
+"rotation": 90
+},
+{
+"file": "rotate180_crop",
+"page": 1,
+"quote": "müller quelle müller",
+"x0": 163.31084,
+"y0": 177.785308,
+"x1": 250.010056,
+"y1": 187.170073,
+"rotation": 180
+},
+{
+"file": "rotate180_crop",
+"page": 0,
+"quote": "und jede quelle",
+"x0": 171.0501,
+"y0": 609.785308,
+"x1": 238.88701,
+"y1": 619.170073,
+"rotation": 180
+},
+{
+"file": "cropbox_offset",
+"page": 1,
+"quote": "the review every",
+"x0": 120.634757,
+"y0": 534.829927,
+"x1": 193.442371,
+"y1": 544.214692,
+"rotation": 0
+},
+{
+"file": "rotate90",
+"page": 0,
+"quote": "söktjänst att räksmörgås",
+"x0": 371.785308,
+"y0": 178.969719,
+"x1": 381.170073,
+"y1": 287.343737,
+"rotation": 90
+},
+{
+"file": "rotate90",
+"page": 1,
+"quote": "dokument spåra nämnda",
+"x0": 479.785308,
+"y0": 114.492182,
+"x1": 489.170073,
+"y1": 225.117175,
+"rotation": 90
+},
+{
+"file": "rotate90",
+"page": 0,
+"quote": "lagrar spåra till",
+"x0": 431.785308,
+"y0": 399.086892,
+"x1": 441.170073,
+"y1": 464.667944,
+"rotation": 90
+},
+{
+"file": "cropbox_offset",
+"page": 0,
+"quote": "original the original",
+"x0": 53.916011,
+"y0": 438.829927,
+"x1": 137.856437,
+"y1": 448.214692,
+"rotation": 0
+},
+{
+"file": "rotate90",
+"page": 0,
+"quote": "på nämnda räksmörgås",
+"x0": 419.785308,
+"y0": 232.861317,
+"x1": 429.170073,
+"y1": 337.915022,
+"rotation": 90
+},
+{
+"file": "cropbox_offset",
+"page": 0,
+"quote": "links affluent affluent",
+"x0": 121.75292,
+"y0": 306.829927,
+"x1": 212.919907,
+"y1": 316.214692,
+"rotation": 0
+},
+{
+"file": "rotate180_crop",
+"page": 0,
+"quote": "jede übergröße quelle",
+"x0": 7.192867,
+"y0": 417.785308,
+"x1": 104.4829,
+"y1": 427.170073,
+"rotation": 180
+},
+{
+"file": "rotate180_crop",
+"page": 1,
+"quote": "zurück prüfung speichert",
+"x0": 172.739553,
+"y0": 489.785308,
+"x1": 282.2415,
+"y1": 499.170073,
+"rotation": 180
+},
+{
+"file": "cropbox_offset",
+"page": 0,
+"quote": "after where to",
+"x0": 236.6378,
+"y0": 438.829927,
+"x1": 297.780374,
+"y1": 448.214692,
+"rotation": 0
+},
+{
+"file": "rotate270_crop",
+"page": 0,
+"quote": "el fuente está",
+"x0": 358.9302,
+"y0": 315.43,
+"x1": 368.1802,
+"y1": 375.47,
+"rotation": 270
+},
+{
+"file": "cropbox_offset",
+"page": 1,
+"quote": "review evidence system",
+"x0": 272.218852,
+"y0": 174.829927,
+"x1": 378.371192,
+"y1": 184.214692,
+"rotation": 0
+},
+{
+"file": "rotate180_crop",
+"page": 0,
+"quote": "system dokumente schließlich",
+"x0": 127.173147,
+"y0": 333.785308,
+"x1": 260.556931,
+"y1": 343.170073,
+"rotation": 180
+},
+{
+"file": "rotate270_crop",
+"page": 0,
+"quote": "corazón la con",
+"x0": 202.9302,
+"y0": 128.1,
+"x1": 212.1802,
+"y1": 193.13,
+"rotation": 270
+},
+{
+"file": "cropbox_offset",
+"page": 0,
+"quote": "claim region original",
+"x0": 333.337015,
+"y0": 546.829927,
+"x1": 422.267676,
+"y1": 556.214692,
+"rotation": 0
+},
+{
+"file": "rotate90",
+"page": 1,
+"quote": "att källan söktjänst",
+"x0": 407.785308,
+"y0": 261.196278,
+"x1": 417.170073,
+"y1": 343.461899,
+"rotation": 90
+},
+{
+"file": "rotate180_crop",
+"page": 0,
+"quote": "prüfung und speichert",
+"x0": 7.749508,
+"y0": 285.785308,
+"x1": 104.4829,
+"y1": 295.170073,
+"rotation": 180
+},
+{
+"file": "rotate180_crop",
+"page": 0,
+"quote": "führt müller jede",
+"x0": 32.783685,
+"y0": 165.785308,
+"x1": 104.4829,
+"y1": 175.170073,
+"rotation": 180
+},
+{
+"file": "rotate270_crop",
+"page": 1,
+"quote": "la año está",
+"x0": 166.9302,
+"y0": 345.47,
+"x1": 176.1802,
+"y1": 394.39,
+"rotation": 270
+},
+{
+"file": "rotate270_crop",
+"page": 1,
+"quote": "enlaza sistema cada",
+"x0": 190.9302,
+"y0": 332.13,
+"x1": 200.1802,
+"y1": 423.28,
+"rotation": 270
+},
+{
+"file": "rotate270_crop",
+"page": 0,
+"quote": "corazón la guarda",
+"x0": 346.9302,
+"y0": 317.11,
+"x1": 356.1802,
+"y1": 397.15,
+"rotation": 270
+},
+{
+"file": "rotate90",
+"page": 1,
+"quote": "systemet åtgärd göteborg",
+"x0": 443.785308,
+"y0": 357.353498,
+"x1": 453.170073,
+"y1": 470.751928,
+"rotation": 90
+},
+{
+"file": "table_es",
+"page": 0,
+"quote": "sistema 4544 sistema",
+"x0": 145.0,
+"y0": 553.447754,
+"x1": 276.007812,
+"y1": 561.894043,
+"rotation": 0
+},
+{
+"file": "two_column_en",
+"page": 0,
+"quote": "the fifty links",
+"x0": 152.851555,
+"y0": 400.719727,
+"x1": 207.871084,
+"y1": 410.104492,
+"rotation": 0
+},
+{
+"file": "two_column_en",
+"page": 1,
+"quote": "after to review",
+"x0": 452.253028,
+"y0": 760.719767,
+"x1": 515.055759,
+"y1": 770.104532,
+"rotation": 0
+},
+{
+"file": "two_column_en",
+"page": 1,
+"quote": "fifty after to",
+"x0": 433.918068,
+"y0": 760.719767,
+"x1": 483.380955,
+"y1": 770.104532,
+"rotation": 0
+},
+{
+"file": "one_column_sv",
+"page": 1,
+"quote": "räksmörgås dokument till",
+"x0": 131.157221,
+"y0": 316.719727,
+"x1": 242.30956,
+"y1": 326.104492,
+"rotation": 0
+},
+{
+"file": "table_es",
+"page": 0,
+"quote": "5785 afirmación 7015",
+"x0": 254.505371,
+"y0": 433.447754,
+"x1": 409.037106,
+"y1": 441.894043,
+"rotation": 0
+},
+{
+"file": "two_column_en",
+"page": 0,
+"quote": "and the documents",
+"x0": 348.874126,
+"y0": 100.719727,
+"x1": 433.932714,
+"y1": 110.104492,
+"rotation": 0
+},
+{
+"file": "three_column_de",
+"page": 1,
+"quote": "das müller straße",
+"x0": 395.5171,
+"y0": 220.719727,
+"x1": 472.76319,
+"y1": 230.104492,
+"rotation": 0
+},
+{
+"file": "one_column_sv",
+"page": 0,
+"quote": "på lagrar dokument",
+"x0": 290.683578,
+"y0": 256.719727,
+"x1": 376.845682,
+"y1": 266.104492,
+"rotation": 0
+},
+{
+"file": "table_es",
+"page": 0,
+"quote": "mañana 5956 la",
+"x0": 145.0,
+"y0": 73.447754,
+"x1": 252.004883,
+"y1": 81.894043,
+"rotation": 0
+},
+{
+"file": "one_column_sv",
+"page": 1,
+"quote": "går göteborg nämnda",
+"x0": 407.426735,
+"y0": 232.719727,
+"x1": 503.051728,
+"y1": 242.104492,
+"rotation": 0
+},
+{
+"file": "table_es",
+"page": 0,
+"quote": "cada 3393 está",
+"x0": 245.0,
+"y0": 313.447754,
+"x1": 362.011229,
+"y1": 321.894043,
+"rotation": 0
+},
+{
+"file": "three_column_de",
+"page": 0,
+"quote": "zur schließlich größere",
+"x0": 447.772956,
+"y0": 544.719727,
+"x1": 548.91553,
+"y1": 554.104492,
+"rotation": 0
+},
+{
+"file": "three_column_de",
+"page": 1,
+"quote": "quelle zurück prüfung",
+"x0": 249.989944,
+"y0": 196.719727,
+"x1": 345.605173,
+"y1": 206.104492,
+"rotation": 0
+},
+{
+"file": "three_column_de",
+"page": 0,
+"quote": "jede und äußerst",
+"x0": 74.448241,
+"y0": 124.719727,
+"x1": 149.497064,
+"y1": 134.104492,
+"rotation": 0
+},
+{
+"file": "three_column_de",
+"page": 0,
+"quote": "zurück äußerst zurück",
+"x0": 87.788083,
+"y0": 340.719727,
+"x1": 186.152336,
+"y1": 350.104492,
+"rotation": 0
+},
+{
+"file": "three_column_de",
+"page": 0,
+"quote": "jede äußerst prüfung",
+"x0": 217.7585,
+"y0": 448.719727,
+"x1": 310.038767,
+"y1": 458.104492,
+"rotation": 0
+},
+{
+"file": "three_column_de",
+"page": 1,
+"quote": "das aussage das",
+"x0": 40.0,
+"y0": 568.719727,
+"x1": 115.610347,
+"y1": 578.104492,
+"rotation": 0
+},
+{
+"file": "two_column_en",
+"page": 1,
+"quote": "evidence review system",
+"x0": 410.011819,
+"y0": 52.719727,
+"x1": 516.164159,
+"y1": 62.104492,
+"rotation": 0
+},
+{
+"file": "one_column_sv",
+"page": 1,
+"quote": "påstående på disk",
+"x0": 409.692358,
+"y0": 76.719727,
+"x1": 490.864228,
+"y1": 86.104492,
+"rotation": 0
+},
+{
+"file": "two_column_en",
+"page": 0,
+"quote": "review every stores",
+"x0": 152.270502,
+"y0": 100.719727,
+"x1": 238.408194,
+"y1": 110.104492,
+"rotation": 0
+},
+{
+"file": "one_column_sv",
+"page": 0,
+"quote": "åtgärd åtgärd disk",
+"x0": 40.0,
+"y0": 280.719727,
+"x1": 120.048823,
+"y1": 290.104492,
+"rotation": 0
+}
+]

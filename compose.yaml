@@ -1,0 +1,16 @@
+# Development Postgres with pgvector. Docker is a convenience, not a product requirement.
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg18
+    environment:
+      POSTGRES_PASSWORD: memex
+      POSTGRES_DB: memex
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    command: >
+      postgres -c shared_buffers=2GB -c effective_cache_size=5GB -c max_connections=64
+    shm_size: 2g
+volumes:
+  pgdata:

@@ -6,8 +6,9 @@ Guidance for AI coding agents working in this repository.
 
 memexvault is a knowledge base, or "second brain", for AI agents.
 
-The repository holds this file, the license, the spec-driven workflow, and no
-product code yet. The backend and web console are planned in specs 002-051.
+The repository holds this file, the license, the spec-driven workflow, the console's
+workspace in `web/`, the backend's Cargo workspace in `crates/`, and specs 002-060, which plan
+the backend and web console and record what's done.
 [docs/architecture.md](docs/architecture.md) holds the backend's shared design, and
 [docs/frontend-architecture.md](docs/frontend-architecture.md) holds the console's.
 
@@ -47,8 +48,21 @@ note doesn't need a spec. The `spec-driven` skill
 `.claude/skills/spec-driven/scripts/spec-manager.py` is the only way to create and
 move specs, and it finds `<repo>/specs` from any directory.
 
-No build or test commands exist yet, so each spec's Verification section states
-its own concrete check. Write down what was measured, not just that it was done.
+Each spec's Verification section states its own concrete check. Backend commands, from
+the repository root:
+
+- First time: `scripts/fetch-pdfium.sh`, which puts the pinned static pdfium in `vendor/`.
+- `cargo build --workspace`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo fmt --check` and `cargo deny check licenses`.
+- Tests that need Postgres are ignored by default, so they show as not run rather than passed: `docker compose up -d`, then
+  `MEMEX_TEST_DATABASE_URL=postgres://postgres:memex@127.0.0.1:55432/memex cargo test -p memexvault --release -- --ignored --test-threads=1 pg_`.
+  The `pg_kill_postgres` test also needs `MEMEX_TEST_CONTAINER=memexvault-postgres-1` and kills that container repeatedly.
+- OCR tests are ignored unless `MEMEX_TEST_MODELS` names a folder of model files: `cargo test -p memexvault --release --test pdf_pipeline -- --ignored --test-threads=1`.
+- The binary: `memexvault migrate`, `memexvault bootstrap <name>`, `memexvault models fetch` and `memexvault serve`, with `MEMEX_DATABASE_URL` set.
+
+The console's commands run from `web/`: `pnpm install`, `pnpm build`,
+`pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm run licenses`, `pnpm run contrast`
+and `pnpm e2e`. Write down what was measured, not just that it was done.
 Run `check` before committing spec changes, and name the spec in the commit
 message (`spec 001: ...`).
 

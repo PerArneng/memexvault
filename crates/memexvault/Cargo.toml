@@ -1,0 +1,29 @@
+[package]
+name = "memexvault"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+memex-blob-fs = { path = "../memex-blob-fs" }
+getrandom.workspace = true
+sha2.workspace = true
+ureq = "3"
+memex-core.workspace = true
+memex-http.workspace = true
+memex-ocr.workspace = true
+memex-pdf = { path = "../memex-pdf" }
+memex-store-postgres = { path = "../memex-store-postgres" }
+memex-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+postgres.workspace = true
+
+[lints]
+workspace = true

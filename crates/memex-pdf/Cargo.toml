@@ -1,0 +1,18 @@
+[package]
+name = "memex-pdf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+memex-types.workspace = true
+pdfium-render = { version = "=0.9.5", default-features = false, features = ["static", "pdfium_7881", "libc++", "core_graphics", "image_latest", "thread_safe"] }
+
+[dev-dependencies]
+memex-core.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

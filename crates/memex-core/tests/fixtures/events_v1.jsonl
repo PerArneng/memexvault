@@ -1,0 +1,5 @@
+{"seq":0,"vault":"golden","actor":"alice","time_ms":1000,"kind":"source.recorded","schema_version":1,"payload":{"id":"s1","sha256":"aa","trust_tier":"trusted"}}
+{"seq":1,"vault":"golden","actor":"alice","time_ms":2000,"kind":"page.created","schema_version":1,"payload":{"id":"p1","title":"Göteborg","body":"Staden ligger vid Göta älv."}}
+{"seq":2,"vault":"golden","actor":"bob","time_ms":3000,"kind":"page.edited","schema_version":1,"payload":{"id":"p1","base_version":1,"body":"Andra versionen."}}
+{"seq":3,"vault":"golden","actor":"bob","time_ms":4000,"kind":"edge.linked","schema_version":1,"payload":{"id":"e1","from":"p1","to":"s1","kind":"cites"}}
+{"seq":4,"vault":"golden","actor":"bob","time_ms":5000,"kind":"source.recorded","schema_version":1,"payload":{"id":"s2","sha256":"bb","trust_tier":"unverified"}}

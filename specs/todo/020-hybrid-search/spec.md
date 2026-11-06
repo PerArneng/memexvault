@@ -17,7 +17,7 @@ There is no LLM on the read path. The calling agent does the generating.
 
 ## Approach
 - A pure rule-based planner: exact lookup, identifier-heavy, natural-language, or filtered.
-- Parallel candidate generation, then Reciprocal Rank Fusion (default k=60), then opt-in reranking of the top 50.
+- Parallel candidate generation, then Reciprocal Rank Fusion (default k=60), then opt-in reranking of the top 20 at 128 tokens (spec 005, assumption under review in 055).
 - Typed filters: kind, type, source, trust tier, epistemic status, valid time.
 - Fence all hits against store status with one batched lookup. Support `as_of` and `min_seq`.
 - An evidence package with claims first, then segments, then parent sections. Each item has anchors, epistemic status, trust

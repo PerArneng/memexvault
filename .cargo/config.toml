@@ -1,0 +1,3 @@
+# Where pdfium-render finds the statically linked pdfium. scripts/fetch-pdfium.sh puts it there.
+[env]
+PDFIUM_STATIC_LIB_PATH = { value = "vendor/pdfium/release/lib", relative = true }

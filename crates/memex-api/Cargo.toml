@@ -1,0 +1,15 @@
+[package]
+name = "memex-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+memex-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+utoipa.workspace = true
+
+[lints]
+workspace = true

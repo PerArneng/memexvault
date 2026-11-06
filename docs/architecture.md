@@ -26,14 +26,19 @@ stack, and the numbers here are our own targets to measure.
 | Language | Rust, structured by the `rust-architecture` skill. Third-party crates are allowed. |
 | Storage | An event log and relational tables in [PostgreSQL](#postgresql), behind a trait. Blobs are content-addressed files in folders. Search libraries and pgvector are allowed. See [Backends](#backends). |
 | AI location | OCR, embeddings and reranking default to in-process from local model files. Extraction and review agents call an LLM over HTTP (Gemini or a local OpenAI-compatible server). Transcription has local and API options. Every AI edge is a trait, so any of them can call a remote service. |
-| Agent runtime | ADK-Rust, confined to one edge crate behind our own trait. |
+| Agent runtime | ADK-Rust `=2.3.0`, confined to one edge crate behind our own trait. Schema-only output reached 100/100 valid on Gemini and local vLLM. Extraction turns model thinking off. See spec 007. |
 | Access | One server, several isolated vaults, tokens with per-vault read/propose/admin scopes, all writes attributed. No per-object ACLs, but a nullable `acl_id` leaves room. |
+| PDF | `pdfium-render` on a statically linked pdfium, for text, word boxes and page images. We group characters into words. It runs in child worker processes that contain crashes and hangs. See spec 002, and specs 052 and 053 for assumptions under review. |
+| OCR | `oar-ocr` with the PP-OCRv6 small detector and PP-OCRv5 Latin recognizer, 17 MB. One child process per page at 2 threads, two at a time, about 21 pages/min, with reads unaffected. Word boxes are grouped from its character boxes, and we order columns ourselves. See specs 003 and 016, 054 for old prints, and 060 for hidden-text sampling. |
+| Embeddings | `multilingual-e5-small`, 384 dimensions, MIT, on ONNX Runtime through `ort` on CPU, shared with OCR. Query p95 9.4 ms on 4 threads, 40 passages/s. nDCG@10 on a 434-topic Wikipedia set: en 0.936, sv 0.897, de 0.913, es 0.911, cross-language 0.832. See spec 005. |
+| Reranking | Opt-in. `mmarco-mMiniLMv2-L12-H384-v1` int8, Apache-2.0, on the top 20 at 128 tokens, p95 133 ms. No local model met the rerank-50 target. See specs 005 and 055. |
+| Vector index | pgvector 0.8.7: `halfvec(384)`, inner product, HNSW `m=16, ef_construction=128`. Unfiltered and wide filters use `ef_search=300`, recall 0.974 at p95 9.6 ms at 200k. Up to about 12,000 estimated matches, an exact scan through a B-tree. Filters matching 6 to 20% of rows have a revised target, recall ≥0.93 and p95 ≤20 ms. See specs 004 and 057. |
 | Model files | Installed explicitly with a `models fetch` command using pinned hashes. The server never downloads at runtime and works offline afterwards, apart from LLM calls. |
 
 Working assumptions: about 1M segments per vault, roughly 200,000 pages, on one machine (reference: M1 Max, 32 GB), and
 the [languages](#languages) below.
 
-Operators run Postgres and nothing else. No other server or system library is needed, and AI calls are the only other
+Operators run Postgres and nothing else. No other server or system library is needed (libc++ and OS frameworks excepted), and AI calls are the only other
 network dependency. Without the LLM endpoint, search, reading and upload still work, and extraction jobs wait and retry.
 
 ## Crates
@@ -46,14 +51,14 @@ crates/
   memex-store-postgres/ edge: Store on PostgreSQL
   memex-blob-fs/      edge: content-addressed blob folders
   memex-lexical/      edge: tantivy
-  memex-vector/       edge: vector index, pgvector preferred (provisional, spec 004)
-  memex-pdf/          edge: PDF text, coordinates, rasterizing (provisional, spec 002)
-  memex-ocr/          edge: OCR engine (provisional, spec 003)
-  memex-inference/    edge: embeddings and reranking (provisional, spec 005)
+  memex-vector/       edge: vector index on pgvector (spec 004)
+  memex-pdf/          edge: PDF text, coordinates, rasterizing on statically linked pdfium, in worker processes (specs 002, 015)
+  memex-ocr/          edge: oar-ocr on statically linked ONNX Runtime, in worker processes (specs 003, 016)
+  memex-inference/    edge: embeddings and reranking on ONNX Runtime through ort (spec 005)
   memex-asr/          edge: transcription (provisional, spec 027)
   memex-agent-adk/    edge: the only crate that depends on ADK-Rust
   memex-cache/        edge: RAM and disk caches
-  memex-http/         frontend: axum, and serves the embedded web console
+  memex-http/         frontend: axum, with routes through provenance so far, and serves the embedded web console from spec 037
   memex-mcp/          frontend: rmcp
   memexvault/         binary: the single composition root and the trait wrappers
 ```
@@ -75,9 +80,11 @@ Postgres is the system of record and the one required external system.
   whole vault be a schema drop.
 - **Migrations** are versioned SQL embedded in the binary and run by an explicit `migrate` command. The server refuses to
   start on a schema version it doesn't know.
-- **Client.** A pure-Rust client with no `libpq`, chosen in spec 006, so the binary needs no extra system library.
-- **Durability checks.** The server refuses to start if `fsync` or `synchronous_commit` is off.
+- **Client.** The `postgres` crate, pure Rust with no `libpq`, so the binary needs no extra system library. See spec 006. No TLS yet, which suits the same-machine default (spec 059).
+- **Durability checks.** The server refuses to start if `fsync` or `synchronous_commit` is off. It can't see whether a flush reaches the drive. Docker Desktop's doesn't appear to, so it's for development. Native macOS needs `wal_sync_method=fsync_writethrough`. See specs 006 and 058.
+- **Group commit.** A commit per event reaches about 400 events/s and a batch of 10 about 3,500, so one writer per vault batches what's waiting.
 - **Secrets.** The connection URL arrives through `Settings` and is redacted from logs and status output.
+- **Memory.** At 1M segments, `shared_buffers` of at least 2.5 GB for vector search, `maintenance_work_mem` of 1.5 GB for index builds, and `VACUUM` on vector tables runs in the background, as it took over 6 minutes after deleting 40,000 of 200,000 rows.
 - **Availability.** If Postgres is down, API calls return 503 and never serve unfenced results. Writers retry, and jobs wait.
 
 ## Backends
@@ -90,7 +97,7 @@ is a startup error.
 | `Store` | Postgres | Another SQL database, with its own SQL behind the same trait |
 | `BlobStore` | Folders on disk | S3-compatible object storage |
 | `LexicalIndex` | tantivy | OpenSearch, Postgres full-text |
-| `VectorIndex` | pgvector if it passes spec 004 | Embedded index, Qdrant |
+| `VectorIndex` | pgvector | `usearch` (measured in spec 004), Qdrant |
 | `Embedder`, `Reranker`, `Ocr`, `Transcriber` | Local | Remote AI services |
 
 Only the composition root knows the concrete types. A trait with several implementations gets an enum there, with one variant
@@ -103,7 +110,7 @@ contract suite per trait runs against the fake and every implementation, and pas
 - **`Store`:** typed reads on a consistent snapshot, batched lookups, and `commit(event, mutations)`, which is atomic and
   durable when it returns. `open_vault` takes an exclusive writer lease and refuses a second writer. `compact` physically
   removes deleted data for erasure.
-- **`BlobStore`:** streaming put that's durable and atomically visible on return, streaming and range reads, delete, and
+- **`BlobStore`:** the default layout is `<data>/vaults/<vault-id>/blobs/ab/cd/<sha256>`, with `indexes/<kind>/gen-<n>/`, `cache/` and `tmp/` beside it. Streaming put that's durable and atomically visible on return, streaming and range reads, delete, and
   listing with age for the sweep.
 - **`LexicalIndex`, `VectorIndex`:** typed queries and filters instead of engine syntax, idempotent upsert and delete by
   object id, a durable watermark, and building a new generation to flip to.
@@ -254,7 +261,7 @@ Intent is classified by deterministic rules, with no LLM on the read path:
 1. Exact id or field lookups go straight to the store.
 2. Otherwise lexical and vector candidates, plus entity lookup, are fused with Reciprocal Rank Fusion.
 3. Optional k-hop expansion over Edges for relational queries.
-4. Optional cross-encoder rerank of the top 50.
+4. Optional cross-encoder rerank of the top 20.
 5. Hits are fenced, then assembled into a token-budgeted evidence package with claims first, citations, conflicts and
    trust notes.
 
@@ -307,7 +314,7 @@ measurement: only spec 033 proves the 1M goal.
 | Exact lookup p95 | ≤2 ms |
 | Lexical search p95 | ≤15 ms |
 | Hybrid without rerank p95 | ≤50 ms |
-| Hybrid with rerank-50 p95 (opt-in) | ≤300 ms |
+| Hybrid with rerank-20 p95 (opt-in) | ≤300 ms |
 | Cached query p95 | ≤1 ms |
 | Search p95 during ingest | ≤1.5× idle |
 | Group commit | ≥1k events/s |

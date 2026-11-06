@@ -1,0 +1,10 @@
+# The IO rule: pure code can't reach the clock, environment, files or terminal. Edge crates opt out with a reason.
+disallowed-methods = [
+  "std::env::var", "std::env::var_os", "std::env::vars", "std::env::args",
+  "std::time::Instant::now", "std::time::Instant::elapsed",
+  "std::time::SystemTime::now", "std::time::SystemTime::elapsed",
+  "std::thread::sleep", "std::sync::mpsc::Receiver::recv_timeout",
+  "std::fs::read", "std::fs::read_to_string", "std::fs::read_dir", "std::fs::write",
+  "std::fs::File::open", "std::fs::File::create",
+]
+disallowed-macros = ["std::println", "std::eprintln", "std::print", "std::eprint", "std::dbg"]

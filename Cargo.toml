@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+memex-types = { path = "crates/memex-types" }
+memex-core = { path = "crates/memex-core" }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query"] }
+getrandom = "0.3"
+memex-ocr = { path = "crates/memex-ocr" }
+memex-api = { path = "crates/memex-api" }
+memex-http = { path = "crates/memex-http" }
+postgres = { version = "0.19", features = ["with-serde_json-1"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = { version = "0.10", default-features = false }
+whatlang = "0.18"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "macros"] }
+tower = { version = "0.5", features = ["util"] }
+tracing = "0.1"
+utoipa = { version = "6", features = ["axum_extras"] }
+tracing-subscriber = "0.3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
