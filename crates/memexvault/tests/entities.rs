@@ -247,7 +247,7 @@ fn pg_entity_merge_and_revert_restore_rows_values_and_redirects() {
             .collect()
     };
     let before = dump_entities();
-    assert_eq!(found("pumps"), [a.clone()]);
+    assert_eq!(found("pumps"), std::slice::from_ref(&a));
     let o = r.s.propose_merge(&r.admin, &r.v, &a, &b, "same".into(), "m".into()).unwrap();
     let cs = o.changeset.unwrap();
     assert_eq!(cs.state, ChangeSetState::Pending);
@@ -262,8 +262,8 @@ fn pg_entity_merge_and_revert_restore_rows_values_and_redirects() {
     assert_eq!(found("valves").len() + found("pumps").len(), 1);
     r.s.revert(&r.admin, &r.v, &cs.header.id, "no".into()).unwrap();
     assert_eq!(dump_entities(), before, "every row is back exactly");
-    assert_eq!(found("pumps"), [a.clone()], "and so are the values filters read");
-    assert_eq!(found("valves"), [b.clone()]);
+    assert_eq!(found("pumps"), std::slice::from_ref(&a), "and so are the values filters read");
+    assert_eq!(found("valves"), std::slice::from_ref(&b));
     assert_eq!(r.s.entity_redirect(&r.admin, &r.v, &a).unwrap().current_id, a);
     // The log replays to the same state on the fake, which is the portable-export promise.
     let snap = store.snapshot(&r.v).unwrap();

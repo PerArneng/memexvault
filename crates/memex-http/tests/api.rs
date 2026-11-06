@@ -713,9 +713,9 @@ async fn typed_filters_find_entities_and_bad_ones_say_why() {
     let (_, all, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget"), t, None).await;
     assert_eq!(ids(&all), [cheap.clone(), dear.clone()]);
     let (_, under, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&filter=price:lt:100"), t, None).await;
-    assert_eq!(ids(&under), [cheap.clone()]);
+    assert_eq!(ids(&under), std::slice::from_ref(&cheap));
     let (_, exact, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&filter=name:eq:VALVE"), t, None).await;
-    assert_eq!(ids(&exact), [dear.clone()], "text compares folded");
+    assert_eq!(ids(&exact), std::slice::from_ref(&dear), "text compares folded");
     let (_, both, _) = call(
         &w.s,
         "GET",
@@ -724,12 +724,12 @@ async fn typed_filters_find_entities_and_bad_ones_say_why() {
         None,
     )
     .await;
-    assert_eq!(ids(&both), [cheap.clone()]);
+    assert_eq!(ids(&both), std::slice::from_ref(&cheap));
     let (_, page, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&limit=1"), t, None).await;
-    assert_eq!(ids(&page), [cheap.clone()]);
+    assert_eq!(ids(&page), std::slice::from_ref(&cheap));
     let cursor = page["next_cursor"].as_str().unwrap();
     let (_, rest, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&limit=1&cursor={cursor}"), t, None).await;
-    assert_eq!(ids(&rest), [dear.clone()]);
+    assert_eq!(ids(&rest), std::slice::from_ref(&dear));
     for bad in [
         "filter=price:lt:cheap",
         "filter=notes:eq:x",

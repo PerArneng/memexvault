@@ -208,7 +208,7 @@ fn a_new_type_is_found_by_text_exact_and_filter_with_no_restart() {
     // Exact id, and exact identity value as the third signal.
     let p = w.s.search(&w.admin, &w.v, &SearchRequest::new(id.0.clone())).unwrap();
     assert_eq!(p.path, memex_types::QueryPath::Exact);
-    assert_eq!(ids(&p.items, ItemKind::Entity), [id.0.clone()]);
+    assert_eq!(ids(&p.items, ItemKind::Entity), std::slice::from_ref(&id.0));
     let mut r = SearchRequest::new("zephyr   pump");
     r.mode = SearchMode::Vector;
     assert!(ids(&w.s.search(&w.admin, &w.v, &r).unwrap().items, ItemKind::Entity).contains(&id.0));
@@ -220,7 +220,7 @@ fn a_new_type_is_found_by_text_exact_and_filter_with_no_restart() {
     assert_eq!(found.len(), 2, "{found:?}");
     let f = |field: &str, op: &str, value: &str| (field.to_string(), op.to_string(), value.to_string());
     let under = w.s.list_entities(&w.admin, &w.v, "Widget", &[f("price", "lt", "100")], None, 10).unwrap();
-    assert_eq!(under.iter().map(|e| e.header.id.clone()).collect::<Vec<_>>(), [id.clone()]);
+    assert_eq!(under.iter().map(|e| e.header.id.clone()).collect::<Vec<_>>(), std::slice::from_ref(&id));
     let named =
         w.s.list_entities(&w.admin, &w.v, "Widget", &[f("name", "eq", "PLAIN  valve")], None, 10)
             .unwrap();
@@ -231,7 +231,7 @@ fn a_new_type_is_found_by_text_exact_and_filter_with_no_restart() {
         field: "color".into(),
     });
     let p = w.s.search(&w.admin, &w.v, &r).unwrap();
-    assert_eq!(ids(&p.items, ItemKind::Entity), [id.0.clone()]);
+    assert_eq!(ids(&p.items, ItemKind::Entity), std::slice::from_ref(&id.0));
     r.filter.attr = Some(memex_types::AttrScope {
         type_name: "Widget".into(),
         field: "name".into(),
@@ -508,12 +508,12 @@ fn a_merge_and_its_revert_restore_the_state_and_old_ids_redirect_while_merged() 
     // Old id redirects, and the target has both sets of claims, with the conflict visible.
     let r = w.s.entity_redirect(&w.admin, &w.v, &a).unwrap();
     assert_eq!(r.current_id, b);
-    assert_eq!(r.chain, [a.clone()]);
+    assert_eq!(r.chain, std::slice::from_ref(&a));
     let view = w.s.get_entity(&w.admin, &w.v, &a).unwrap();
     assert_eq!(view.entity.header.id, b);
     assert_eq!(view.redirected_from, Some(a.clone()));
     assert_eq!(view.entity.field("price").unwrap().others.len(), 1);
-    assert_eq!(view.entity.merged_from, [a.clone()]);
+    assert_eq!(view.entity.merged_from, std::slice::from_ref(&a));
     // A merged entity is out of lists, filters, values and the index.
     let f = ("name".to_string(), "eq".to_string(), "pump".to_string());
     assert_eq!(w.s.list_entities(&w.admin, &w.v, "Widget", &[], None, 10).unwrap().len(), 1);
@@ -530,7 +530,7 @@ fn a_merge_and_its_revert_restore_the_state_and_old_ids_redirect_while_merged() 
             10,
         )
         .unwrap();
-    assert_eq!(hits.hits.iter().map(|h| h.id.clone()).collect::<Vec<_>>(), [b.clone()]);
+    assert_eq!(hits.hits.iter().map(|h| h.id.clone()).collect::<Vec<_>>(), std::slice::from_ref(&b));
     // Merging an already merged entity, or into itself, is refused.
     assert!(matches!(w.s.propose_merge(&w.human, &w.v, &b, &b, "r".into(), "m2".into()), Ok(o) if state(&o) == ChangeSetState::Rejected));
     let o2 = w.s.propose_merge(&w.human, &w.v, &a, &b, "r".into(), "m3".into()).unwrap();
