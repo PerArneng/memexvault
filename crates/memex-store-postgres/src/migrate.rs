@@ -42,8 +42,8 @@ pub const SERVER_MIGRATIONS: &[&str] = &[
     "
     CREATE TABLE memex_server.sessions (
         hash text PRIMARY KEY,
-        token_id text COLLATE \"C\" NOT NULL REFERENCES memex_server.tokens,
-        principal_id text COLLATE \"C\" NOT NULL REFERENCES memex_server.principals,
+        token_id text COLLATE \"C\" NOT NULL REFERENCES memex_server.tokens ON DELETE CASCADE,
+        principal_id text COLLATE \"C\" NOT NULL REFERENCES memex_server.principals ON DELETE CASCADE,
         created_at_ms bigint NOT NULL,
         expires_at_ms bigint NOT NULL
     );
