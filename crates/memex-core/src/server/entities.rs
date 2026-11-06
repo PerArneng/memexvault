@@ -206,6 +206,7 @@ impl<E: ServerEdges> Server<E> {
         Ok(TypeDecision { preview, risk })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn propose_entity_type(
         &self,
         caller: &Caller,

@@ -70,6 +70,8 @@ fn pg_contract() {
         "many",
         "page",
         "compact",
+        "sections",
+        "entity",
         "batch",
         "iso-a",
         "iso-b",

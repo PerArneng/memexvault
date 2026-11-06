@@ -517,6 +517,11 @@ where
         if req.rerank || req.min_seq.is_some() {
             return Err(ServerError::Invalid("as_of can't be combined with rerank or min_seq".into()));
         }
+        if req.filter.attr.is_some() {
+            return Err(ServerError::Invalid(
+                "as_of scans whole documents, so it can't search within an entity field".into(),
+            ));
+        }
         return search_past(e.store, e.clock, vault, req, &plan, offset);
     }
     let mut stages = Stages::new(e.clock, req.debug);

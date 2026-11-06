@@ -483,7 +483,8 @@ pub fn touches_entities(ops: &[Op]) -> bool {
     ops.iter().any(|op| match op {
         Op::DefineEntityType { .. } | Op::CreateEntity { .. } | Op::SetEntityAliases { .. } | Op::MergeEntities { .. } | Op::SplitEntity { .. } => true,
         Op::AddAssertion { subject, .. } => entity_of_subject(subject).is_some(),
-        Op::SupersedeAssertion { replacement, .. } => touches_entities(std::slice::from_ref(replacement)),
+        // The claim it replaces may be about an entity, which only a read can tell.
+        Op::SupersedeAssertion { .. } => true,
         _ => false,
     })
 }
@@ -970,6 +971,11 @@ impl<S: Snapshot> Work<'_, S> {
             let Mutation::Put(Row::Assertion(a)) = m else { continue };
             if a.header.status != Status::Active {
                 gone.insert(&a.header.id);
+                // Its entity loses it, whatever the claim replacing it is about.
+                if let Some(id) = entity_of_subject(&a.subject) {
+                    let at = self.current_id(&id)?;
+                    self.to_materialize.insert(at);
+                }
                 continue;
             }
             new_claims.push(a);

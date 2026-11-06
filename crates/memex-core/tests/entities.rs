@@ -1065,6 +1065,58 @@ fn replaying_the_log_gives_the_same_state() {
 }
 
 #[test]
+fn moving_a_claim_away_from_an_entity_updates_that_entity() {
+    let w = world();
+    define(&w, &w.human, "Widget", None, widget_v1(), "t");
+    let (a, _) = new_widget(&w, &w.human, "e", vec![field("name", json!("A")), field("price", json!(5))]);
+    let claim = w.s.get_entity(&w.admin, &w.v, &a).unwrap().entity.field("price").unwrap().assertion_id.clone();
+    let replacement = Op::AddAssertion {
+        id: ObjectId("plain".into()),
+        subject: "a free-standing subject".into(),
+        predicate: "price".into(),
+        value: json!(5),
+        epistemic: memex_types::Epistemic::Asserted,
+        machine: false,
+        confidence_permille: 0,
+        valid_from_ms: None,
+        valid_to_ms: None,
+        evidence: vec![],
+    };
+    let op = Op::SupersedeAssertion {
+        target: claim,
+        base_version: 1,
+        replacement: Box::new(replacement),
+    };
+    let o =
+        w.s.propose(
+            &w.human,
+            &w.v,
+            Proposal {
+                ops: vec![op],
+                rationale: "r".into(),
+                idempotency_key: "m".into(),
+            },
+            false,
+        )
+        .unwrap();
+    assert_eq!(state(&o), ChangeSetState::Committed, "{:?}", o.validators);
+    assert!(w.s.get_entity(&w.admin, &w.v, &a).unwrap().entity.field("price").is_none());
+}
+
+#[test]
+fn a_past_state_refuses_a_field_scope_it_could_not_honour() {
+    let w = world();
+    define(&w, &w.human, "Widget", None, widget_v1(), "t");
+    let mut r = SearchRequest::new("x");
+    r.as_of = Some(memex_types::AsOf::Seq(0));
+    r.filter.attr = Some(memex_types::AttrScope {
+        type_name: "Widget".into(),
+        field: "name".into(),
+    });
+    assert!(matches!(w.s.search(&w.admin, &w.v, &r), Err(ServerError::Invalid(_))));
+}
+
+#[test]
 fn a_retried_creation_gets_the_first_id() {
     let w = world();
     define(&w, &w.human, "Widget", None, widget_v1(), "t");

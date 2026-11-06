@@ -65,6 +65,8 @@ pub struct IndexDoc {
     pub attrs: Vec<AttrValue>,
 }
 
+// Ops are written in small batches on a path that does IO, so the size of the larger variant doesn't matter here.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IndexOp {
     /// Replaces any document with this id.
