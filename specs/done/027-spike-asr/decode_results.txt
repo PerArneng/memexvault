@@ -1,0 +1,66 @@
+file | codec | ch | rate | dur s | gaps | bad | lag at 30 s / mid / end ms | expected | decode x realtime | rss MB
+en_5m.wav | AudioCodecId(264) | 1 | 22050 | 300.00 | 0/0 ms | 0 | 0.0 / 0.0 / 0.0 | 0 | 2663 | 72
+en_5m.mp3 | AudioCodecId(4102) | 1 | 22050 | 300.00 | 0/0 ms | 0 | -2.1 / -2.1 / -2.1 | 0 | 1978 | 73
+en_5m.m4a | AudioCodecId(4103) | 2 | 44100 | 300.00 | 0/0 ms | 0 | 0.0 / 0.0 / 0.0 | 0 | 888 | 101
+en_5m.m4a (edit list ignored) | AudioCodecId(4103) | 2 | 44100 | 300.02 | 0/0 ms | 0 | 23.2 / 23.2 / 23.2 | 0 | 898 | 99
+en_5m.opus | opus | 1 | 48000 | 300.00 | 0/0 ms | 0 | -0.1 / -0.1 / -0.1 | 0 | 457 | 102
+en_5m.webm | opus | 2 | 48000 | 300.01 | 0/0 ms | 0 | 0.4 / 0.4 / 0.4 | 0 | 327 | 102
+en_5m.mp4 | AudioCodecId(4103) | 1 | 22050 | 300.00 | 0/0 ms | 0 | 0.0 / 0.0 / 0.0 | 0 | 1990 | 75
+en_5m.mp4 (edit list ignored) | AudioCodecId(4103) | 1 | 22050 | 300.05 | 0/0 ms | 0 | 46.4 / 46.4 / 46.4 | 0 | 1976 | 73
+en_edge_mp3_vbr.mp3 | AudioCodecId(4102) | 2 | 22050 | 300.00 | 0/0 ms | 0 | -2.1 / -2.1 / -2.1 | 0 | 1778 | 73
+en_edge_webm_live.webm | opus | 2 | 48000 | 300.01 | 0/0 ms | 0 | 0.4 / 0.4 / 0.4 | 0 | 321 | 103
+en_edge_webm_late.webm | opus | 2 | 48000 | 301.51 | 0/0 ms | 0 | 1494.4 / 1494.4 / 1494.4 | 1500 | 322 | 102
+en_edge_m4a_late.m4a | AudioCodecId(4103) | 2 | 44100 | 301.50 | 0/0 ms | 0 | 1500.0 / 1500.0 / 1500.0 | 1500 | 894 | 101
+en_edge_m4a_late.m4a (edit list ignored) | AudioCodecId(4103) | 2 | 44100 | 300.02 | 0/0 ms | 0 | 23.2 / 23.2 / 23.2 | 1500 | 885 | 99
+en_edge_mp4_late.mp4 | AudioCodecId(4103) | 2 | 44100 | 301.50 | 0/0 ms | 0 | 1500.0 / 1500.0 / 1500.0 | 1500 | 885 | 102
+en_edge_mp4_late.mp4 (edit list ignored) | AudioCodecId(4103) | 2 | 44100 | 300.02 | 0/0 ms | 0 | 23.2 / 23.2 / 23.2 | 1500 | 897 | 99
+en_edge_webm_gap.webm | opus | 2 | 48000 | 303.01 | 1/3001 ms | 0 | 0.4 / 3001.4 / 3001.4 | 3000 | 329 | 103
+sv_5m.wav | AudioCodecId(264) | 1 | 22050 | 300.00 | 0/0 ms | 0 | 0.0 / 0.0 / 0.0 | 0 | 2668 | 72
+sv_5m.mp3 | AudioCodecId(4102) | 1 | 22050 | 300.00 | 0/0 ms | 0 | -2.1 / -2.1 / -2.1 | 0 | 1890 | 73
+sv_5m.m4a | AudioCodecId(4103) | 2 | 44100 | 300.00 | 0/0 ms | 0 | 0.0 / 0.0 / 0.0 | 0 | 855 | 100
+sv_5m.m4a (edit list ignored) | AudioCodecId(4103) | 2 | 44100 | 300.02 | 0/0 ms | 0 | 23.2 / 23.2 / 23.2 | 0 | 918 | 99
+sv_5m.opus | opus | 1 | 48000 | 300.00 | 0/0 ms | 0 | -0.1 / -0.1 / -0.1 | 0 | 462 | 102
+sv_5m.webm | opus | 2 | 48000 | 300.01 | 0/0 ms | 0 | 0.4 / 0.4 / 0.4 | 0 | 325 | 102
+sv_5m.mp4 | AudioCodecId(4103) | 1 | 22050 | 300.00 | 0/0 ms | 0 | 0.0 / 0.0 / 0.0 | 0 | 2025 | 76
+sv_5m.mp4 (edit list ignored) | AudioCodecId(4103) | 1 | 22050 | 300.05 | 0/0 ms | 0 | 46.4 / 46.4 / 46.4 | 0 | 2046 | 73
+sv_edge_mp3_vbr.mp3 | AudioCodecId(4102) | 2 | 22050 | 300.00 | 0/0 ms | 0 | -2.1 / -2.1 / -2.1 | 0 | 1766 | 73
+sv_edge_webm_live.webm | opus | 2 | 48000 | 300.01 | 0/0 ms | 0 | 0.4 / 0.4 / 0.4 | 0 | 327 | 102
+sv_edge_webm_late.webm | opus | 2 | 48000 | 301.51 | 0/0 ms | 0 | 1494.4 / 1494.4 / 1494.4 | 1500 | 329 | 102
+sv_edge_m4a_late.m4a | AudioCodecId(4103) | 2 | 44100 | 301.50 | 0/0 ms | 0 | 1500.0 / 1500.0 / 1500.0 | 1500 | 902 | 102
+sv_edge_m4a_late.m4a (edit list ignored) | AudioCodecId(4103) | 2 | 44100 | 300.02 | 0/0 ms | 0 | 23.2 / 23.2 / 23.2 | 1500 | 912 | 99
+sv_edge_mp4_late.mp4 | AudioCodecId(4103) | 2 | 44100 | 301.50 | 0/0 ms | 0 | 1500.0 / 1500.0 / 1500.0 | 1500 | 890 | 102
+sv_edge_mp4_late.mp4 (edit list ignored) | AudioCodecId(4103) | 2 | 44100 | 300.02 | 0/0 ms | 0 | 23.2 / 23.2 / 23.2 | 1500 | 895 | 99
+sv_edge_webm_gap.webm | opus | 2 | 48000 | 303.01 | 1/3001 ms | 0 | 0.4 / 3001.4 / 3001.4 | 3000 | 324 | 103
+de_5m.wav | AudioCodecId(264) | 1 | 22050 | 300.00 | 0/0 ms | 0 | 0.0 / 0.0 / 0.0 | 0 | 2763 | 72
+de_5m.mp3 | AudioCodecId(4102) | 1 | 22050 | 300.00 | 0/0 ms | 0 | -2.1 / -2.1 / -2.1 | 0 | 2053 | 73
+de_5m.m4a | AudioCodecId(4103) | 2 | 44100 | 300.00 | 0/0 ms | 0 | 0.0 / 0.0 / 0.0 | 0 | 893 | 101
+de_5m.m4a (edit list ignored) | AudioCodecId(4103) | 2 | 44100 | 300.02 | 0/0 ms | 0 | 23.2 / 23.2 / 23.2 | 0 | 906 | 99
+de_5m.opus | opus | 1 | 48000 | 300.00 | 0/0 ms | 0 | -0.1 / -0.1 / -0.1 | 0 | 511 | 102
+de_5m.webm | opus | 2 | 48000 | 300.01 | 0/0 ms | 0 | 0.4 / 0.4 / 0.4 | 0 | 388 | 103
+de_5m.mp4 | AudioCodecId(4103) | 1 | 22050 | 300.00 | 0/0 ms | 0 | 0.0 / 0.0 / 0.0 | 0 | 1955 | 76
+de_5m.mp4 (edit list ignored) | AudioCodecId(4103) | 1 | 22050 | 300.05 | 0/0 ms | 0 | 46.4 / 46.4 / 46.4 | 0 | 2000 | 73
+de_edge_mp3_vbr.mp3 | AudioCodecId(4102) | 2 | 22050 | 300.00 | 0/0 ms | 0 | -2.1 / -2.1 / -2.1 | 0 | 1854 | 73
+de_edge_webm_live.webm | opus | 2 | 48000 | 300.01 | 0/0 ms | 0 | 0.4 / 0.4 / 0.4 | 0 | 388 | 103
+de_edge_webm_late.webm | opus | 2 | 48000 | 301.51 | 0/0 ms | 0 | 1494.4 / 1494.4 / 1494.4 | 1500 | 392 | 102
+de_edge_m4a_late.m4a | AudioCodecId(4103) | 2 | 44100 | 301.50 | 0/0 ms | 0 | 1500.0 / 1500.0 / 1500.0 | 1500 | 902 | 102
+de_edge_m4a_late.m4a (edit list ignored) | AudioCodecId(4103) | 2 | 44100 | 300.02 | 0/0 ms | 0 | 23.2 / 23.2 / 23.2 | 1500 | 902 | 99
+de_edge_mp4_late.mp4 | AudioCodecId(4103) | 2 | 44100 | 301.50 | 0/0 ms | 0 | 1500.0 / 1500.0 / 1500.0 | 1500 | 896 | 102
+de_edge_mp4_late.mp4 (edit list ignored) | AudioCodecId(4103) | 2 | 44100 | 300.02 | 0/0 ms | 0 | 23.2 / 23.2 / 23.2 | 1500 | 898 | 99
+de_edge_webm_gap.webm | opus | 2 | 48000 | 303.01 | 1/3001 ms | 0 | 0.4 / 3001.4 / 3001.4 | 3000 | 394 | 103
+es_5m.wav | AudioCodecId(264) | 1 | 22050 | 300.00 | 0/0 ms | 0 | 0.0 / 0.0 / 0.0 | 0 | 2771 | 72
+es_5m.mp3 | AudioCodecId(4102) | 1 | 22050 | 300.00 | 0/0 ms | 0 | -2.1 / -2.1 / -2.1 | 0 | 2007 | 73
+es_5m.m4a | AudioCodecId(4103) | 2 | 44100 | 300.00 | 0/0 ms | 0 | 0.0 / 0.0 / 0.0 | 0 | 893 | 101
+es_5m.m4a (edit list ignored) | AudioCodecId(4103) | 2 | 44100 | 300.02 | 0/0 ms | 0 | 23.2 / 23.2 / 23.2 | 0 | 910 | 99
+es_5m.opus | opus | 1 | 48000 | 300.00 | 0/0 ms | 0 | -0.1 / -0.1 / -0.1 | 0 | 455 | 102
+es_5m.webm | opus | 2 | 48000 | 300.01 | 0/0 ms | 0 | 0.4 / 0.4 / 0.4 | 0 | 326 | 102
+es_5m.mp4 | AudioCodecId(4103) | 1 | 22050 | 300.00 | 0/0 ms | 0 | 0.0 / 0.0 / 0.0 | 0 | 1996 | 76
+es_5m.mp4 (edit list ignored) | AudioCodecId(4103) | 1 | 22050 | 300.05 | 0/0 ms | 0 | 46.4 / 46.4 / 46.4 | 0 | 2006 | 73
+es_edge_mp3_vbr.mp3 | AudioCodecId(4102) | 2 | 22050 | 300.00 | 0/0 ms | 0 | -2.1 / -2.1 / -2.1 | 0 | 1794 | 73
+es_edge_webm_live.webm | opus | 2 | 48000 | 300.01 | 0/0 ms | 0 | 0.4 / 0.4 / 0.4 | 0 | 328 | 102
+es_edge_webm_late.webm | opus | 2 | 48000 | 301.51 | 0/0 ms | 0 | 1494.4 / 1494.4 / 1494.4 | 1500 | 328 | 102
+es_edge_m4a_late.m4a | AudioCodecId(4103) | 2 | 44100 | 301.50 | 0/0 ms | 0 | 1500.0 / 1500.0 / 1500.0 | 1500 | 888 | 102
+es_edge_m4a_late.m4a (edit list ignored) | AudioCodecId(4103) | 2 | 44100 | 300.02 | 0/0 ms | 0 | 23.2 / 23.2 / 23.2 | 1500 | 912 | 99
+es_edge_mp4_late.mp4 | AudioCodecId(4103) | 2 | 44100 | 301.50 | 0/0 ms | 0 | 1500.0 / 1500.0 / 1500.0 | 1500 | 900 | 102
+es_edge_mp4_late.mp4 (edit list ignored) | AudioCodecId(4103) | 2 | 44100 | 300.02 | 0/0 ms | 0 | 23.2 / 23.2 / 23.2 | 1500 | 905 | 99
+es_edge_webm_gap.webm | opus | 2 | 48000 | 303.01 | 1/3001 ms | 0 | 0.4 / 3001.4 / 3001.4 | 3000 | 327 | 103
+worst timeline error, edit lists read: 5.6 ms

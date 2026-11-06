@@ -1,0 +1,20 @@
+[package]
+name = "asr-bench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+[workspace]
+[features]
+default = ["metal"]
+metal = ["whisper-rs/metal"]
+[dependencies]
+symphonia = { version = "=0.6.1", features = ["all"] }
+opus-rs = "=0.1.41"
+whisper-rs = { version = "=0.16.0" }
+serde_json = "1"
+ureq = { version = "3", features = ["json"] }
+base64 = "0.22"
+libc = "0.2"
+similar = "=2.7.0"
+[profile.release]
+debug = false
