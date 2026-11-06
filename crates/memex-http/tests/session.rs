@@ -536,7 +536,7 @@ async fn unknown_paths_get_the_console_unless_they_are_api_paths() {
 #[tokio::test]
 async fn path_traversal_finds_nothing_but_the_console() {
     let w = world();
-    let real = router_with_console(w.s.clone(), |p| memex_http::embedded_asset(p));
+    let real = router_with_console(w.s.clone(), memex_http::embedded_asset);
     let (index_status, index_body, _) = send(real.clone(), get("/no-such-page")).await;
     for path in [
         "/../Cargo.toml",

@@ -80,7 +80,14 @@ the repository root:
 
 The console's commands run from `web/`: `pnpm install`, `pnpm build`,
 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm run licenses`, `pnpm run contrast`
-and `pnpm e2e`. Write down what was measured, not just that it was done.
+and `pnpm e2e`.
+
+The binary embeds `web/apps/console/dist` with `rust-embed`, so run `pnpm build` before `cargo build --release` to ship the console. Cargo notices a new build by itself, and a build without one serves a page that says so.
+`pnpm dev` proxies `/api` to `MEMEX_API_URL`, by default `http://127.0.0.1:8080`, the default `MEMEX_HTTP_BIND`. The proxy keeps everything on one origin, so sign-in works in development, and production needs no CORS.
+The browser session checks run against a real server: with `memexvault serve` running and its token from `bootstrap`,
+`MEMEX_E2E_URL=http://127.0.0.1:<port> MEMEX_E2E_TOKEN=<token> pnpm --filter @memex/console e2e:session`. The URL must use `127.0.0.1`, as the cross-site test uses `localhost` as the other site.
+
+Write down what was measured, not just that it was done.
 Run `check` before committing spec changes, and name the spec in the commit
 message (`spec #63: ...`). Older commits use `spec 063: ...`. Also run `wave-manager.py check` after changing waves or `Depends on` lines.
 

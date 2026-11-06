@@ -177,16 +177,14 @@ pub(crate) async fn console_or_not_found(console: ConsoleLookup, rid: RequestId,
         return ApiError::new(StatusCode::NOT_FOUND, "not_found", "not found", &rid.0).into_response();
     }
     let path = path.trim_start_matches('/');
-    if !path.is_empty() && path != "index.html" {
-        if let Some(bytes) = console(path) {
-            // Vite puts a hash of the content in every name under assets/, so these never change.
-            let cache = if path.starts_with("assets/") {
-                "public, max-age=31536000, immutable"
-            } else {
-                "no-cache"
-            };
-            return console_file(path, cache, bytes);
-        }
+    if let Some(bytes) = (!path.is_empty() && path != "index.html").then(|| console(path)).flatten() {
+        // Vite puts a hash of the content in every name under assets/, so these never change.
+        let cache = if path.starts_with("assets/") {
+            "public, max-age=31536000, immutable"
+        } else {
+            "no-cache"
+        };
+        return console_file(path, cache, bytes);
     }
     match console("index.html") {
         Some(bytes) => console_file("index.html", "no-store", bytes),
