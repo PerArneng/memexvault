@@ -74,4 +74,33 @@ while its work sits only on a branch.
 - Changing other repos that use the `spec-driven` skill.
 
 ## Result
-(Filled in when the spec moves to done or dropped: what was built, decisions, numbers, follow-ups.)
+Done. Every spec is a GitHub issue with number = id, and `specs/` is flat. Kept as planned.
+
+**Built:**
+- `.claude/skills/gh-spec-driven/` replaces `.claude/skills/spec-driven/`, with `gh-spec-manager.py` (passes `mypy --strict`).
+- `tools/migrate.py` (one-off), and `tools/test_gh_spec_manager.py` with `tools/fake_gh.py`.
+- `AGENTS.md` updated.
+
+**Measured:**
+- Migration created 63 issues, with 63 of 63 returning the expected number, and applied 36 status changes with no failures.
+- `gh issue list --state all --label spec` gives 63 issues, all with number and name matching their folder.
+- `list --json` matches the pre-migration snapshot for all 62 older specs on id, name, description, status and folder. Status
+  counts after migration: 27 todo, 24 done, 10 hold, 1 dropped, 1 working (this spec).
+- Spot checks: #1 and #20 closed as completed, #10 closed as not planned with its reason, #52 open with `status:hold` and its
+  reason, #59 open with only `spec`, #63 open with `status:working`.
+- Fake-`gh` tests: 27 of 27 pass, covering every transition and bad case.
+- All 21 git-ignored data folders have the same `du -sk` size before and after the move.
+- The reference grep from Verification finds no old paths outside this spec. `check` passes.
+
+**Live on the real repo:** `working 63` (the migration had set that label, so it was removed and set again with the command),
+`working 63` refused when repeated, `done 63` refused while the Result was empty, then `done 63`.
+
+**Not run live, by design:** `init`, `hold`, `resume` and `drop` have only run against the fake `gh`, to avoid test issues on the
+public repo. `specs/035-web-workspace/tools/check_rules.sh` had a path fixed but wasn't rerun. `specs/` tools from older specs
+weren't rerun after the move; a search found no relative paths in them that climb out of a spec folder.
+
+**Decisions made along the way:** ids stay at 3 or more digits; `spec #N: ...` for new commits, with old ones unchanged; ideas become
+issues labelled `idea`; `check` warns but doesn't fail on a spec issue with no folder on the branch, since it may be on another
+branch.
+
+**Follow-ups:** none needed. Other repos using the old `spec-driven` skill are unaffected.
