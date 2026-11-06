@@ -1,0 +1,8 @@
+{
+  "name": "@memex/edge-agui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@memex/core": "workspace:*", "@memex/types": "workspace:*" }
+}

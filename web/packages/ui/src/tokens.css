@@ -1,0 +1,67 @@
+/* The only place raw colours may appear. Views use the semantic names. Light theme can come later by redefining these. */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+@theme {
+  /* Removes Tailwind's default palette, so only semantic names exist. */
+  --color-*: initial;
+
+  --color-surface: #0f1216;
+  --color-surface-raised: #171b21;
+  --color-surface-overlay: #1f242c;
+  --color-surface-selected: #1d2a3d;
+  --color-border: #2d343e;
+  --color-border-strong: #6b7686;
+
+  --color-text: #e8ebf0;
+  --color-text-muted: #a7b0bd;
+  --color-text-faint: #8d97a6;
+
+  --color-accent: #6ba6ff;
+  --color-accent-hover: #8ab8ff;
+  --color-on-accent: #0a0f16;
+  --color-focus: #9cc4ff;
+
+  --color-success: #5cd16f;
+  --color-success-surface: #14281a;
+  --color-warning: #e6b84a;
+  --color-warning-surface: #2c2412;
+  --color-danger: #ff8880;
+  --color-danger-surface: #331a1a;
+  --color-danger-solid: #ff8880;
+  --color-on-danger: #1a0a09;
+  --color-info: #7cc4ff;
+  --color-info-surface: #13263a;
+  --color-neutral-surface: #252b34;
+
+  --font-sans: "Inter Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-lg: 1rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.625rem;
+
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 8px;
+
+  --shadow-overlay: 0 8px 28px 0 color-mix(in srgb, var(--color-surface) 70%, transparent);
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    color-scheme: dark;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 1px;
+  }
+}

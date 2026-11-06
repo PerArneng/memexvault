@@ -1,0 +1,9 @@
+{
+  "name": "@memex/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts", "./testing": "./src/testing.ts" },
+  "dependencies": { "@memex/types": "workspace:*" },
+  "devDependencies": { "vitest": "5.1.0" }
+}

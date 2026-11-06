@@ -9,7 +9,7 @@ this file when a spec changes a decision. The backend design and the API contrac
 
 | Topic | Decision |
 |---|---|
-| Stack | React and TypeScript, built with Vite, in a pnpm workspace under `web/` |
+| Stack | React and TypeScript, built with Vite, in a pnpm workspace under `web/`. Node 24 LTS, pinned in `.nvmrc` and `.npmrc`. |
 | Delivery | The built console is embedded in the `memexvault` binary and served same-origin. Node is needed only at build time. |
 | Login | An existing token is pasted once and exchanged for an HttpOnly, SameSite=Strict session cookie. |
 | Look | Dark and professional. Dark only for now, and colours are design tokens so a light theme can come later. |
@@ -95,7 +95,7 @@ GPL are denied, as in spec 008.
 | Package | Version | Licence | Use |
 |---|---|---|---|
 | `react` | 19.3 | MIT | UI |
-| `typescript`, `vite` | 7.0, 8.3 | Apache-2.0, MIT | Build |
+| `typescript`, `vite` | 6.0, 8.3 | Apache-2.0, MIT | Build. TypeScript stays on 6.0 because `typescript-eslint` 8.72 requires below 6.1, so 7.0 isn't possible yet. |
 | `@tanstack/react-router`, `react-query`, `react-table`, `react-virtual` | 1.170, 5.106, 9.3, 3.14 | MIT | Routes, server state, tables, long lists |
 | `tailwindcss`, `@radix-ui/*`, `lucide-react` | 4.3, 1.x, 1.69 | MIT, MIT, ISC | Styling, accessible primitives, icons |
 | `@ag-ui/client` | 1.0.4 | MIT | Chat protocol, in `edge-agui` only |
@@ -103,6 +103,7 @@ GPL are denied, as in spec 008.
 | `react-markdown`, `rehype-sanitize` | 10.1, 6.0 | MIT | Rendering Markdown |
 | `openapi-typescript`, `openapi-fetch` | 7.13, 0.17 | MIT | API types and client |
 | `vitest`, `@playwright/test`, `msw` | 5.1, 1.64, 3.0 | MIT, Apache-2.0, MIT | Tests |
+| `@fontsource-variable/inter`, `@fontsource-variable/jetbrains-mono` | 5.3 | OFL-1.1 | Bundled interface fonts |
 | `@axe-core/playwright` | 4.14 | MPL-2.0 | Accessibility tests only |
 | `eslint`, `typescript-eslint`, `dependency-cruiser` | 10.14, 8.72, 18.7 | MIT | Lint and layer checks |
 | `rust-embed` (Rust) | 8.13 | MIT | Embeds the console in the binary |

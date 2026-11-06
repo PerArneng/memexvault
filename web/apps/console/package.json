@@ -1,0 +1,32 @@
+{
+  "name": "@memex/console",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@memex/core": "workspace:*",
+    "@memex/edge-browser": "workspace:*",
+    "@memex/types": "workspace:*",
+    "@memex/ui": "workspace:*",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.0",
+    "@tailwindcss/vite": "4.3.4",
+    "@types/node": "24.10.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "playwright-core": "1.64.0",
+    "tailwindcss": "4.3.4",
+    "vite": "8.3.6"
+  }
+}
