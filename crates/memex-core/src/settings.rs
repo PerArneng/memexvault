@@ -41,6 +41,10 @@ pub struct Settings {
     pub embed_threads: usize,
     /// How many queries can be embedded at once. Each one holds a copy of the model in memory.
     pub embed_query_sessions: usize,
+    /// CPU threads for each rerank.
+    pub rerank_threads: usize,
+    /// How many reranks can run at once. Each one holds a copy of the model in memory.
+    pub rerank_sessions: usize,
 }
 
 impl Default for Settings {
@@ -53,6 +57,8 @@ impl Default for Settings {
             backends: Backends::default(),
             embed_threads: 4,
             embed_query_sessions: 2,
+            rerank_threads: 4,
+            rerank_sessions: 2,
         }
     }
 }
@@ -68,6 +74,8 @@ impl fmt::Debug for Settings {
             .field("backends", &self.backends)
             .field("embed_threads", &self.embed_threads)
             .field("embed_query_sessions", &self.embed_query_sessions)
+            .field("rerank_threads", &self.rerank_threads)
+            .field("rerank_sessions", &self.rerank_sessions)
             .finish()
     }
 }
@@ -129,6 +137,8 @@ impl Settings {
         };
         s.embed_threads = count("MEMEX_EMBED_THREADS", text("MEMEX_EMBED_THREADS")?, s.embed_threads)?;
         s.embed_query_sessions = count("MEMEX_EMBED_QUERY_SESSIONS", text("MEMEX_EMBED_QUERY_SESSIONS")?, s.embed_query_sessions)?;
+        s.rerank_threads = count("MEMEX_RERANK_THREADS", text("MEMEX_RERANK_THREADS")?, s.rerank_threads)?;
+        s.rerank_sessions = count("MEMEX_RERANK_SESSIONS", text("MEMEX_RERANK_SESSIONS")?, s.rerank_sessions)?;
         if let Some(v) = text("MEMEX_HTTP_BIND")? {
             let port_ok = v.rsplit_once(':').is_some_and(|(host, port)| !host.is_empty() && port.parse::<u16>().is_ok());
             if !port_ok {

@@ -17,6 +17,8 @@ pub struct VectorDoc {
     pub epistemic: Option<String>,
     pub valid_from_ms: Option<i64>,
     pub valid_to_ms: Option<i64>,
+    pub doc_type: Option<String>,
+    pub trust_tiers: Vec<String>,
     pub vector: Vec<f32>,
 }
 

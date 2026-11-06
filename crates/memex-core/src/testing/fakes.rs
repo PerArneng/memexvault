@@ -17,6 +17,46 @@ impl crate::Rasterizer for FakeRasterizer {
     }
 }
 
+/// A reranker that scores a passage by how many of the query's words it holds, counts its calls and fails on request.
+#[derive(Debug, Default)]
+pub struct FakeReranker {
+    calls: AtomicU64,
+    passages: AtomicU64,
+    fail: std::sync::atomic::AtomicBool,
+}
+
+impl FakeReranker {
+    pub fn calls(&self) -> u64 {
+        self.calls.load(Ordering::SeqCst)
+    }
+
+    pub fn passages(&self) -> u64 {
+        self.passages.load(Ordering::SeqCst)
+    }
+
+    pub fn fail(&self, on: bool) {
+        self.fail.store(on, Ordering::SeqCst);
+    }
+}
+
+impl crate::Reranker for FakeReranker {
+    fn rerank(&self, query: &str, passages: &[&str]) -> Result<Vec<f32>, memex_types::RerankError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.passages.fetch_add(passages.len() as u64, Ordering::SeqCst);
+        if self.fail.load(Ordering::SeqCst) {
+            return Err(memex_types::RerankError::Failed("a scripted failure".into()));
+        }
+        let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+        Ok(passages
+            .iter()
+            .map(|p| {
+                let p = p.to_lowercase();
+                words.iter().filter(|w| p.contains(w.as_str())).count() as f32
+            })
+            .collect())
+    }
+}
+
 /// A clock tests move by hand, so nothing sleeps.
 #[derive(Debug, Default)]
 pub struct ManualClock {

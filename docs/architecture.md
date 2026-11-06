@@ -31,7 +31,7 @@ stack, and the numbers here are our own targets to measure.
 | PDF | `pdfium-render` on a statically linked pdfium, for text, word boxes and page images. We group characters into words. It runs in child worker processes that contain crashes and hangs. See spec 002, and specs 052 and 053 for assumptions under review. |
 | OCR | `oar-ocr` with the PP-OCRv6 small detector and PP-OCRv5 Latin recognizer, 17 MB. One child process per page at 2 threads, two at a time, about 21 pages/min, with reads unaffected. Word boxes are grouped from its character boxes, and we order columns ourselves. See specs 003 and 016, 054 for old prints, and 060 for hidden-text sampling. |
 | Embeddings | `multilingual-e5-small`, 384 dimensions, MIT, on ONNX Runtime through `ort` on CPU, shared with OCR. Query p95 9.4 ms on 4 threads, 40 passages/s. nDCG@10 on a 434-topic Wikipedia set: en 0.936, sv 0.897, de 0.913, es 0.911, cross-language 0.832. See spec 005. |
-| Reranking | Opt-in. `mmarco-mMiniLMv2-L12-H384-v1` int8, Apache-2.0, on the top 20 at 128 tokens, p95 133 ms. No local model met the rerank-50 target. See specs 005 and 055. |
+| Reranking | Opt-in. `mmarco-mMiniLMv2-L12-H384-v1` int8, Apache-2.0, on the top 20 at 128 tokens, p95 133 ms alone. No local model met the rerank-50 target. The server starts without its files, and a search asking for it then reports it as degraded. See specs 005, 020 and 055. |
 | Vector index | pgvector 0.8.7: `halfvec(384)`, inner product, HNSW `m=16, ef_construction=128`. Unfiltered and wide filters use `ef_search=300`, recall 0.974 at p95 9.6 ms at 200k. Up to about 12,000 estimated matches, an exact scan through a B-tree. Filters matching 6 to 20% of rows have a revised target, recall ≥0.93 and p95 ≤20 ms. See specs 004 and 057. |
 | Model files | Installed explicitly with a `models fetch` command using pinned hashes. The server never downloads at runtime and works offline afterwards, apart from LLM calls. |
 
@@ -46,7 +46,7 @@ network dependency. Without the LLM endpoint, search, reading and upload still w
 ```
 crates/
   memex-types/        pure: ids, anchors, events
-  memex-core/         pure: traits, Engine, reducers, validators, risk, planner, RRF, page parser, type registry
+  memex-core/         pure: traits, Engine, reducers, validators, risk, planner, RRF, evidence assembly, page parser, type registry
   memex-api/          pure: DTOs, evidence package
   memex-store-postgres/ edge: Store on PostgreSQL
   memex-blob-fs/      edge: content-addressed blob folders
@@ -58,7 +58,7 @@ crates/
   memex-asr/          edge: transcription (provisional, spec 027)
   memex-agent-adk/    edge: the only crate that depends on ADK-Rust
   memex-cache/        edge: RAM and disk caches
-  memex-http/         frontend: axum, with routes through provenance so far, and serves the embedded web console from spec 037
+  memex-http/         frontend: axum, with routes through search so far, and serves the embedded web console from spec 037
   memex-mcp/          frontend: rmcp
   memexvault/         binary: the single composition root and the trait wrappers
 ```
@@ -254,7 +254,7 @@ matching, and other scripts aren't supported yet. Documents can mix languages, a
 - **Common terms.** With at least 10,000 documents, a query drops single-term clauses matching over 4% of documents, unless all of
   them are common. Spec 018 needed this for whole-sentence queries to meet the latency target.
 - **Current rows only.** The keyword index holds Active, non-superseded rows on the current rendition, so it has no status field.
-  `as_of` for retracted rows needs another route (spec 020).
+  `as_of` for retracted rows replays the log instead (see [Search](#search)).
 - **Compound words.** German and Swedish join words, and stemming doesn't split them. Decompounding is added only if the golden
   set shows a measured need.
 - **Vector search and reranking** use multilingual models, so a question in one language can find text in another.
@@ -267,9 +267,19 @@ Intent is classified by deterministic rules, with no LLM on the read path:
 1. Exact id or field lookups go straight to the store.
 2. Otherwise lexical and vector candidates, plus entity lookup, are fused with Reciprocal Rank Fusion.
 3. Optional k-hop expansion over Edges for relational queries.
-4. Optional cross-encoder rerank of the top 20.
-5. Hits are fenced, then assembled into a token-budgeted evidence package with claims first, citations, conflicts and
-   trust notes.
+4. Hits are fenced against the store on one snapshot, taken after the candidates, so anything retracted meanwhile is gone.
+5. Optional cross-encoder rerank of the top 20.
+6. Hits are assembled into a token-budgeted evidence package with claims first, citations, conflicts and trust notes.
+
+`GET /api/v1/vaults/{id}/search` is the one search API. Spec 020 has its measurements: recall@20 97.5% on the golden set at 200k, and p95 31 ms with 1 client, but 81 ms with 8, against the ≤50 ms target. The rules behind it:
+
+- **Filters** are kind, type, source, trust tier, epistemic status and valid time. Type is a segment's media type or a claim's predicate, and spec 023 adds entity types. The fence checks them again on current rows, so a changed trust tier can't leak.
+- **A failed signal degrades the search.** Hybrid answers from the other signal and names the failed one in `degraded`. If both fail, it returns 503, and it never serves unfenced results.
+- **`min_seq`** is read-your-writes for the keyword index. The vector index has seen the event by then, but new text may still wait for its embedding job, and keyword search finds it meanwhile. A sequence the log hasn't reached is a 400, and one the indexes don't reach in time is a 503 with the code `not_caught_up`.
+- **`as_of`** takes an event or a time, and the log answers it. Past rows aren't in any index, so the events up to that point are replayed into memory and scanned for keywords, with no stemming, vectors or reranking. Its cost grows with the log, so at most two run at once, and more return 429.
+- **Budgets are estimates**, at 4 characters per token, since the read path has no tokenizer. A text is never cut, because a shortened quote can't be verified. An item that doesn't fit ends the page.
+- **Cursors** hold a rank and don't expire. A page read after writes reflects the ranking at that moment.
+- **Segment citations** give offsets and pages, not rectangles, because rectangles would need the word table on every search. Claim citations carry their stored rectangles.
 
 ## API conventions
 

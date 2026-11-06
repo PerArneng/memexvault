@@ -1,0 +1,154 @@
+    Finished `release` profile [optimized] target(s) in 3.67s
+     Running tests/golden.rs (target/release/deps/golden-eb2a94a16b3c1717)
+
+running 1 test
+embedder: 2 query sessions at 4 threads
+reranker: 2 sessions at 4 threads
+test golden_recall has been running for over 60 seconds
+t-golden: 200000 segments stored in 136 s
+t-golden: indexed 250 s after the start
+
+== hybrid over 200 answerable questions
+all                       97.5% (195/200)  nDCG@10 0.850  MRR 0.820
+category compound        100.0% ( 16/ 16)  nDCG@10 0.845  MRR 0.819
+category cross_language   85.0% ( 17/ 20)  nDCG@10 0.520  MRR 0.458
+category identifier      100.0% ( 26/ 26)  nDCG@10 0.964  MRR 0.952
+category keyword         100.0% ( 26/ 26)  nDCG@10 0.986  MRR 0.981
+category natural         100.0% ( 85/ 85)  nDCG@10 0.928  MRR 0.909
+category paraphrase       92.6% ( 25/ 27)  nDCG@10 0.610  MRR 0.525
+cross de->en             100.0% (  3/  3)  nDCG@10 0.763  MRR 0.700
+cross en->de             100.0% (  3/  3)  nDCG@10 0.311  MRR 0.234
+cross en->es              66.7% (  2/  3)  nDCG@10 0.307  MRR 0.200
+cross en->sv             100.0% (  4/  4)  nDCG@10 0.783  MRR 0.708
+cross es->en              66.7% (  2/  3)  nDCG@10 0.544  MRR 0.500
+cross sv->en              75.0% (  3/  4)  nDCG@10 0.375  MRR 0.354
+language de               97.9% ( 47/ 48)  nDCG@10 0.864  MRR 0.835
+language en               98.2% ( 54/ 55)  nDCG@10 0.802  MRR 0.759
+language es               95.8% ( 46/ 48)  nDCG@10 0.892  MRR 0.870
+language sv               98.0% ( 48/ 49)  nDCG@10 0.850  MRR 0.824
+misses (5):
+  de-025 paraphrase [Wie heißt der biologische Vorgang, bei dem das Erbgut in der Zelle neu zusammengesetzt wird?]
+  es-006 paraphrase [¿Cómo se llama la situación en que varios elementos combinados logran más que la simple adición de sus resultados por separado?]
+  sv-049 cross_language [Vilken tidskrift var ekonomen Horvat redaktör för?]
+  es-046 cross_language [¿En qué calle de París se levantó en 1857 el primer templo estadounidense?]
+  en-054 cross_language [Which US network aired the series Joan of Arcadia?]
+hybrid half 0: low-relevance on 13/16 unanswerable, and wrongly on 8/97 answerable
+hybrid half 1: low-relevance on 12/14 unanswerable, and wrongly on 7/103 answerable
+
+== lexical over 200 answerable questions
+all                       91.0% (182/200)  nDCG@10 0.801  MRR 0.769
+category compound         81.2% ( 13/ 16)  nDCG@10 0.723  MRR 0.693
+category cross_language   90.0% ( 18/ 20)  nDCG@10 0.618  MRR 0.546
+category identifier      100.0% ( 26/ 26)  nDCG@10 0.881  MRR 0.857
+category keyword         100.0% ( 26/ 26)  nDCG@10 0.972  MRR 0.962
+category natural          96.5% ( 82/ 85)  nDCG@10 0.888  MRR 0.862
+category paraphrase       63.0% ( 17/ 27)  nDCG@10 0.466  MRR 0.414
+cross de->en             100.0% (  3/  3)  nDCG@10 0.877  MRR 0.833
+cross en->de             100.0% (  3/  3)  nDCG@10 0.810  MRR 0.750
+cross en->es              66.7% (  2/  3)  nDCG@10 0.339  MRR 0.233
+cross en->sv             100.0% (  4/  4)  nDCG@10 0.604  MRR 0.479
+cross es->en             100.0% (  3/  3)  nDCG@10 0.500  MRR 0.463
+cross sv->en              75.0% (  3/  4)  nDCG@10 0.589  MRR 0.542
+language de               89.6% ( 43/ 48)  nDCG@10 0.792  MRR 0.765
+language en               90.9% ( 50/ 55)  nDCG@10 0.764  MRR 0.716
+language es               93.8% ( 45/ 48)  nDCG@10 0.822  MRR 0.792
+language sv               89.8% ( 44/ 49)  nDCG@10 0.830  MRR 0.809
+misses (18):
+  en-005 paraphrase [For roughly how long was the reporter Dotson's recurring slice-of-life segment broadcast on morning network TV?]
+  en-017 natural [What venue hosted the festivities on the eve of the San Antonio Temple's consecration?]
+  en-021 paraphrase [What do you call it when a pair sways gently together to a sentimental ballad?]
+  en-026 paraphrase [How long did members of Ohio's lower chamber serve under the state's first charter?]
+  sv-012 compound [Vilket år inledde FN:s fond för befolkningsfrågor sitt arbete?]
+  sv-021 compound [Hur förkortas en tabell av hash-typ som är fördelad över många datorer i ett nätverk?]
+  sv-026 compound [Vilken rysk dansös fick en bakelse med botten av maräng uppkallad efter sig?]
+  sv-045 paraphrase [Vilken person i parlamentet lägger fram namnet på den som ska bli regeringschef?]
+  de-006 paraphrase [Mit welchem deutschen Ausdruck wird das Fremdwort Mysterium meistens wiedergegeben?]
+  de-011 natural [Aus welchen zwei Bestandteilen setzt sich das chinesische Schriftzeichen für Mann zusammen?]
+  de-013 paraphrase [Was ist das entscheidende Kennzeichen von Derivaten in Bezug auf das Abschließen und Einlösen einer Vereinbarung?]
+  de-025 paraphrase [Wie heißt der biologische Vorgang, bei dem das Erbgut in der Zelle neu zusammengesetzt wird?]
+  de-030 paraphrase [Unter welcher Voraussetzung bleibt ein Amtsträger straflos, wenn er eine Zuwendung entgegennimmt?]
+  es-006 paraphrase [¿Cómo se llama la situación en que varios elementos combinados logran más que la simple adición de sus resultados por separado?]
+  es-023 natural [¿Cuál es el género más famoso de la costa caribeña colombiana?]
+  es-043 paraphrase [Antes de 1970, ¿qué proporción de sales fosfatadas llevaba un jabón potente para la ropa?]
+  sv-047 cross_language [Vilket japanskt företag tillverkade urinoaren för kvinnor Sanistand?]
+  en-055 cross_language [Between which years were the Quart Towers in Valencia built?]
+lexical half 0: low-relevance on 12/16 unanswerable, and wrongly on 22/97 answerable
+lexical half 1: low-relevance on 11/14 unanswerable, and wrongly on 32/103 answerable
+
+== vector over 200 answerable questions
+all                       92.0% (184/200)  nDCG@10 0.852  MRR 0.833
+category compound        100.0% ( 16/ 16)  nDCG@10 0.946  MRR 0.927
+category cross_language   45.0% (  9/ 20)  nDCG@10 0.413  MRR 0.400
+category identifier       96.2% ( 25/ 26)  nDCG@10 0.940  MRR 0.933
+category keyword         100.0% ( 26/ 26)  nDCG@10 0.986  MRR 0.981
+category natural          98.8% ( 84/ 85)  nDCG@10 0.930  MRR 0.910
+category paraphrase       88.9% ( 24/ 27)  nDCG@10 0.665  MRR 0.620
+cross de->en              33.3% (  1/  3)  nDCG@10 0.333  MRR 0.333
+cross en->de              33.3% (  1/  3)  nDCG@10 0.333  MRR 0.333
+cross en->es              66.7% (  2/  3)  nDCG@10 0.421  MRR 0.333
+cross en->sv              75.0% (  3/  4)  nDCG@10 0.750  MRR 0.750
+cross es->en              33.3% (  1/  3)  nDCG@10 0.333  MRR 0.333
+cross sv->en              25.0% (  1/  4)  nDCG@10 0.250  MRR 0.250
+language de               93.8% ( 45/ 48)  nDCG@10 0.838  MRR 0.814
+language en               92.7% ( 51/ 55)  nDCG@10 0.858  MRR 0.835
+language es               91.7% ( 44/ 48)  nDCG@10 0.861  MRR 0.842
+language sv               89.8% ( 44/ 49)  nDCG@10 0.851  MRR 0.843
+misses (16):
+  sv-003 paraphrase [I vilket skede av en retorisk framställning bör den som håller tal fundera över om publiken ska roas eller beröras?]
+  sv-031 natural [Vem gav den första beskrivningen av synvillan café wall?]
+  de-003 identifier [Welches Schicksal ereilte Ascaricus und Merogaisus im Jahr 306?]
+  es-006 paraphrase [¿Cómo se llama la situación en que varios elementos combinados logran más que la simple adición de sus resultados por separado?]
+  es-045 paraphrase [¿Qué soberana evitó el choque armado entre las huestes de Juan II y Alfonso V?]
+  sv-046 cross_language [Vem fick makten över Herat när Ilyas dog år 856?]
+  sv-048 cross_language [Vem gav oftast den tecknade katten Penelope Pussycat hennes röst?]
+  sv-049 cross_language [Vilken tidskrift var ekonomen Horvat redaktör för?]
+  de-047 cross_language [Welches Stipendium erlaubte dem Künstler Favro 1970, die Malerei aufzugeben?]
+  de-048 cross_language [Wie teuer durfte das Grundmodell des Autos höchstens sein, für das Kaiser-Frazer 1949 einen Staatskredit erhielt?]
+  es-046 cross_language [¿En qué calle de París se levantó en 1857 el primer templo estadounidense?]
+  es-047 cross_language [¿Quién convirtió a Cefalù en miembro de pleno derecho de la familia Gambino en 1990?]
+  en-046 cross_language [On what date did Howard's move to the Colorado Rapids take effect?]
+  en-051 cross_language [Which British sailor realized in 1767 that New Hanover was a separate island?]
+  en-052 cross_language [What medical emergency stopped Ruud from raising the flag at the 1994 Lillehammer opening?]
+  en-054 cross_language [Which US network aired the series Joan of Arcadia?]
+vector half 0: low-relevance on 13/16 unanswerable, and wrongly on 13/97 answerable
+vector half 1: low-relevance on 13/14 unanswerable, and wrongly on 15/103 answerable
+
+== hybrid+rerank over 200 answerable questions
+all                       97.5% (195/200)  nDCG@10 0.940  MRR 0.929
+category compound        100.0% ( 16/ 16)  nDCG@10 1.000  MRR 1.000
+category cross_language   85.0% ( 17/ 20)  nDCG@10 0.850  MRR 0.850
+category identifier      100.0% ( 26/ 26)  nDCG@10 0.978  MRR 0.971
+category keyword         100.0% ( 26/ 26)  nDCG@10 1.000  MRR 1.000
+category natural         100.0% ( 85/ 85)  nDCG@10 0.948  MRR 0.931
+category paraphrase       92.6% ( 25/ 27)  nDCG@10 0.855  MRR 0.831
+cross de->en             100.0% (  3/  3)  nDCG@10 1.000  MRR 1.000
+cross en->de             100.0% (  3/  3)  nDCG@10 1.000  MRR 1.000
+cross en->es              66.7% (  2/  3)  nDCG@10 0.667  MRR 0.667
+cross en->sv             100.0% (  4/  4)  nDCG@10 1.000  MRR 1.000
+cross es->en              66.7% (  2/  3)  nDCG@10 0.667  MRR 0.667
+cross sv->en              75.0% (  3/  4)  nDCG@10 0.750  MRR 0.750
+language de               97.9% ( 47/ 48)  nDCG@10 0.955  MRR 0.947
+language en               98.2% ( 54/ 55)  nDCG@10 0.937  MRR 0.923
+language es               95.8% ( 46/ 48)  nDCG@10 0.898  MRR 0.878
+language sv               98.0% ( 48/ 49)  nDCG@10 0.972  MRR 0.969
+misses (5):
+  de-025 paraphrase [Wie heißt der biologische Vorgang, bei dem das Erbgut in der Zelle neu zusammengesetzt wird?]
+  es-006 paraphrase [¿Cómo se llama la situación en que varios elementos combinados logran más que la simple adición de sus resultados por separado?]
+  sv-049 cross_language [Vilken tidskrift var ekonomen Horvat redaktör för?]
+  es-046 cross_language [¿En qué calle de París se levantó en 1857 el primer templo estadounidense?]
+  en-054 cross_language [Which US network aired the series Joan of Arcadia?]
+hybrid+rerank half 0: low-relevance on 13/16 unanswerable, and wrongly on 8/97 answerable
+hybrid+rerank half 1: low-relevance on 12/14 unanswerable, and wrongly on 7/103 answerable
+
+== lexical with common terms kept
+ 89.0% (178/200)  nDCG@10 0.767  MRR 0.746  p95 31.3 ms alone
+
+== hybrid with common terms kept
+ 96.0% (192/200)  nDCG@10 0.834  MRR 0.806  p95 29.9 ms alone
+
+== hybrid inside a 10% source filter
+ 99.5% (199/200)  nDCG@10 0.929  MRR 0.917
+test golden_recall ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 330.42s
+

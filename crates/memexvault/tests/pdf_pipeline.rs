@@ -24,6 +24,7 @@ impl ServerEdges for Fakes {
     type Lexical = memex_core::testing::MemLexical;
     type Vector = memex_core::testing::MemVector;
     type Embedder = memex_core::testing::FakeEmbedder;
+    type Reranker = memex_core::testing::FakeReranker;
 }
 
 fn fixture(name: &str) -> Vec<u8> {

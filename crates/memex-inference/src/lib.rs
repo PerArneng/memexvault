@@ -1,19 +1,20 @@
 //! Embeddings on ONNX Runtime. Running a model isn't logic, so this stays thin: the text handling and pooling that can be tested without a model are pure functions.
 // It reads model files, and only when first asked to embed or load.
 #![allow(clippy::disallowed_methods)]
-use memex_core::Embedder;
-use memex_types::{EmbedError, EmbedPurpose, ModelInfo};
+use memex_core::{Embedder, Reranker};
+use memex_types::{EmbedError, EmbedPurpose, ModelInfo, RerankError};
 use ort::session::{Session, SessionInputValue};
 use ort::value::Tensor;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use tokenizers::{PaddingParams, Tokenizer, TruncationParams};
 
 pub const E5_SMALL: &str = "multilingual-e5-small";
 pub const E5_SMALL_DIMENSION: u32 = 384;
 pub const MODEL_FILE: &str = "model.onnx";
 pub const TOKENIZER_FILE: &str = "tokenizer.json";
+pub const RERANK_MODEL_FILE: &str = "model_qint8_arm64.onnx";
 /// Segments are 100 to 400 tokens, and spec 005 measured this limit.
 const MAX_TOKENS: usize = 256;
 
@@ -65,6 +66,17 @@ pub struct OnnxEmbedder {
     next_query: AtomicUsize,
 }
 
+/// A free session if there is one, and otherwise a turn on the next in line, so a query never queues behind a busy session while another sits idle.
+fn take_session<'a>(sessions: &'a [Mutex<Session>], next: &AtomicUsize) -> Result<MutexGuard<'a, Session>, String> {
+    let start = next.fetch_add(1, Ordering::Relaxed);
+    for i in 0..sessions.len() {
+        if let Ok(free) = sessions[(start + i) % sessions.len()].try_lock() {
+            return Ok(free);
+        }
+    }
+    sessions[start % sessions.len()].lock().map_err(|_| "a session's lock is poisoned".to_string())
+}
+
 fn session(path: &Path, threads: usize) -> Result<Session, String> {
     let failed = |e: String| format!("can't load {}: {e}", path.display());
     let builder = Session::builder().map_err(|e| failed(e.to_string()))?;
@@ -112,7 +124,7 @@ impl OnnxEmbedder {
             .map_err(Clone::clone)
     }
 
-    fn run(session: &Mutex<Session>, tokenizer: &Tokenizer, purpose: EmbedPurpose, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+    fn run(sessions: &[Mutex<Session>], next: &AtomicUsize, tokenizer: &Tokenizer, purpose: EmbedPurpose, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
         let inputs: Vec<String> = texts.iter().map(|t| e5_input(purpose, t)).collect();
         let encodings = tokenizer.encode_batch(inputs, true).map_err(|e| e.to_string())?;
         let (n, length) = (encodings.len(), encodings.first().map_or(0, tokenizers::Encoding::len));
@@ -121,7 +133,7 @@ impl OnnxEmbedder {
         let ids = flat(&|e| e.get_ids().to_vec());
         let mask = flat(&|e| e.get_attention_mask().to_vec());
         let types = flat(&|e| e.get_type_ids().to_vec());
-        let mut session = session.lock().map_err(|_| "a session's lock is poisoned".to_string())?;
+        let mut session = take_session(sessions, next)?;
         let names: Vec<String> = session.inputs().iter().map(|i| i.name().to_string()).collect();
         let mut values: Vec<(String, SessionInputValue)> = Vec::with_capacity(names.len());
         for name in names {
@@ -161,17 +173,111 @@ impl Embedder for OnnxEmbedder {
             return Ok(vec![]);
         }
         let loaded = self.loaded().map_err(EmbedError::Failed)?;
-        let session = match purpose {
-            EmbedPurpose::Passage => &loaded.passage,
-            EmbedPurpose::Query => &loaded.queries[self.next_query.fetch_add(1, Ordering::Relaxed) % loaded.queries.len()],
+        let sessions = match purpose {
+            EmbedPurpose::Passage => std::slice::from_ref(&loaded.passage),
+            EmbedPurpose::Query => loaded.queries.as_slice(),
         };
-        Self::run(session, &loaded.tokenizer, purpose, texts).map_err(EmbedError::Failed)
+        Self::run(sessions, &self.next_query, &loaded.tokenizer, purpose, texts).map_err(EmbedError::Failed)
+    }
+}
+
+/// Spec 005 measured this limit for reranking.
+const RERANK_MAX_TOKENS: usize = 128;
+
+struct LoadedReranker {
+    tokenizer: Tokenizer,
+    sessions: Vec<Mutex<Session>>,
+}
+
+fn load_reranker(dir: &Path, threads: usize, sessions: usize) -> Result<LoadedReranker, String> {
+    let mut tokenizer = Tokenizer::from_file(dir.join(TOKENIZER_FILE)).map_err(|e| format!("can't load the tokenizer: {e}"))?;
+    tokenizer.with_padding(Some(PaddingParams::default()));
+    tokenizer
+        .with_truncation(Some(TruncationParams {
+            max_length: RERANK_MAX_TOKENS,
+            ..Default::default()
+        }))
+        .map_err(|e| e.to_string())?;
+    let model = dir.join(RERANK_MODEL_FILE);
+    let sessions = (0..sessions.max(1))
+        .map(|_| session(&model, threads).map(Mutex::new))
+        .collect::<Result<_, _>>()?;
+    Ok(LoadedReranker { tokenizer, sessions })
+}
+
+/// `mmarco` int8, loaded on first use, since reranking is opt-in and many servers never pay for it.
+pub struct OnnxReranker {
+    dir: PathBuf,
+    threads: usize,
+    sessions: usize,
+    loaded: OnceLock<Result<LoadedReranker, String>>,
+    next: AtomicUsize,
+}
+
+impl OnnxReranker {
+    pub fn new(dir: impl Into<PathBuf>, threads: usize, sessions: usize) -> Self {
+        Self {
+            dir: dir.into(),
+            threads,
+            sessions,
+            loaded: OnceLock::new(),
+            next: AtomicUsize::new(0),
+        }
+    }
+
+    fn score(&self, query: &str, passages: &[&str]) -> Result<Vec<f32>, String> {
+        let loaded = self
+            .loaded
+            .get_or_init(|| load_reranker(&self.dir, self.threads, self.sessions))
+            .as_ref()
+            .map_err(Clone::clone)?;
+        let pairs: Vec<(&str, &str)> = passages.iter().map(|p| (query, *p)).collect();
+        let encodings = loaded.tokenizer.encode_batch(pairs, true).map_err(|e| e.to_string())?;
+        let (n, length) = (encodings.len(), encodings.first().map_or(0, tokenizers::Encoding::len));
+        let flat =
+            |field: &dyn Fn(&tokenizers::Encoding) -> Vec<u32>| -> Vec<i64> { encodings.iter().flat_map(|e| field(e).into_iter().map(i64::from)).collect() };
+        let ids = flat(&|e| e.get_ids().to_vec());
+        let mask = flat(&|e| e.get_attention_mask().to_vec());
+        let types = flat(&|e| e.get_type_ids().to_vec());
+        let mut session = take_session(&loaded.sessions, &self.next)?;
+        let names: Vec<String> = session.inputs().iter().map(|i| i.name().to_string()).collect();
+        let mut values: Vec<(String, SessionInputValue)> = Vec::with_capacity(names.len());
+        for name in names {
+            let data = match name.as_str() {
+                "input_ids" => ids.clone(),
+                "attention_mask" => mask.clone(),
+                "token_type_ids" => types.clone(),
+                other => return Err(format!("the model asks for an unknown input: {other}")),
+            };
+            let tensor = Tensor::from_array(([n, length], data)).map_err(|e| e.to_string())?;
+            values.push((name, tensor.into()));
+        }
+        let outputs = session.run(values).map_err(|e| e.to_string())?;
+        let (shape, logits) = outputs[0].try_extract_tensor::<f32>().map_err(|e| e.to_string())?;
+        let columns = shape.get(1).copied().unwrap_or(1).max(1) as usize;
+        Ok(logits.chunks(columns).filter_map(|row| row.last().copied()).collect())
+    }
+}
+
+impl Reranker for OnnxReranker {
+    fn rerank(&self, query: &str, passages: &[&str]) -> Result<Vec<f32>, RerankError> {
+        if passages.is_empty() {
+            return Ok(vec![]);
+        }
+        self.score(query, passages).map_err(RerankError::Failed)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_reranker_model_is_a_failure_not_a_panic() {
+        let r = OnnxReranker::new("/nonexistent", 1, 1);
+        assert!(matches!(r.rerank("q", &["p"]), Err(RerankError::Failed(_))));
+        assert_eq!(r.rerank("q", &[]), Ok(vec![]));
+    }
 
     #[test]
     fn inputs_get_the_prefix_for_their_purpose() {

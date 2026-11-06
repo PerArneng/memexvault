@@ -1,0 +1,90 @@
+17:28  up 24 days, 23:30, 27 users, load averages: 8.19 10.99 15.80
+    Finished `release` profile [optimized] target(s) in 0.65s
+     Running tests/golden.rs (target/release/deps/golden-eb2a94a16b3c1717)
+
+running 1 test
+embedder: 2 query sessions at 4 threads
+reranker: 2 sessions at 4 threads
+t-golden-50k: 50000 segments stored in 35 s
+test latency_50k_200k has been running for over 60 seconds
+t-golden-50k: indexed 59 s after the start
+
+== t-golden-50k: 50000 segments, 1000 distinct queries
+(one warming pass done)
+199 of 200 default requests returned a parent section
+hybrid, 1 client                             n= 1000 p50    21.4 ms  p95    28.5 ms  p99    31.5 ms
+hybrid, 8 clients                            n= 2000 p50    49.5 ms  p95    80.9 ms  p99    94.9 ms
+lexical only, 8 clients                      n= 2000 p50     8.7 ms  p95    13.5 ms  p99    15.9 ms
+vector only, 8 clients                       n= 2000 p50    48.5 ms  p95    80.2 ms  p99    95.6 ms
+hybrid, 10% source filter, 8 clients         n= 1000 p50    50.0 ms  p95    76.4 ms  p99    87.0 ms
+hybrid, 25% trust tier filter, 8 clients     n= 1000 p50    55.2 ms  p95    76.5 ms  p99    88.4 ms
+default, beside the extras, round 0          n= 1000 p50    50.6 ms  p95    79.6 ms  p99    98.6 ms
+facets and debug, round 0                    n= 1000 p50    56.1 ms  p95    84.9 ms  p99    93.8 ms
+default, beside the extras, round 1          n= 1000 p50    50.6 ms  p95    79.8 ms  p99    90.6 ms
+facets and debug, round 1                    n= 1000 p50    58.2 ms  p95    85.1 ms  p99    99.6 ms
+hybrid with rerank, 1 client                 n=  100 p50   204.4 ms  p95   215.4 ms  p99   225.0 ms
+hybrid with rerank, 8 clients                n=  400 p50   851.7 ms  p95   920.9 ms  p99   953.6 ms
+exact id, 1 client                           n= 2000 p50     2.5 ms  p95     4.9 ms  p99    10.7 ms
+exact id, 8 clients                          n= 2000 p50     5.3 ms  p95     8.9 ms  p99    11.0 ms
+as_of event 51 of 51: 894 ms, 21 items, stages Some([("replay", 578.117791), ("scan", 251.86233400000003), ("fence", 0.167708), ("assemble", 2.809875)])
+as_of event 25 of 51: 565 ms, 21 items, stages Some([("replay", 427.813291), ("scan", 118.45454199999999), ("fence", 0.210375), ("assemble", 1.756958)])
+stage assemble     alone: p50   0.75 ms  p95   0.96 ms
+stage candidates   alone: p50  15.19 ms  p95  20.97 ms
+stage fence        alone: p50   2.80 ms  p95   3.60 ms
+embedder: 2 query sessions at 4 threads
+reranker: 2 sessions at 4 threads
+t-golden: already loaded
+
+== t-golden: 200000 segments, 1000 distinct queries
+(one warming pass done)
+173 of 200 default requests returned a parent section
+hybrid, 1 client                             n= 1000 p50    23.7 ms  p95    31.0 ms  p99    34.4 ms
+hybrid, 8 clients                            n= 2000 p50    52.9 ms  p95    81.2 ms  p99    97.1 ms
+lexical only, 8 clients                      n= 2000 p50    10.9 ms  p95    21.3 ms  p99    26.1 ms
+vector only, 8 clients                       n= 2000 p50    50.5 ms  p95    79.4 ms  p99    95.2 ms
+hybrid, 10% source filter, 8 clients         n= 1000 p50    67.1 ms  p95    87.5 ms  p99    94.6 ms
+hybrid, 25% trust tier filter, 8 clients     n= 1000 p50    56.5 ms  p95    78.0 ms  p99    87.9 ms
+default, beside the extras, round 0          n= 1000 p50    53.2 ms  p95    80.1 ms  p99    90.9 ms
+facets and debug, round 0                    n= 1000 p50    59.0 ms  p95    86.0 ms  p99   102.7 ms
+default, beside the extras, round 1          n= 1000 p50    52.3 ms  p95    78.6 ms  p99    88.4 ms
+facets and debug, round 1                    n= 1000 p50    59.9 ms  p95    85.2 ms  p99    97.0 ms
+hybrid with rerank, 1 client                 n=  100 p50   208.5 ms  p95   229.0 ms  p99   255.1 ms
+hybrid with rerank, 8 clients                n=  400 p50   855.9 ms  p95  1029.9 ms  p99  1088.0 ms
+exact id, 1 client                           n= 2000 p50     2.5 ms  p95     4.8 ms  p99     9.8 ms
+exact id, 8 clients                          n= 2000 p50     5.6 ms  p95    13.1 ms  p99    19.0 ms
+as_of event 201 of 201: 4870 ms, 21 items, stages Some([("replay", 2799.6770829999996), ("scan", 1667.0111670000001), ("fence", 0.410375), ("assemble", 14.199333)])
+as_of event 100 of 201: 2756 ms, 21 items, stages Some([("replay", 1997.828875), ("scan", 632.003541), ("fence", 0.255875), ("assemble", 6.622459)])
+stage assemble     alone: p50   1.19 ms  p95   1.98 ms
+stage candidates   alone: p50  18.90 ms  p95  27.46 ms
+stage fence        alone: p50   2.95 ms  p95   4.00 ms
+
+== growth from 50k to 200k, and a projection to 1M: fitted to the growth seen, and linear from 200k as a worst case
+hybrid, 1 client                                28.5 ->    31.0 ms   1M fitted    34.3 ms, linear   155.2 ms
+hybrid, 8 clients                               80.9 ->    81.2 ms   1M fitted    81.6 ms, linear   406.2 ms
+lexical only, 8 clients                         13.5 ->    21.3 ms   1M fitted    35.9 ms, linear   106.3 ms
+vector only, 8 clients                          80.2 ->    79.4 ms   1M fitted    78.4 ms, linear   396.9 ms
+hybrid, 10% source filter, 8 clients            76.4 ->    87.5 ms   1M fitted   102.3 ms, linear   437.4 ms
+hybrid, 25% trust tier filter, 8 clients        76.5 ->    78.0 ms   1M fitted    79.8 ms, linear   390.1 ms
+default, beside the extras, round 0             79.6 ->    80.1 ms   1M fitted    80.6 ms, linear   400.3 ms
+facets and debug, round 0                       84.9 ->    86.0 ms   1M fitted    87.2 ms, linear   429.8 ms
+default, beside the extras, round 1             79.8 ->    78.6 ms   1M fitted    77.3 ms, linear   393.2 ms
+facets and debug, round 1                       85.1 ->    85.2 ms   1M fitted    85.4 ms, linear   426.2 ms
+hybrid with rerank, 1 client                   215.4 ->   229.0 ms   1M fitted   245.8 ms, linear  1145.0 ms
+hybrid with rerank, 8 clients                  920.9 ->  1029.9 ms   1M fitted  1172.7 ms, linear  5149.5 ms
+exact id, 1 client                               4.9 ->     4.8 ms   1M fitted     4.7 ms, linear    24.0 ms
+exact id, 8 clients                              8.9 ->    13.1 ms   1M fitted    20.6 ms, linear    65.5 ms
+embedder: 2 query sessions at 4 threads
+reranker: 2 sessions at 4 threads
+10000 claims added
+embedder: 2 query sessions at 4 threads
+reranker: 2 sessions at 4 threads
+
+== with claims in the vault
+hybrid, 1 client, with claims                n= 1000 p50    25.2 ms  p95    32.5 ms  p99    35.7 ms
+hybrid, 8 clients, with claims               n= 2000 p50    55.0 ms  p95    82.2 ms  p99    91.6 ms
+138 of 200 queries returned a claim, 252 claims in all
+test latency_50k_200k ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 546.86s
+
+17:37  up 24 days, 23:39, 27 users, load averages: 15.05 18.97 18.73

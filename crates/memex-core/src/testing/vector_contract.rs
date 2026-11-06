@@ -20,6 +20,8 @@ fn doc(id: &str, vector: Vec<f32>) -> VectorDoc {
         epistemic: None,
         valid_from_ms: None,
         valid_to_ms: None,
+        doc_type: None,
+        trust_tiers: vec![],
         vector,
     }
 }
@@ -141,6 +143,8 @@ pub fn filters_mean_what_they_say<V: VectorIndex>(index: &V, vault: &VaultId) {
     claim.epistemic = Some("verified".into());
     claim.valid_from_ms = Some(100);
     claim.valid_to_ms = Some(200);
+    claim.doc_type = Some("weighs".into());
+    claim.trust_tiers = vec!["trusted".into(), "reviewed".into()];
     let mut segment = doc("segment", vec![0.9, 0.1]);
     segment.source_ids = vec![ObjectId("s3".into())];
     live(index, vault, &m, vec![claim, segment], 1);
@@ -170,6 +174,16 @@ pub fn filters_mean_what_they_say<V: VectorIndex>(index: &V, vault: &VaultId) {
         ..Default::default()
     };
     assert_eq!(search(by_epistemic), ["claim"]);
+    let by_type = LexicalFilter {
+        types: vec!["weighs".into()],
+        ..Default::default()
+    };
+    assert_eq!(search(by_type), ["claim"]);
+    let by_tier = LexicalFilter {
+        trust_tiers: vec!["reviewed".into(), "nope".into()],
+        ..Default::default()
+    };
+    assert_eq!(search(by_tier), ["claim"], "any of a claim's tiers counts");
     let at = |t| LexicalFilter {
         valid_at_ms: Some(t),
         ..Default::default()

@@ -13,6 +13,8 @@ fn doc(id: &str, text: &str) -> IndexDoc {
         epistemic: None,
         valid_from_ms: None,
         valid_to_ms: None,
+        doc_type: None,
+        trust_tiers: vec![],
     }
 }
 
@@ -146,6 +148,8 @@ fn filters_restrict<L: LexicalIndex>(l: &L, v: &VaultId) {
         epistemic: Some("verified".into()),
         valid_from_ms: Some(100),
         valid_to_ms: Some(200),
+        doc_type: Some("weighs".into()),
+        trust_tiers: vec!["trusted".into(), "reviewed".into()],
         ..doc("claim", "shared")
     };
     let segment = IndexDoc {
@@ -170,6 +174,17 @@ fn filters_restrict<L: LexicalIndex>(l: &L, v: &VaultId) {
         ..f()
     };
     assert_eq!(filtered(l, v, epistemic), ["claim"]);
+    let types = LexicalFilter {
+        types: vec!["weighs".into()],
+        ..f()
+    };
+    assert_eq!(filtered(l, v, types), ["claim"]);
+    let tiers = |t: &str| LexicalFilter {
+        trust_tiers: vec![t.into()],
+        ..f()
+    };
+    assert_eq!(filtered(l, v, tiers("reviewed")), ["claim"], "any of a claim's tiers counts");
+    assert!(filtered(l, v, tiers("nope")).is_empty());
     let at = |t| LexicalFilter { valid_at_ms: Some(t), ..f() };
     assert_eq!(filtered(l, v, at(150)), ["claim", "segment"]);
     assert_eq!(filtered(l, v, at(100)), ["claim", "segment"], "the start is included");

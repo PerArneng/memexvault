@@ -3,7 +3,7 @@
 #![allow(clippy::disallowed_methods, clippy::disallowed_macros)]
 use memex_blob_fs::{FsBlobs, RealFs};
 use memex_core::{SearchEdges, Server, ServerEdges, Settings};
-use memex_inference::OnnxEmbedder;
+use memex_inference::{OnnxEmbedder, OnnxReranker};
 use memex_lexical::TantivyLexical;
 use memex_store_postgres::PgStore;
 use memex_vector::PgVectors;
@@ -30,6 +30,7 @@ impl ServerEdges for Production {
     type Lexical = TantivyIndex;
     type Vector = PgVectorIndex;
     type Embedder = OnnxEmbedder;
+    type Reranker = OnnxReranker;
 }
 
 fn fail(message: impl std::fmt::Display) -> ExitCode {
@@ -53,6 +54,11 @@ fn build(settings: &Settings) -> Result<(Arc<PgStore>, Server<Production>), Stri
                 settings.models_dir.join(memexvault::models::EMBED_DIR),
                 settings.embed_threads,
                 settings.embed_query_sessions,
+            ),
+            reranker: OnnxReranker::new(
+                settings.models_dir.join(memexvault::models::RERANK_DIR),
+                settings.rerank_threads,
+                settings.rerank_sessions,
             ),
         },
     );
@@ -147,12 +153,12 @@ fn render_worker(args: &[String]) -> ExitCode {
 fn models_command(args: &[String], settings: &Settings) -> ExitCode {
     let dir = &settings.models_dir;
     let result = match args.first().map(String::as_str) {
-        Some("fetch") => {
-            memexvault::models::fetch(dir, &memexvault::models::OCR_MODELS).and_then(|()| memexvault::models::fetch(dir, &memexvault::models::EMBED_MODELS))
-        }
-        Some("check") => {
-            memexvault::models::verify(dir, &memexvault::models::OCR_MODELS).and_then(|()| memexvault::models::verify(dir, &memexvault::models::EMBED_MODELS))
-        }
+        Some("fetch") => memexvault::models::fetch(dir, &memexvault::models::OCR_MODELS)
+            .and_then(|()| memexvault::models::fetch(dir, &memexvault::models::EMBED_MODELS))
+            .and_then(|()| memexvault::models::fetch(dir, &memexvault::models::RERANK_MODELS)),
+        Some("check") => memexvault::models::verify(dir, &memexvault::models::OCR_MODELS)
+            .and_then(|()| memexvault::models::verify(dir, &memexvault::models::EMBED_MODELS))
+            .and_then(|()| memexvault::models::verify(dir, &memexvault::models::RERANK_MODELS)),
         _ => Err("usage: memexvault models fetch | check".to_string()),
     };
     match result {

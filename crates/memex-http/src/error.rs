@@ -13,6 +13,10 @@ pub struct ApiError {
 }
 
 impl ApiError {
+    pub fn is_not_caught_up(&self) -> bool {
+        self.code == "not_caught_up"
+    }
+
     pub fn new(status: StatusCode, code: &'static str, message: impl Into<String>, request_id: &str) -> Self {
         Self {
             status,
@@ -36,6 +40,7 @@ impl ApiError {
             ServerError::UnsupportedMedia(_) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported_media"),
             ServerError::Busy => (StatusCode::TOO_MANY_REQUESTS, "busy"),
             ServerError::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
+            ServerError::NotCaughtUp { .. } => (StatusCode::SERVICE_UNAVAILABLE, "not_caught_up"),
             ServerError::AlreadyBootstrapped => (StatusCode::CONFLICT, "conflict"),
         };
         // Backend messages can carry internal detail, so callers get a plain one. The detail goes to the log.

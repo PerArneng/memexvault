@@ -35,6 +35,8 @@ pub fn passes(doc: &VectorDoc, f: &LexicalFilter) -> bool {
     (f.kinds.is_empty() || f.kinds.contains(&doc.kind))
         && (f.source_ids.is_empty() || doc.source_ids.iter().any(|s| f.source_ids.contains(s)))
         && (f.epistemic.is_empty() || doc.epistemic.as_ref().is_some_and(|e| f.epistemic.contains(e)))
+        && (f.types.is_empty() || doc.doc_type.as_ref().is_some_and(|t| f.types.contains(t)))
+        && (f.trust_tiers.is_empty() || f.trust_tiers.iter().any(|t| doc.trust_tiers.contains(t)))
         && f.valid_at_ms
             .is_none_or(|t| doc.valid_from_ms.is_none_or(|from| from <= t) && doc.valid_to_ms.is_none_or(|to| t < to))
 }

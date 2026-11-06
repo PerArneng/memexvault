@@ -111,6 +111,20 @@ pub(crate) fn ops_for_events<S: Snapshot>(snap: &S, events: &[Event]) -> Result<
     for e in events {
         touched.add_event(e).map_err(ProjectError::Upcast)?;
     }
+    for source in std::mem::take(&mut touched.sources) {
+        // A source's segments and claims carry its trust tier, so all of them are written again. This is rare, and bounded by the source's size.
+        for r in snap.renditions_of(&source)? {
+            let mut after = None;
+            loop {
+                let page = snap.segments_of(&r.header.id, after.as_ref(), PAGE_LIMIT)?;
+                let Some(last) = page.last() else { break };
+                after = Some(last.header.id.clone());
+                let ids: Vec<memex_types::ObjectId> = page.into_iter().map(|s| s.header.id).collect();
+                touched.assertions.extend(snap.evidence_citing(&ids)?.into_iter().map(|e| e.assertion_id));
+                touched.segments.extend(ids);
+            }
+        }
+    }
     for rendition in std::mem::take(&mut touched.renditions) {
         let mut after = None;
         loop {

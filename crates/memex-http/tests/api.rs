@@ -22,6 +22,7 @@ impl ServerEdges for Fakes {
     type Lexical = memex_core::testing::MemLexical;
     type Vector = memex_core::testing::MemVector;
     type Embedder = memex_core::testing::FakeEmbedder;
+    type Reranker = memex_core::testing::FakeReranker;
 }
 
 fn server() -> Arc<Server<Fakes>> {
@@ -1127,4 +1128,87 @@ async fn keyword_search_answers_refuses_and_stays_in_its_vault() {
     let reader = token_with(&w, "reader-b", Some(Scope::Read));
     let (status, _, _) = call(&w.s, "GET", &url(&w.b, "q=pump"), Some(&reader), None).await;
     assert!(status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND, "{status}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn search_returns_an_evidence_package_whose_citations_lead_back_to_the_text() {
+    use memex_core::StepOutcome;
+    let w = world();
+    let root = w.admin.clone();
+    let t = Some(root.as_str());
+    let base = format!("/api/v1/vaults/{}", w.a.0);
+    let (_, up) = upload_raw(&w.s, &w.a.0, t, "name=s.pdf", b"%PDF-1.7 search".to_vec()).await;
+    let sid = up["source"]["id"].as_str().unwrap().to_string();
+    let source = memex_types::ObjectId(sid.clone());
+    let job = w.s.claim_job(&w.a, "rendition", "w").unwrap().unwrap();
+    let rows = w.s.build_rendition(&w.a, &source, memex_core::RenditionInput::Pdf(pdf_doc(), vec![])).unwrap();
+    assert!(w.s.complete_job(&w.a, &job, rows).unwrap());
+    for _ in 0..200 {
+        w.s.engine().clock().advance(Duration::from_secs(60));
+        while w.s.project_lexical(&w.a).unwrap() == StepOutcome::Progress {}
+        while w.s.project_vector(&w.a).unwrap() == StepOutcome::Progress {}
+        let Some(embed) = w.s.claim_job(&w.a, memex_core::EMBED_JOB, "w").unwrap() else {
+            break;
+        };
+        w.s.run_embed_job(&w.a, &embed).unwrap();
+        w.s.complete_job(&w.a, &embed, vec![]).unwrap();
+    }
+    let (_, renditions, _) = call(&w.s, "GET", &format!("{base}/sources/{sid}/renditions"), t, None).await;
+    let rid = renditions["items"][0]["id"].as_str().unwrap().to_string();
+    let (status, body, _) = call(&w.s, "GET", &format!("{base}/search?q=Staden&debug=true&facets=true"), t, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["low_relevance"], false, "{body}");
+    assert_eq!(body["path"], "natural");
+    assert!(body["debug"]["signals"].is_array() && body["facets"]["trust_tier"].is_array(), "{body}");
+    let item = body["items"].as_array().unwrap().iter().find(|i| i["kind"] == "segment").expect("a segment");
+    let c = &item["citations"][0];
+    assert_eq!(c["anchor"], "located");
+    assert_eq!(c["source_id"], sid.as_str());
+    assert_eq!(c["rendition_id"], rid.as_str());
+    let caller = w.s.authenticate(&root).unwrap();
+    let canonical = w.s.rendition_blob(&caller, &w.a, &memex_types::ObjectId(rid.clone()), false).unwrap();
+    let (start, end) = (c["start"].as_u64().unwrap() as usize, c["end"].as_u64().unwrap() as usize);
+    assert_eq!(
+        std::str::from_utf8(&canonical[start..end]).unwrap(),
+        item["text"].as_str().unwrap(),
+        "the offsets lead to the same text"
+    );
+
+    let (_, plain, _) = call(&w.s, "GET", &format!("{base}/search?q=Staden"), t, None).await;
+    assert!(plain.get("debug").is_none() && plain.get("facets").is_none(), "{plain}");
+
+    for (q, needle) in [
+        ("q=", "no words"),
+        ("q=%22open", "quote"),
+        ("q=x&mode=nope", "mode"),
+        ("q=x&limit=0", "limit"),
+        ("q=x&budget_tokens=0", "budget"),
+        ("q=x&kind=nope", "kind"),
+        ("q=x&cursor=nope", "cursor"),
+        ("q=x&as_of=1&as_of_ms=1", "not both"),
+        ("q=x&min_seq=99999999", "ahead of the log"),
+        ("q=x&as_of=99999999", "ahead of the log"),
+        ("q=x&min_seq_wait_ms=30001", "min_seq_wait_ms"),
+    ] {
+        let (status, body, _) = call(&w.s, "GET", &format!("{base}/search?{q}"), t, None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{q}: {body}");
+        assert!(body["error"]["message"].as_str().unwrap().contains(needle), "{q}: {body}");
+    }
+
+    let (status, past, _) = call(&w.s, "GET", &format!("{base}/search?q=Staden&as_of_ms=-1"), t, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(past["items"].as_array().unwrap().len(), 0);
+    assert_eq!(past["low_relevance"], true);
+
+    // Something written now and never projected: `min_seq` waits as long as it's allowed, then says so.
+    let seq =
+        w.s.record_segment(&caller, &w.a, &memex_types::ObjectId("late".into()), &source, None, "a late arrival")
+            .unwrap()
+            .seq;
+    let (status, body, _) = call(&w.s, "GET", &format!("{base}/search?q=late&min_seq={seq}&min_seq_wait_ms=120"), t, None).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+    assert_eq!(body["error"]["code"], "not_caught_up");
+
+    let (status, _, _) = call(&w.s, "GET", &format!("{base}/search?q=x"), None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }

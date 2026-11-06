@@ -274,10 +274,15 @@ fn pg_bad_cases() {
         .expect("restore");
 
     // synchronous_commit off is refused at startup.
-    admin.batch_execute("ALTER DATABASE memex SET synchronous_commit = off").expect("alter");
+    let database = url().rsplit('/').next().expect("a database in the URL").to_string();
+    admin
+        .batch_execute(&format!("ALTER DATABASE {database} SET synchronous_commit = off"))
+        .expect("alter");
     let off = PgStore::connect(&url(), 2).expect("connect");
     assert!(matches!(off.check_server(), Err(PgError::Refused(m)) if m.contains("synchronous_commit")));
-    admin.batch_execute("ALTER DATABASE memex RESET synchronous_commit").expect("reset");
+    admin
+        .batch_execute(&format!("ALTER DATABASE {database} RESET synchronous_commit"))
+        .expect("reset");
     PgStore::connect(&url(), 2).expect("connect").check_server().expect("passes again");
 
     // The password shows up in no error or debug output.
@@ -475,6 +480,7 @@ impl memex_core::ServerEdges for JobEdges {
     type Lexical = memex_core::testing::MemLexical;
     type Vector = memex_core::testing::MemVector;
     type Embedder = memex_core::testing::FakeEmbedder;
+    type Reranker = memex_core::testing::FakeReranker;
 }
 
 fn job_server(data: &str, offset_ms: i64) -> memex_core::Server<JobEdges> {

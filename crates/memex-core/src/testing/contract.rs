@@ -49,10 +49,82 @@ pub fn run_all<S: Store>(store: &S, prefix: &str) {
     get_many_keeps_key_order(store, &name("many"));
     paging_returns_everything_once(store, &name("page"));
     compact_changes_no_reads(store, &name("compact"));
+    edges_and_sections_read_in_batches(store, &name("sections"));
     batches_are_all_or_nothing(store, &name("batch"));
     deleting_a_vault_removes_it(store, &name("gone"));
     vaults_are_isolated(store, &name("iso-a"), &name("iso-b"));
     unknown_vault_is_refused(store, &name("never-opened"));
+}
+
+fn edges_and_sections_read_in_batches<S: Store>(store: &S, v: &VaultId) {
+    let lease = store.open_vault(v).expect("open");
+    let header = |id: &str| memex_types::Header {
+        id: ObjectId(id.into()),
+        creator: "t".into(),
+        status: memex_types::Status::Active,
+        version: 1,
+        acl_id: None,
+    };
+    let edge = |id: &str, from: &str, to: &str, kind: &str| {
+        Mutation::Put(Row::Edge(memex_types::EdgeRow {
+            header: header(id),
+            from: ObjectId(from.into()),
+            to: ObjectId(to.into()),
+            kind: kind.into(),
+        }))
+    };
+    let segment = |id: &str, rendition: &str, heading: Option<&str>, start: u64| {
+        Mutation::Put(Row::Segment(memex_types::SegmentRow {
+            header: header(id),
+            source_id: ObjectId("src".into()),
+            language: None,
+            text: format!("text of {id}"),
+            rendition_id: Some(ObjectId(rendition.into())),
+            start,
+            end: start + 1,
+            heading: heading.map(String::from),
+            page_from: None,
+            page_to: None,
+        }))
+    };
+    let rows = vec![
+        edge("e1", "a", "b", "contradicts"),
+        edge("e2", "c", "a", "contradicts"),
+        edge("e3", "a", "d", "cites"),
+        edge("e4", "x", "y", "contradicts"),
+        segment("z-first", "r1", Some("H"), 0),
+        segment("a-second", "r1", Some("H"), 10),
+        segment("other", "r1", Some("J"), 20),
+        segment("none", "r1", None, 30),
+        segment("elsewhere", "r2", Some("H"), 0),
+    ];
+    store.commit(&lease, &raw_event(v, 0), &rows).expect("commit");
+    let snap = store.snapshot(v).expect("snap");
+    let mut touching: Vec<String> = snap
+        .edges_touching(&[ObjectId("a".into()), ObjectId("nope".into())], "contradicts")
+        .expect("edges")
+        .into_iter()
+        .map(|e| e.header.id.0)
+        .collect();
+    touching.sort();
+    assert_eq!(touching, ["e1", "e2"]);
+    let ids = |rows: Vec<memex_types::SegmentRow>| rows.into_iter().map(|s| s.header.id.0).collect::<Vec<_>>();
+    assert_eq!(
+        ids(snap.sections_of(&[(ObjectId("r1".into()), "H".into())], 10).expect("section")),
+        ["z-first", "a-second"],
+        "by offset, not id"
+    );
+    assert_eq!(
+        ids(snap
+            .sections_of(&[(ObjectId("r2".into()), "H".into()), (ObjectId("r1".into()), "J".into())], 10)
+            .expect("two")),
+        ["other", "elsewhere"],
+        "only the pairs asked for"
+    );
+    assert_eq!(ids(snap.sections_of(&[(ObjectId("r1".into()), "H".into())], 1).expect("limit")), ["z-first"]);
+    assert!(snap.sections_of(&[(ObjectId("r9".into()), "H".into())], 10).expect("none").is_empty());
+    drop(snap);
+    store.close_vault(&lease).expect("close");
 }
 
 fn apply_then_read<S: Store>(store: &S, v: &VaultId) {

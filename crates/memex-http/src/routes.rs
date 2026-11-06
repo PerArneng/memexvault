@@ -66,6 +66,7 @@ type App<E> = Arc<Server<E>>;
         get_rendition,
         list_segments,
         get_segment,
+        search,
         search_lexical,
         search_vector,
         list_reanchor_failures,
@@ -176,6 +177,7 @@ where
         .route("/vaults/{id}/renditions/{rid}", get(get_rendition::<E>))
         .route("/vaults/{id}/renditions/{rid}/segments", get(list_segments::<E>))
         .route("/vaults/{id}/segments/{seg}", get(get_segment::<E>))
+        .route("/vaults/{id}/search", get(search::<E>))
         .route("/vaults/{id}/search/lexical", get(search_lexical::<E>))
         .route("/vaults/{id}/search/vector", get(search_vector::<E>))
         .route("/vaults/{id}/reanchor-failures", get(list_reanchor_failures::<E>))
@@ -1119,6 +1121,34 @@ where
 {
     let row = authed(server, headers, &rid, move |s, c| s.get_segment(c, &VaultId(id), &memex_types::ObjectId(seg))).await?;
     Ok(Json(row.into()))
+}
+
+/// How often `min_seq` checks again while it waits.
+const MIN_SEQ_POLL: std::time::Duration = std::time::Duration::from_millis(50);
+
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/search", tag = "search", params(("id" = String, Path), memex_api::SearchParams), responses((status = 200, body = memex_api::EvidencePackageDto), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody), (status = 429, body = ErrorBody), (status = 503, body = ErrorBody)))]
+async fn search<E>(
+    State(server): State<App<E>>,
+    Extension(rid): Extension<RequestId>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(params): Query<memex_api::SearchParams>,
+) -> Result<Json<memex_api::EvidencePackageDto>, ApiError>
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
+    let (request, wait_ms) = params.validated().map_err(|m| ApiError::from_server(ServerError::Invalid(m), &rid.0))?;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(u64::from(wait_ms));
+    loop {
+        let (r, v) = (request.clone(), VaultId(id.clone()));
+        match authed(server.clone(), headers.clone(), &rid, move |s, c| s.search(c, &v, &r)).await {
+            Ok(package) => return Ok(Json(package.into())),
+            // An index catches up on its own, so this is the one failure worth waiting out.
+            Err(e) if e.is_not_caught_up() && tokio::time::Instant::now() + MIN_SEQ_POLL < deadline => tokio::time::sleep(MIN_SEQ_POLL).await,
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 #[utoipa::path(get, path = "/api/v1/vaults/{id}/search/lexical", tag = "search", params(("id" = String, Path), memex_api::LexicalSearchParams), responses((status = 200, body = memex_api::LexicalResultsDto), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody), (status = 503, body = ErrorBody)))]

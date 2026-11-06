@@ -78,6 +78,14 @@ impl Snapshot for PostgresSnapshot<'_> {
         self.inner.assertions_matching(hashes, pairs).map_err(|e| translate(&self.vault, e))
     }
 
+    fn edges_touching(&self, ids: &[ObjectId], kind: &str) -> Result<Vec<memex_types::EdgeRow>, StoreError> {
+        self.inner.edges_touching(ids, kind).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn sections_of(&self, sections: &[(ObjectId, String)], limit: usize) -> Result<Vec<SegmentRow>, StoreError> {
+        self.inner.sections_of(sections, limit).map_err(|e| translate(&self.vault, e))
+    }
+
     fn head(&self) -> Result<Option<u64>, StoreError> {
         self.inner.head().map_err(|e| translate(&self.vault, e))
     }

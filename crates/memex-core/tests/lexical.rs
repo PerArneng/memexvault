@@ -442,6 +442,7 @@ impl ServerEdges for Fakes {
     type Lexical = MemLexical;
     type Vector = memex_core::testing::MemVector;
     type Embedder = memex_core::testing::FakeEmbedder;
+    type Reranker = memex_core::testing::FakeReranker;
 }
 
 fn server() -> (Server<Fakes>, memex_core::Caller, VaultId) {
@@ -509,6 +510,8 @@ fn search_fences_a_hit_retracted_after_it_was_indexed() {
         epistemic: None,
         valid_from_ms: None,
         valid_to_ms: None,
+        doc_type: None,
+        trust_tiers: vec![],
     };
     s.lexical().write(&v, Generation::Live, &[IndexOp::Upsert(ghost)]).unwrap();
     s.lexical().commit(&v, Generation::Live, Some(1)).unwrap();

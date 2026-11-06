@@ -1,5 +1,6 @@
 use memex_types::{
-    AssertionRow, ChangeSetRow, Event, EvidenceRow, JobRow, JobState, Mutation, ObjectId, RenditionRow, Row, RowKey, SegmentRow, SourceRow, Table, VaultId,
+    AssertionRow, ChangeSetRow, EdgeRow, Event, EvidenceRow, JobRow, JobState, Mutation, ObjectId, RenditionRow, Row, RowKey, SegmentRow, SourceRow, Table,
+    VaultId,
 };
 use std::fmt;
 
@@ -85,6 +86,10 @@ pub trait Snapshot {
     fn evidence_of(&self, assertion_ids: &[ObjectId]) -> Result<Vec<EvidenceRow>, StoreError>;
     /// Evidence citing any of these segments. One store call.
     fn evidence_citing(&self, segment_ids: &[ObjectId]) -> Result<Vec<EvidenceRow>, StoreError>;
+    /// Active edges of this kind that start or end at any of these ids. One store call.
+    fn edges_touching(&self, ids: &[ObjectId], kind: &str) -> Result<Vec<EdgeRow>, StoreError>;
+    /// The segments under these (rendition, heading) pairs, by rendition and offset, at most `limit`. One store call.
+    fn sections_of(&self, sections: &[(ObjectId, String)], limit: usize) -> Result<Vec<SegmentRow>, StoreError>;
     /// Evidence whose re-anchoring failed, in id order.
     fn broken_anchors(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<EvidenceRow>, StoreError>;
     /// The source with these bytes, if any.

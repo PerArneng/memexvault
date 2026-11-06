@@ -810,6 +810,34 @@ impl PgSnapshot<'_> {
             .collect())
     }
 
+    pub fn edges_touching(&self, ids: &[ObjectId], kind: &str) -> Result<Vec<EdgeRow>, PgError> {
+        let ids: Vec<&str> = ids.iter().map(|i| i.0.as_str()).collect();
+        let sql = format!(
+            "SELECT * FROM {}.edges WHERE kind = $1 AND status = 'active' AND (from_id = ANY($2) OR to_id = ANY($2)) ORDER BY id",
+            self.schema
+        );
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&kind, &ids]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Edge(x) = row_from(Table::Edge, r) { Some(x) } else { None })
+            .collect())
+    }
+
+    pub fn sections_of(&self, sections: &[(ObjectId, String)], limit: usize) -> Result<Vec<SegmentRow>, PgError> {
+        let renditions: Vec<&str> = sections.iter().map(|s| s.0.0.as_str()).collect();
+        let headings: Vec<&str> = sections.iter().map(|s| s.1.as_str()).collect();
+        let sql = format!(
+            "SELECT row FROM {s}.segments AS g JOIN unnest($1::text[], $2::text[]) AS w(r, h) ON g.rendition_id = w.r AND g.row->'segment'->>'heading' = w.h
+             ORDER BY g.rendition_id, (g.row->'segment'->>'start')::bigint LIMIT $3",
+            s = self.schema
+        );
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&renditions, &headings, &(limit as i64)]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Segment(x) = json_row(r) { Some(x) } else { None })
+            .collect())
+    }
+
     pub fn broken_anchors(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<EvidenceRow>, PgError> {
         let sql = format!(
             "SELECT row FROM {}.evidence WHERE anchor_broken AND ($1::text IS NULL OR id > $1) ORDER BY id LIMIT $2",

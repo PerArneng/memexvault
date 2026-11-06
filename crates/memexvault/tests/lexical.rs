@@ -43,6 +43,8 @@ fn doc(id: &str, language: Option<&str>, text: &str) -> IndexOp {
         epistemic: None,
         valid_from_ms: None,
         valid_to_ms: None,
+        doc_type: None,
+        trust_tiers: vec![],
     })
 }
 
@@ -361,7 +363,7 @@ fn a_generation_from_an_older_schema_is_rebuilt() {
     };
     let meta = base.join("gen-1").join("meta.json");
     let text = fs::read_to_string(&meta).unwrap();
-    let older = text.replace("\\\"schema\\\":1", "\\\"schema\\\":0");
+    let older = text.replace("\\\"schema\\\":2", "\\\"schema\\\":1");
     assert_ne!(text, older, "the payload's format changed, so this test needs updating");
     fs::write(&meta, older).unwrap();
     let l = index(&dir);

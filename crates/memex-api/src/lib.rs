@@ -1,7 +1,8 @@
 //! Pure: request and response types for the HTTP API, and their translation from domain data. No web framework.
 use memex_types::{
-    AssertionRow, ChangeSetRow, DocKind, Event, EvidenceRow, Grant, JobRow, LexicalFilter, LexicalResults, ObjectId, Op, Principal, PrincipalKind,
-    RenditionRow, Scope, SegmentRow, SourceRow, TokenRow, VaultId, VaultRow,
+    AsOf, AssertionRow, ChangeSetRow, Citation, Conflict, DocKind, Event, EvidenceItem, EvidencePackage, EvidenceRow, FacetCount, Facets, Grant, JobRow,
+    LexicalFilter, LexicalResults, ObjectId, Op, Principal, PrincipalKind, RenditionRow, Scope, SearchDebug, SearchMode, SearchRequest, SegmentRow,
+    SignalScores, SourceRow, TokenRow, VaultId, VaultRow,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -870,6 +871,7 @@ impl LexicalSearchParams {
             source_ids: self.source_id.map(ObjectId).into_iter().collect(),
             epistemic: self.epistemic.into_iter().collect(),
             valid_at_ms: self.valid_at_ms,
+            ..Default::default()
         };
         Ok((self.q, filter, limit as usize))
     }
@@ -903,6 +905,364 @@ impl From<LexicalResults> for LexicalResultsDto {
                 })
                 .collect(),
             watermark: r.watermark,
+        }
+    }
+}
+
+/// A search. `q` holds words and double-quoted phrases, and everything else is typed. List filters take comma-separated values.
+#[derive(Debug, Default, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct SearchParams {
+    pub q: String,
+    /// `hybrid`, the default, or `lexical` or `vector` for comparison and debugging.
+    pub mode: Option<String>,
+    /// Ranked items per page, 1 to 100. The default is 20.
+    pub limit: Option<u32>,
+    /// The most estimated tokens per page. The default is 4000.
+    pub budget_tokens: Option<u32>,
+    pub cursor: Option<String>,
+    /// `segment` or `claim`.
+    pub kind: Option<String>,
+    /// A segment's media type, or a claim's predicate.
+    #[serde(rename = "type")]
+    #[param(rename = "type")]
+    pub doc_type: Option<String>,
+    pub source_id: Option<String>,
+    pub trust_tier: Option<String>,
+    pub epistemic: Option<String>,
+    /// Keeps what's valid at this time, in milliseconds since 1970.
+    pub valid_at_ms: Option<i64>,
+    /// Answer as the vault stood just after this event. Slow: it reads the log.
+    pub as_of: Option<u64>,
+    /// As `as_of`, by time in milliseconds since 1970.
+    pub as_of_ms: Option<i64>,
+    /// Wait until the indexes have seen this event, for reading your own writes.
+    pub min_seq: Option<u64>,
+    /// How long `min_seq` may wait, 0 to 30000. The default is 2000.
+    pub min_seq_wait_ms: Option<u32>,
+    /// Also rerank the top 20 with a cross-encoder. Slower.
+    pub rerank: Option<bool>,
+    /// Add per-signal scores, the planner's path and timings.
+    pub debug: Option<bool>,
+    /// Add counts for the typed filters, over the candidates found.
+    pub facets: Option<bool>,
+}
+
+fn csv(value: Option<String>) -> Vec<String> {
+    value.map_or(vec![], |v| v.split(',').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect())
+}
+
+impl SearchParams {
+    /// Pure validation. Returns the request and how long `min_seq` may wait, in milliseconds.
+    pub fn validated(self) -> Result<(SearchRequest, u32), String> {
+        let limit = self.limit.unwrap_or(20);
+        if !(1..=100).contains(&limit) {
+            return Err(format!("limit must be from 1 to 100, not {limit}"));
+        }
+        let budget = self.budget_tokens.unwrap_or(4000);
+        if budget == 0 {
+            return Err("budget_tokens must be at least 1".into());
+        }
+        let wait = self.min_seq_wait_ms.unwrap_or(2000);
+        if wait > 30_000 {
+            return Err(format!("min_seq_wait_ms must be at most 30000, not {wait}"));
+        }
+        let mode = match self.mode.as_deref() {
+            None => SearchMode::Hybrid,
+            Some(m) => SearchMode::parse(m).ok_or_else(|| format!("mode must be hybrid, lexical or vector, not {m}"))?,
+        };
+        let kinds = csv(self.kind)
+            .iter()
+            .map(|k| DocKind::parse(k).ok_or_else(|| format!("kind must be segment or claim, not {k}")))
+            .collect::<Result<_, _>>()?;
+        let as_of = match (self.as_of, self.as_of_ms) {
+            (Some(_), Some(_)) => return Err("give as_of or as_of_ms, not both".into()),
+            (Some(seq), None) => Some(AsOf::Seq(seq)),
+            (None, Some(ms)) => Some(AsOf::Time(ms)),
+            (None, None) => None,
+        };
+        Ok((
+            SearchRequest {
+                text: self.q,
+                mode,
+                filter: LexicalFilter {
+                    kinds,
+                    source_ids: csv(self.source_id).into_iter().map(ObjectId).collect(),
+                    epistemic: csv(self.epistemic),
+                    valid_at_ms: self.valid_at_ms,
+                    types: csv(self.doc_type),
+                    trust_tiers: csv(self.trust_tier),
+                },
+                limit: limit as usize,
+                budget_tokens: budget as usize,
+                cursor: self.cursor,
+                as_of,
+                min_seq: self.min_seq,
+                rerank: self.rerank.unwrap_or(false),
+                debug: self.debug.unwrap_or(false),
+                facets: self.facets.unwrap_or(false),
+            },
+            wait,
+        ))
+    }
+}
+
+/// Where an item's text comes from. `anchor` is always there: `located`, `broken` or `none`.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CitationDto {
+    pub anchor: String,
+    pub source_id: Option<String>,
+    pub source_name: Option<String>,
+    pub source_sha256: Option<String>,
+    pub trust_tier: Option<String>,
+    pub segment_id: Option<String>,
+    pub evidence_id: Option<String>,
+    pub rendition_id: Option<String>,
+    pub start: Option<u64>,
+    pub end: Option<u64>,
+    pub page_from: Option<u32>,
+    pub page_to: Option<u32>,
+    pub rects: Vec<RectDto>,
+    pub quote: Option<String>,
+}
+
+impl From<Citation> for CitationDto {
+    fn from(c: Citation) -> Self {
+        Self {
+            anchor: c.status.as_str().into(),
+            source_id: c.source_id.map(|i| i.0),
+            source_name: c.source_name,
+            source_sha256: c.source_sha256,
+            trust_tier: c.trust_tier,
+            segment_id: c.segment_id.map(|i| i.0),
+            evidence_id: c.evidence_id.map(|i| i.0),
+            rendition_id: c.rendition_id.map(|i| i.0),
+            start: c.start,
+            end: c.end,
+            page_from: c.page_from,
+            page_to: c.page_to,
+            rects: c
+                .rects
+                .into_iter()
+                .map(|(page, r)| RectDto {
+                    page,
+                    x0: r.x0,
+                    y0: r.y0,
+                    x1: r.x1,
+                    y1: r.y1,
+                })
+                .collect(),
+            quote: c.quote,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ConflictDto {
+    pub claim_id: String,
+    pub text: String,
+    pub epistemic: Option<String>,
+    pub source_ids: Vec<String>,
+}
+
+impl From<Conflict> for ConflictDto {
+    fn from(c: Conflict) -> Self {
+        Self {
+            claim_id: c.claim_id.0,
+            text: c.text,
+            epistemic: c.epistemic,
+            source_ids: c.source_ids.into_iter().map(|i| i.0).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct EvidenceItemDto {
+    pub id: String,
+    /// `claim`, `segment` or `section`.
+    pub kind: String,
+    pub text: String,
+    pub heading: Option<String>,
+    pub language: Option<String>,
+    pub epistemic: Option<String>,
+    pub trust_tiers: Vec<String>,
+    pub valid_from_ms: Option<i64>,
+    pub valid_to_ms: Option<i64>,
+    pub score: Option<f32>,
+    pub estimated_tokens: usize,
+    pub citations: Vec<CitationDto>,
+    pub conflicts: Vec<ConflictDto>,
+}
+
+impl From<EvidenceItem> for EvidenceItemDto {
+    fn from(i: EvidenceItem) -> Self {
+        Self {
+            id: i.id.0,
+            kind: i.kind.as_str().into(),
+            text: i.text,
+            heading: i.heading,
+            language: i.language,
+            epistemic: i.epistemic,
+            trust_tiers: i.trust_tiers,
+            valid_from_ms: i.valid_from_ms,
+            valid_to_ms: i.valid_to_ms,
+            score: i.score,
+            estimated_tokens: i.estimated_tokens,
+            citations: i.citations.into_iter().map(Into::into).collect(),
+            conflicts: i.conflicts.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct BudgetDto {
+    pub limit: usize,
+    pub used: usize,
+    pub truncated: bool,
+    pub smallest_item_needs: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct SignalScoresDto {
+    pub id: String,
+    pub lexical_rank: Option<usize>,
+    pub lexical_score: Option<f32>,
+    pub vector_rank: Option<usize>,
+    pub vector_score: Option<f32>,
+    pub fused: f32,
+    pub rerank_score: Option<f32>,
+}
+
+impl From<SignalScores> for SignalScoresDto {
+    fn from(s: SignalScores) -> Self {
+        Self {
+            id: s.id.0,
+            lexical_rank: s.lexical_rank,
+            lexical_score: s.lexical_score,
+            vector_rank: s.vector_rank,
+            vector_score: s.vector_score,
+            fused: s.fused,
+            rerank_score: s.rerank_score,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct StageTimingDto {
+    pub stage: String,
+    pub ms: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct SearchDebugDto {
+    pub lexical_weight: f32,
+    pub vector_weight: f32,
+    pub lexical_terms: usize,
+    pub dropped_terms: usize,
+    pub best_vector_score: Option<f32>,
+    pub term_coverage: Option<f32>,
+    pub candidates_before_fence: usize,
+    pub candidates_after_fence: usize,
+    pub signals: Vec<SignalScoresDto>,
+    pub timings: Vec<StageTimingDto>,
+}
+
+impl From<SearchDebug> for SearchDebugDto {
+    fn from(d: SearchDebug) -> Self {
+        Self {
+            lexical_weight: d.lexical_weight,
+            vector_weight: d.vector_weight,
+            lexical_terms: d.lexical_terms,
+            dropped_terms: d.dropped_terms,
+            best_vector_score: d.best_vector_score,
+            term_coverage: d.term_coverage,
+            candidates_before_fence: d.candidates_before_fence,
+            candidates_after_fence: d.candidates_after_fence,
+            signals: d.signals.into_iter().map(Into::into).collect(),
+            timings: d.timings_ms.into_iter().map(|(stage, ms)| StageTimingDto { stage, ms }).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct FacetCountDto {
+    pub value: String,
+    pub count: u64,
+}
+
+fn facet_counts(counts: Vec<FacetCount>) -> Vec<FacetCountDto> {
+    counts
+        .into_iter()
+        .map(|c| FacetCountDto {
+            value: c.value,
+            count: c.count,
+        })
+        .collect()
+}
+
+/// Counts over the candidates found, not the whole vault.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct FacetsDto {
+    pub kind: Vec<FacetCountDto>,
+    #[serde(rename = "type")]
+    pub doc_type: Vec<FacetCountDto>,
+    pub source_id: Vec<FacetCountDto>,
+    pub trust_tier: Vec<FacetCountDto>,
+    pub epistemic: Vec<FacetCountDto>,
+}
+
+impl From<Facets> for FacetsDto {
+    fn from(f: Facets) -> Self {
+        Self {
+            kind: facet_counts(f.kind),
+            doc_type: facet_counts(f.doc_type),
+            source_id: facet_counts(f.source_id),
+            trust_tier: facet_counts(f.trust_tier),
+            epistemic: facet_counts(f.epistemic),
+        }
+    }
+}
+
+/// The answer to a search: claims first, then segments, then context sections, within a token budget.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct EvidencePackageDto {
+    /// `exact`, `identifier`, `natural`, `filtered` or `as_of`.
+    pub path: String,
+    pub items: Vec<EvidenceItemDto>,
+    /// Nothing here looks like an answer.
+    pub low_relevance: bool,
+    pub notices: Vec<String>,
+    pub budget: BudgetDto,
+    pub next_cursor: Option<String>,
+    pub watermark: Option<u64>,
+    pub as_of: Option<u64>,
+    /// Signals that couldn't answer, so the result rests on the others.
+    pub degraded: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debug: Option<SearchDebugDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facets: Option<FacetsDto>,
+}
+
+impl From<EvidencePackage> for EvidencePackageDto {
+    fn from(p: EvidencePackage) -> Self {
+        Self {
+            path: p.path.as_str().into(),
+            items: p.items.into_iter().map(Into::into).collect(),
+            low_relevance: p.low_relevance,
+            notices: p.notices,
+            budget: BudgetDto {
+                limit: p.budget.limit,
+                used: p.budget.used,
+                truncated: p.budget.truncated,
+                smallest_item_needs: p.budget.smallest_item_needs,
+            },
+            next_cursor: p.next_cursor,
+            watermark: p.watermark,
+            as_of: p.as_of,
+            degraded: p.degraded,
+            debug: p.debug.map(Into::into),
+            facets: p.facets.map(Into::into),
         }
     }
 }

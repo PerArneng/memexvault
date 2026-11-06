@@ -54,12 +54,14 @@ the repository root:
 - First time: `scripts/fetch-pdfium.sh`, which puts the pinned static pdfium in `vendor/`.
 - `cargo build --workspace`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo fmt --check` and `cargo deny check licenses`.
+- `migrate` upgrades every vault in the database, and a binary refuses a schema newer than it knows, so a branch that adds a migration should run these against a database of its own.
 - Tests that need Postgres are ignored by default, so they show as not run rather than passed: `docker compose up -d`, then
   `MEMEX_TEST_DATABASE_URL=postgres://postgres:memex@127.0.0.1:55432/memex cargo test -p memexvault --release -- --ignored --test-threads=1 pg_`.
   The `pg_kill_postgres` test also needs `MEMEX_TEST_CONTAINER=memexvault-postgres-1` and kills that container repeatedly.
 - The keyword index harness needs Postgres and the corpus from spec 004: set `MEMEX_TEST_DATABASE_URL`, `MEMEX_TEST_DATA` and `MEMEX_TEST_CORPUS`, then
   `cargo test -p memexvault --release --test lexical_harness -- --ignored --nocapture --exact lexical_bench_200k` or `lexical_kill_200_times`.
 - The vector index needs Postgres: `cargo test -p memexvault --release --test vector -- --ignored --test-threads=1 pg_`. `real_model_matches_the_spike_and_is_fast_enough` in that file also needs `MEMEX_TEST_E5` (`model.onnx` and `tokenizer.json`), and `MEMEX_TEST_CORPUS` and `MEMEX_TEST_VECTORS` from spec 004. The harness uses the same variables: `cargo test -p memexvault --release --test vector_harness -- --ignored --nocapture --exact vector_bench_200k` or `vector_kill_200_times`.
+- Search needs Postgres, the same data, and `MEMEX_TEST_DATA`, `MEMEX_TEST_E5` and `MEMEX_TEST_RERANKER` (spec 005's `mmarco` folder): `cargo test -p memexvault --release --test golden -- --ignored --nocapture --exact golden_recall` or `latency_50k_200k`, on the golden set in `crates/memexvault/tests/fixtures/golden/`.
 - OCR tests are ignored unless `MEMEX_TEST_MODELS` names a folder of model files: `cargo test -p memexvault --release --test pdf_pipeline -- --ignored --test-threads=1`.
 - The binary: `memexvault migrate`, `memexvault bootstrap <name>`, `memexvault models fetch` and `memexvault serve`, with `MEMEX_DATABASE_URL` set.
 

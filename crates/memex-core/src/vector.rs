@@ -153,6 +153,8 @@ fn vector_doc(doc: IndexDoc, vector: Vec<f32>) -> VectorDoc {
         epistemic: doc.epistemic,
         valid_from_ms: doc.valid_from_ms,
         valid_to_ms: doc.valid_to_ms,
+        doc_type: doc.doc_type,
+        trust_tiers: doc.trust_tiers,
         vector,
     }
 }

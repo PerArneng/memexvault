@@ -39,6 +39,10 @@ pub struct IndexDoc {
     pub epistemic: Option<String>,
     pub valid_from_ms: Option<i64>,
     pub valid_to_ms: Option<i64>,
+    /// What sort of thing it is within its kind: a segment's media type, or a claim's predicate.
+    pub doc_type: Option<String>,
+    /// The trust tiers of the sources behind it. A claim can cite several.
+    pub trust_tiers: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +68,8 @@ pub struct LexicalFilter {
     pub epistemic: Vec<String>,
     /// Keeps documents valid at this time. A missing bound is open.
     pub valid_at_ms: Option<i64>,
+    pub types: Vec<String>,
+    pub trust_tiers: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

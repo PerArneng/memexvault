@@ -15,6 +15,7 @@ mod reducer;
 mod registry;
 pub mod rendition;
 mod replay;
+pub mod search;
 mod seed;
 mod server;
 mod settings;
@@ -37,6 +38,7 @@ pub use raster::{ALLOWED_DPI, PageImage, RasterError, Rasterizer, THUMBNAIL_DPI,
 pub use reducer::{ChangeSetRecorded, ReduceError, StateRecorded, reduce};
 pub use registry::{Registry, RegistryError};
 pub use replay::{ReplayError, all_events, replay};
+pub use search::Reranker;
 pub use seed::Seed;
 pub use server::{
     ClaimRef, CreatedToken, EvidenceLineage, Lineage, NewToken, PIPELINE_VERSION, PageList, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT,

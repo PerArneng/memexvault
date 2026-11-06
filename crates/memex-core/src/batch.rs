@@ -101,6 +101,16 @@ impl<S: Snapshot> Snapshot for Pending<'_, S> {
         self.base.rows(table, after)
     }
 
+    /// Committed rows only, as with `rows`.
+    fn edges_touching(&self, ids: &[ObjectId], kind: &str) -> Result<Vec<memex_types::EdgeRow>, StoreError> {
+        self.base.edges_touching(ids, kind)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn sections_of(&self, sections: &[(ObjectId, String)], limit: usize) -> Result<Vec<memex_types::SegmentRow>, StoreError> {
+        self.base.sections_of(sections, limit)
+    }
+
     /// Committed events only, as with `rows`.
     fn events(&self, after: Option<u64>) -> Result<Vec<Event>, StoreError> {
         self.base.events(after)

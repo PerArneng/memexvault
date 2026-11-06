@@ -122,6 +122,12 @@ pub fn filter_sql(f: &LexicalFilter) -> Result<String, VectorError> {
     if !f.epistemic.is_empty() {
         parts.push(format!("epistemic = ANY({})", quoted_array(f.epistemic.iter().cloned())?));
     }
+    if !f.types.is_empty() {
+        parts.push(format!("doc_type = ANY({})", quoted_array(f.types.iter().cloned())?));
+    }
+    if !f.trust_tiers.is_empty() {
+        parts.push(format!("trust_tiers && {}", quoted_array(f.trust_tiers.iter().cloned())?));
+    }
     if let Some(t) = f.valid_at_ms {
         parts.push(format!("(valid_from IS NULL OR valid_from <= {t}) AND (valid_to IS NULL OR {t} < valid_to)"));
     }
@@ -286,6 +292,8 @@ impl PgVectors {
                     epistemic text,
                     valid_from bigint,
                     valid_to bigint,
+                    doc_type text,
+                    trust_tiers text[] NOT NULL,
                     embedding halfvec({dim}) NOT NULL
                 );",
                 dim = model.dimension
@@ -324,6 +332,7 @@ impl PgVectors {
                 last.insert(id, op);
             }
             let (mut ids, mut kinds, mut sources, mut epistemic, mut from, mut to, mut vectors, mut gone) = (vec![], vec![], vec![], vec![], vec![], vec![], vec![], vec![]);
+            let (mut types, mut tiers) = (vec![], vec![]);
             for op in last.values() {
                 match op {
                     VectorOp::Upsert(d) => {
@@ -333,6 +342,8 @@ impl PgVectors {
                         epistemic.push(d.epistemic.clone());
                         from.push(d.valid_from_ms);
                         to.push(d.valid_to_ms);
+                        types.push(d.doc_type.clone());
+                        tiers.push(serde_json::json!(d.trust_tiers));
                         vectors.push(vector_text(&d.vector));
                     }
                     VectorOp::Delete(id) => gone.push(id.0.clone()),
@@ -343,13 +354,13 @@ impl PgVectors {
             if !ids.is_empty() {
                 t.execute(
                     &format!(
-                        "INSERT INTO {name} (id, kind, source_ids, epistemic, valid_from, valid_to, embedding)
-                         SELECT d.id, d.kind, ARRAY(SELECT jsonb_array_elements_text(d.sources)), d.epistemic, d.vf, d.vt, d.v::halfvec
-                         FROM unnest($1::text[], $2::text[], $3::jsonb[], $4::text[], $5::bigint[], $6::bigint[], $7::text[]) AS d(id, kind, sources, epistemic, vf, vt, v)
+                        "INSERT INTO {name} (id, kind, source_ids, epistemic, valid_from, valid_to, doc_type, trust_tiers, embedding)
+                         SELECT d.id, d.kind, ARRAY(SELECT jsonb_array_elements_text(d.sources)), d.epistemic, d.vf, d.vt, d.dt, ARRAY(SELECT jsonb_array_elements_text(d.tiers)), d.v::halfvec
+                         FROM unnest($1::text[], $2::text[], $3::jsonb[], $4::text[], $5::bigint[], $6::bigint[], $7::text[], $8::text[], $9::jsonb[]) AS d(id, kind, sources, epistemic, vf, vt, v, dt, tiers)
                          ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind, source_ids = EXCLUDED.source_ids, epistemic = EXCLUDED.epistemic,
-                            valid_from = EXCLUDED.valid_from, valid_to = EXCLUDED.valid_to, embedding = EXCLUDED.embedding"
+                            valid_from = EXCLUDED.valid_from, valid_to = EXCLUDED.valid_to, doc_type = EXCLUDED.doc_type, trust_tiers = EXCLUDED.trust_tiers, embedding = EXCLUDED.embedding"
                     ),
-                    &[&ids, &kinds, &sources, &epistemic, &from, &to, &vectors],
+                    &[&ids, &kinds, &sources, &epistemic, &from, &to, &vectors, &types, &tiers],
                 )
                 .map_err(backend)?;
             }
@@ -376,6 +387,8 @@ impl PgVectors {
                      CREATE INDEX IF NOT EXISTS vectors_gen{gen_id}_sources ON {name} USING gin (source_ids) WITH (fastupdate = off);
                      CREATE INDEX IF NOT EXISTS vectors_gen{gen_id}_kind ON {name} (kind);
                      CREATE INDEX IF NOT EXISTS vectors_gen{gen_id}_epistemic ON {name} (epistemic);
+                     CREATE INDEX IF NOT EXISTS vectors_gen{gen_id}_type ON {name} (doc_type);
+                     CREATE INDEX IF NOT EXISTS vectors_gen{gen_id}_tiers ON {name} USING gin (trust_tiers) WITH (fastupdate = off);
                      COMMIT; ANALYZE {name};",
                     gen_id = g.gen_id
                 ))
@@ -576,12 +589,16 @@ mod tests {
             source_ids: vec![ObjectId("a'; DROP TABLE x; --".into())],
             epistemic: vec!["verified".into()],
             valid_at_ms: Some(5),
+            types: vec!["application/pdf".into()],
+            trust_tiers: vec!["trusted".into()],
         };
         let sql = filter_sql(&f).unwrap();
         assert!(sql.contains("kind = ANY(ARRAY['claim']::text[])"), "{sql}");
         assert!(sql.contains("source_ids && ARRAY['a''; DROP TABLE x; --']::text[]"), "{sql}");
         assert!(sql.contains("epistemic = ANY(ARRAY['verified']::text[])"), "{sql}");
         assert!(sql.contains("valid_from <= 5") && sql.contains("5 < valid_to"), "{sql}");
+        assert!(sql.contains("doc_type = ANY(ARRAY['application/pdf']::text[])"), "{sql}");
+        assert!(sql.contains("trust_tiers && ARRAY['trusted']::text[]"), "{sql}");
         assert_eq!(filter_sql(&LexicalFilter::default()).unwrap(), "");
     }
 

@@ -187,6 +187,7 @@ mod tests {
         type Lexical = memex_core::testing::MemLexical;
         type Vector = memex_core::testing::MemVector;
         type Embedder = memex_core::testing::FakeEmbedder;
+        type Reranker = memex_core::testing::FakeReranker;
     }
 
     fn setup(n: u32) -> (Arc<Server<Fakes>>, memex_types::VaultId) {

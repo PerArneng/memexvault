@@ -22,7 +22,7 @@ use tantivy::tokenizer::TextAnalyzer;
 use tantivy::{DocAddress, Index, IndexReader, IndexWriter, ReloadPolicy, Score, Searcher, TantivyDocument, TantivyError, Term};
 
 /// Bump this when the schema or analysis changes. An older generation is then rebuilt, not misread.
-const SCHEMA_VERSION: u64 = 1;
+const SCHEMA_VERSION: u64 = 2;
 
 #[derive(Debug, Clone, Copy)]
 pub struct WriterBudget {
@@ -46,6 +46,8 @@ struct Fields {
     kind: Field,
     source: Field,
     epistemic: Field,
+    doc_type: Field,
+    trust_tier: Field,
     valid_from: Field,
     valid_to: Field,
     exact: Field,
@@ -68,6 +70,8 @@ fn schema() -> (Schema, Fields) {
         kind: b.add_text_field("kind", STRING | FAST),
         source: b.add_text_field("source", STRING),
         epistemic: b.add_text_field("epistemic", STRING),
+        doc_type: b.add_text_field("doc_type", STRING),
+        trust_tier: b.add_text_field("trust_tier", STRING),
         valid_from: b.add_i64_field("valid_from", INDEXED | FAST),
         valid_to: b.add_i64_field("valid_to", INDEXED | FAST),
         exact: b.add_text_field(EXACT, analyzed(EXACT)),
@@ -214,11 +218,11 @@ impl Gen {
         self.payload.lock().expect("lock").and_then(|p| p.watermark)
     }
 
-    fn search(&self, query: &LexicalQuery) -> Result<LexicalResults, LexicalError> {
+    fn search(&self, query: &LexicalQuery, keep_common_terms: bool) -> Result<LexicalResults, LexicalError> {
         // Read before the search, so the answer reflects at least this much.
         let watermark = self.watermark();
         let searcher = self.reader.searcher();
-        let built = build_query(&self.index, &searcher, self.fields, query)?;
+        let built = build_query(&self.index, &searcher, self.fields, query, keep_common_terms)?;
         let top: Vec<(Score, DocAddress)> = searcher
             .search(&built, &TopDocs::with_limit(query.limit.max(1)).order_by_score())
             .map_err(corrupt_or_backend)?;
@@ -268,6 +272,12 @@ fn to_document(fields: Fields, doc: &IndexDoc) -> TantivyDocument {
     }
     if let Some(e) = &doc.epistemic {
         out.add_text(fields.epistemic, e);
+    }
+    if let Some(t) = &doc.doc_type {
+        out.add_text(fields.doc_type, t);
+    }
+    for tier in &doc.trust_tiers {
+        out.add_text(fields.trust_tier, tier);
     }
     out.add_i64(fields.valid_from, doc.valid_from_ms.unwrap_or(i64::MIN));
     out.add_i64(fields.valid_to, doc.valid_to_ms.unwrap_or(i64::MAX));
@@ -355,6 +365,12 @@ fn filter_clauses(fields: Fields, filter: &LexicalFilter) -> Vec<(Occur, Box<dyn
     if !filter.epistemic.is_empty() {
         out.push(any_of(fields.epistemic, filter.epistemic.iter().cloned()));
     }
+    if !filter.types.is_empty() {
+        out.push(any_of(fields.doc_type, filter.types.iter().cloned()));
+    }
+    if !filter.trust_tiers.is_empty() {
+        out.push(any_of(fields.trust_tier, filter.trust_tiers.iter().cloned()));
+    }
     if let Some(t) = filter.valid_at_ms {
         out.push(Box::new(RangeQuery::new(
             Bound::Unbounded,
@@ -371,7 +387,7 @@ fn filter_clauses(fields: Fields, filter: &LexicalFilter) -> Vec<(Occur, Box<dyn
 }
 
 /// A query runs against every field, because its language can't be reliably detected.
-fn build_query(index: &Index, searcher: &Searcher, fields: Fields, query: &LexicalQuery) -> Result<Box<dyn Query>, LexicalError> {
+fn build_query(index: &Index, searcher: &Searcher, fields: Fields, query: &LexicalQuery, keep_common_terms: bool) -> Result<Box<dyn Query>, LexicalError> {
     let mut exact = analyzer(index, EXACT)?;
     let mut folded = analyzer(index, FOLDED)?;
     let mut stems = vec![];
@@ -405,10 +421,12 @@ fn build_query(index: &Index, searcher: &Searcher, fields: Fields, query: &Lexic
         }
     }
     // A plain union of terms also lets the engine skip documents that can't reach the top.
-    let should: Vec<(Occur, Box<dyn Query>)> = without_common_terms(clauses, searcher)?
-        .into_iter()
-        .map(|c| (Occur::Should, c.into_query()))
-        .collect();
+    let clauses = if keep_common_terms {
+        clauses
+    } else {
+        without_common_terms(clauses, searcher)?
+    };
+    let should: Vec<(Occur, Box<dyn Query>)> = clauses.into_iter().map(|c| (Occur::Should, c.into_query())).collect();
     let matching: Box<dyn Query> = Box::new(BooleanQuery::new(should));
     let filters = filter_clauses(fields, &query.filter);
     if filters.is_empty() {
@@ -436,6 +454,7 @@ pub struct TantivyLexical {
     vaults: Mutex<HashMap<VaultId, VaultIndex>>,
     follow: WriterBudget,
     build: WriterBudget,
+    keep_common_terms: bool,
 }
 
 fn safe_vault(vault: &VaultId) -> Result<(), LexicalError> {
@@ -504,7 +523,14 @@ impl TantivyLexical {
             vaults: Mutex::new(HashMap::new()),
             follow,
             build,
+            keep_common_terms: false,
         }
+    }
+
+    /// Switches off the common-term rule, to measure what the rule costs in recall. Production never does this.
+    pub fn keeping_common_terms(mut self) -> Self {
+        self.keep_common_terms = true;
+        self
     }
 
     /// The folder holding a vault's generations.
@@ -667,7 +693,8 @@ impl TantivyLexical {
         }
         let live = live.ok_or_else(|| LexicalError::Unavailable("it hasn't been built yet".into()))?;
         // Damaged files can make the engine panic as well as return an error. Either way it's this generation's problem, not the server's.
-        let result = catch_unwind(AssertUnwindSafe(|| live.search(query))).unwrap_or_else(|_| Err(LexicalError::Corrupt("reading the index panicked".into())));
+        let result = catch_unwind(AssertUnwindSafe(|| live.search(query, self.keep_common_terms)))
+            .unwrap_or_else(|_| Err(LexicalError::Corrupt("reading the index panicked".into())));
         if let Err(LexicalError::Corrupt(detail)) = &result {
             *live.suspect.lock().expect("lock") = Some(detail.clone());
         }

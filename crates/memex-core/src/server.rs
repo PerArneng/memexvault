@@ -24,6 +24,27 @@ use std::sync::{Arc, Mutex};
 /// The most items a list returns at once.
 pub const RESULT_LIMIT: usize = 200;
 
+/// How many `as_of` searches run at once. Each one replays the log into memory, so more would risk the memory target.
+const AS_OF_SLOTS: u64 = 2;
+
+struct AsOfSlot<'a>(&'a AtomicU64);
+
+impl<'a> AsOfSlot<'a> {
+    fn take(running: &'a AtomicU64) -> Result<Self, ServerError> {
+        if running.fetch_add(1, Ordering::SeqCst) >= AS_OF_SLOTS {
+            running.fetch_sub(1, Ordering::SeqCst);
+            return Err(ServerError::Busy);
+        }
+        Ok(Self(running))
+    }
+}
+
+impl Drop for AsOfSlot<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 const TOKEN_PREFIX: &str = "mvx_";
 const TOUCH_EVERY_MS: i64 = 60_000;
 
@@ -35,16 +56,18 @@ pub trait ServerEdges {
     type Clock: Clock;
     type Seed: Seed;
     type Rasterizer: Rasterizer + Default;
-    type Lexical: LexicalIndex;
-    type Vector: VectorIndex;
-    type Embedder: Embedder;
+    type Lexical: LexicalIndex + Sync;
+    type Vector: VectorIndex + Sync;
+    type Embedder: Embedder + Sync;
+    type Reranker: crate::Reranker;
 }
 
 /// The edges that answer searches, which travel together.
-pub struct SearchEdges<L, V, Em> {
+pub struct SearchEdges<L, V, Em, R> {
     pub lexical: L,
     pub vector: V,
     pub embedder: Em,
+    pub reranker: R,
 }
 
 #[derive(Debug)]
@@ -74,6 +97,11 @@ pub enum ServerError {
     Busy,
     /// A backend is down or failed. Safe to retry.
     Unavailable(String),
+    /// An index hasn't yet seen the event a reader asked for. Safe to retry.
+    NotCaughtUp {
+        min_seq: u64,
+        reached: Option<u64>,
+    },
     AlreadyBootstrapped,
 }
 
@@ -91,6 +119,7 @@ impl fmt::Display for ServerError {
             Self::UnsupportedMedia(m) => write!(f, "unsupported file type: {m}"),
             Self::Busy => f.write_str("too much unfinished work, so try again later"),
             Self::Unavailable(m) => write!(f, "{m}"),
+            Self::NotCaughtUp { min_seq, reached } => write!(f, "the search index hasn't reached event {min_seq} yet, and is at {reached:?}"),
             Self::AlreadyBootstrapped => f.write_str("this server already has principals"),
         }
     }
@@ -244,6 +273,9 @@ pub struct Server<E: ServerEdges> {
     projector: Mutex<LexicalProjector>,
     vector: E::Vector,
     embedder: E::Embedder,
+    reranker: E::Reranker,
+    /// How many `as_of` searches are running. Each one holds the vault's past in memory.
+    as_of_running: AtomicU64,
     vector_projector: Mutex<VectorProjector>,
     leases: Mutex<HashMap<VaultId, WriterLease>>,
     /// Decisions read state and then commit, so they run one at a time per vault. The writer lease stops other processes.
@@ -274,7 +306,7 @@ impl<E: ServerEdges> Server<E> {
         blobs: E::Blobs,
         clock: E::Clock,
         seed: E::Seed,
-        search: SearchEdges<E::Lexical, E::Vector, E::Embedder>,
+        search: SearchEdges<E::Lexical, E::Vector, E::Embedder, E::Reranker>,
     ) -> Self {
         Self {
             registry,
@@ -286,6 +318,8 @@ impl<E: ServerEdges> Server<E> {
             projector: Mutex::new(LexicalProjector::default()),
             vector: search.vector,
             embedder: search.embedder,
+            reranker: search.reranker,
+            as_of_running: AtomicU64::new(0),
             vector_projector: Mutex::new(VectorProjector::default()),
             leases: Mutex::new(HashMap::new()),
             write_locks: Mutex::new(HashMap::new()),
@@ -530,34 +564,31 @@ impl<E: ServerEdges> Server<E> {
         self.allow(caller, Operation::VaultContentRead(vault))?;
         self.vault_exists(vault)?;
         check_query_text(text).map_err(|e| ServerError::Invalid(e.to_string()))?;
-        // A flip can land between embedding the query and running it, which costs one more try.
-        let mut last = None;
-        for _ in 0..2 {
-            let model = match self.vector.health(vault)? {
-                memex_types::VectorHealth::Ready { model, .. } => model,
-                memex_types::VectorHealth::Missing => return Err(ServerError::Unavailable("the vector index is still being built".into())),
-            };
-            let vector = self
-                .embedder
-                .embed(&model.name, memex_types::EmbedPurpose::Query, &[text.to_string()])?
-                .pop()
-                .ok_or_else(|| ServerError::Unavailable("the embedder returned nothing".into()))?;
-            let query = memex_types::VectorQuery {
-                model: model.name,
-                vector,
-                filter: filter.clone(),
-                limit: limit.min(crate::lexical::MAX_SEARCH_LIMIT),
-            };
-            match self.vector.search(vault, &query) {
-                Ok(results) => {
-                    let snap = self.engine.store().snapshot(vault)?;
-                    return Ok(crate::lexical::fence_hits(&snap, results)?);
-                }
-                Err(e @ memex_types::VectorError::ModelMismatch { .. }) => last = Some(e),
-                Err(e) => return Err(e.into()),
-            }
-        }
-        Err(last.map_or_else(|| ServerError::Unavailable("the vector index changed model".into()), Into::into))
+        let results = crate::search::vector_candidates(&self.vector, &self.embedder, vault, text, &filter, limit)?;
+        let snap = self.engine.store().snapshot(vault)?;
+        Ok(crate::lexical::fence_hits(&snap, results)?)
+    }
+
+    /// The search: an evidence package of what's current, or of a past state, ranked from every signal asked for.
+    pub fn search(&self, caller: &Caller, vault: &VaultId, request: &memex_types::SearchRequest) -> Result<memex_types::EvidencePackage, ServerError> {
+        self.allow(caller, Operation::VaultContentRead(vault))?;
+        self.vault_exists(vault)?;
+        let _slot = match request.as_of {
+            Some(_) => Some(AsOfSlot::take(&self.as_of_running)?),
+            None => None,
+        };
+        crate::search::run_search(
+            &crate::search::SearchEdgesRef {
+                store: self.engine.store(),
+                lexical: &self.lexical,
+                vector: &self.vector,
+                embedder: &self.embedder,
+                reranker: &self.reranker,
+                clock: self.engine.clock(),
+            },
+            vault,
+            request,
+        )
     }
 
     /// One bounded piece of vector index work for this vault. Only the projector thread calls it.

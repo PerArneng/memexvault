@@ -72,6 +72,8 @@ fn pg_vector_model_move_keeps_serving() {
         epistemic: None,
         valid_from_ms: None,
         valid_to_ms: None,
+        doc_type: None,
+        trust_tiers: vec![],
         vector: memex_core::testing::fake_vector(&format!("{i}"), dimension),
     };
     let ops = |dimension: u32| -> Vec<VectorOp> { (0..2000).map(|i| VectorOp::Upsert(doc(i, dimension))).collect() };

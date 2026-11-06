@@ -171,6 +171,18 @@ pub const VAULT_MIGRATIONS: &[&str] = &[
         PRIMARY KEY (model, content_hash)
     );
 ",
+    // Spec 020 adds type and trust tier to the vector tables. Their rows can't be filled in here, so the generations go and the projector rebuilds them from stored embeddings, with nothing embedded again.
+    "
+    DO $drop$
+    DECLARE g integer;
+    BEGIN
+        FOR g IN SELECT gen FROM {s}.vector_generations LOOP
+            EXECUTE format('DROP TABLE IF EXISTS {s}.vectors_gen%s', g);
+        END LOOP;
+    END $drop$;
+    DELETE FROM {s}.vector_generations;
+    CREATE INDEX ON {s}.segments (rendition_id, (row->'segment'->>'heading'));
+",
 ];
 
 pub const LATEST_SERVER_VERSION: i32 = SERVER_MIGRATIONS.len() as i32;

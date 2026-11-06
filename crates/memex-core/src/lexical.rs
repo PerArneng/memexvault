@@ -1,8 +1,8 @@
 //! The keyword index's trait and its pure policy: parsing a query, deciding when to commit, and turning rows into documents.
 use crate::{Snapshot, StateRecorded, StoreError, UpcastError, upcast};
 use memex_types::{
-    AssertionRow, DocKind, Event, Generation, IndexDoc, IndexHealth, IndexOp, LexicalError, LexicalFilter, LexicalQuery, LexicalResults, Mutation, ObjectId,
-    QueryTerm, RenditionRow, Row, RowKey, SegmentRow, Status, Table, VaultId,
+    AssertionRow, DocKind, Event, EvidenceRow, Generation, IndexDoc, IndexHealth, IndexOp, LexicalError, LexicalFilter, LexicalQuery, LexicalResults, Mutation,
+    ObjectId, QueryTerm, RenditionRow, Row, RowKey, SegmentRow, SourceRow, Status, Table, VaultId,
 };
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
@@ -59,6 +59,15 @@ pub fn trim_word(word: &str) -> &str {
 
 /// The whole query language: words, and phrases in double quotes. Nothing else means anything, so there's no syntax to get wrong apart from an open quote.
 pub fn parse_query(text: &str) -> Result<Vec<QueryTerm>, QueryError> {
+    let terms = parse_terms(text)?;
+    if terms.len() > MAX_QUERY_TERMS {
+        return Err(QueryError::TooManyTerms { limit: MAX_QUERY_TERMS });
+    }
+    Ok(terms)
+}
+
+/// `parse_query` with no limit on the number of terms, for a caller that cuts them down itself.
+pub fn parse_terms(text: &str) -> Result<Vec<QueryTerm>, QueryError> {
     if text.len() > MAX_QUERY_BYTES {
         return Err(QueryError::TooLong { limit: MAX_QUERY_BYTES });
     }
@@ -81,9 +90,6 @@ pub fn parse_query(text: &str) -> Result<Vec<QueryTerm>, QueryError> {
     }
     if terms.is_empty() {
         return Err(QueryError::Empty);
-    }
-    if terms.len() > MAX_QUERY_TERMS {
-        return Err(QueryError::TooManyTerms { limit: MAX_QUERY_TERMS });
     }
     Ok(terms)
 }
@@ -128,6 +134,8 @@ pub struct Touched {
     pub assertions: BTreeSet<ObjectId>,
     /// Renditions replaced or restored, since that changes whether their segments are current.
     pub renditions: BTreeSet<ObjectId>,
+    /// Sources changed after they were recorded, such as a new trust tier, which their segments and claims carry.
+    pub sources: BTreeSet<ObjectId>,
 }
 
 impl Touched {
@@ -166,6 +174,9 @@ impl Touched {
             Mutation::Put(Row::Rendition(r)) if r.header.version > 1 => {
                 self.renditions.insert(r.header.id);
             }
+            Mutation::Put(Row::Source(r)) if r.header.version > 1 => {
+                self.sources.insert(r.header.id);
+            }
             Mutation::Delete(RowKey { table: Table::Segment, id }) => {
                 self.segments.insert(id);
             }
@@ -177,7 +188,7 @@ impl Touched {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.segments.is_empty() && self.assertions.is_empty() && self.renditions.is_empty()
+        self.segments.is_empty() && self.assertions.is_empty() && self.renditions.is_empty() && self.sources.is_empty()
     }
 }
 
@@ -185,11 +196,12 @@ fn keys(table: Table, ids: &[ObjectId]) -> Vec<RowKey> {
     ids.iter().map(|id| RowKey { table, id: id.clone() }).collect()
 }
 
-fn current_rendition(r: &RenditionRow) -> bool {
+pub(crate) fn current_rendition(r: &RenditionRow) -> bool {
     r.header.status == Status::Active && r.superseded_by.is_none()
 }
 
-fn segment_doc(s: SegmentRow) -> IndexDoc {
+/// The document for a segment. `source` is its source's row, when there is one.
+pub(crate) fn segment_doc(s: SegmentRow, source: Option<&SourceRow>) -> IndexDoc {
     let text = match s.heading {
         Some(heading) if !heading.is_empty() => format!("{heading}\n{}", s.text),
         _ => s.text,
@@ -203,7 +215,36 @@ fn segment_doc(s: SegmentRow) -> IndexDoc {
         epistemic: None,
         valid_from_ms: None,
         valid_to_ms: None,
+        doc_type: source.map(|r| r.media_type.clone()),
+        trust_tiers: source.map(|r| r.trust_tier.clone()).into_iter().collect(),
     }
+}
+
+/// These sources' rows, by id. One store call at most.
+pub(crate) fn sources_by_id<S: Snapshot>(snap: &S, ids: impl IntoIterator<Item = ObjectId>) -> Result<HashMap<ObjectId, SourceRow>, StoreError> {
+    let ids: Vec<ObjectId> = ids.into_iter().collect::<BTreeSet<_>>().into_iter().collect();
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    Ok(snap
+        .get_many(&keys(Table::Source, &ids))?
+        .into_iter()
+        .filter_map(|r| match r {
+            Some(Row::Source(s)) => Some((s.header.id.clone(), s)),
+            _ => None,
+        })
+        .collect())
+}
+
+/// Whether a document passes a filter. The indexes apply the same rules themselves, so this is for what they can't see: documents built from the log, and rows that changed since they were indexed.
+pub fn filter_passes(doc: &IndexDoc, f: &LexicalFilter) -> bool {
+    (f.kinds.is_empty() || f.kinds.contains(&doc.kind))
+        && (f.source_ids.is_empty() || doc.source_ids.iter().any(|s| f.source_ids.contains(s)))
+        && (f.epistemic.is_empty() || doc.epistemic.as_ref().is_some_and(|e| f.epistemic.contains(e)))
+        && (f.types.is_empty() || doc.doc_type.as_ref().is_some_and(|t| f.types.contains(t)))
+        && (f.trust_tiers.is_empty() || doc.trust_tiers.iter().any(|t| f.trust_tiers.contains(t)))
+        && f.valid_at_ms
+            .is_none_or(|t| doc.valid_from_ms.is_none_or(|from| from <= t) && doc.valid_to_ms.is_none_or(|to| t < to))
 }
 
 /// The ids of renditions that are no longer current, out of those these segments belong to. One store call.
@@ -226,7 +267,7 @@ fn stale_renditions<S: Snapshot>(snap: &S, segments: &[SegmentRow]) -> Result<BT
         .collect())
 }
 
-fn segment_is_current(s: &SegmentRow, stale: &BTreeSet<ObjectId>) -> bool {
+pub(crate) fn segment_is_current(s: &SegmentRow, stale: &BTreeSet<ObjectId>) -> bool {
     s.header.status == Status::Active && s.rendition_id.as_ref().is_none_or(|r| !stale.contains(r))
 }
 
@@ -244,11 +285,13 @@ pub fn segment_ops<S: Snapshot>(snap: &S, ids: &[ObjectId]) -> Result<Vec<IndexO
         })
         .collect();
     let stale = stale_renditions(snap, &segments)?;
+    let sources = sources_by_id(snap, segments.iter().map(|s| s.source_id.clone()))?;
     let mut found: HashMap<ObjectId, IndexOp> = HashMap::with_capacity(segments.len());
     for s in segments {
         let id = s.header.id.clone();
         let op = if segment_is_current(&s, &stale) {
-            IndexOp::Upsert(segment_doc(s))
+            let source = sources.get(&s.source_id);
+            IndexOp::Upsert(segment_doc(s, source))
         } else {
             IndexOp::Delete(id.clone())
         };
@@ -280,7 +323,7 @@ fn epistemic_name(a: &AssertionRow) -> Option<String> {
     serde_json::to_value(a.epistemic).ok().and_then(|v| v.as_str().map(String::from))
 }
 
-/// As `segment_ops`, for claims. A claim takes its sources from its evidence, and the language from its first evidence with one, since claims keep their source's language.
+/// As `segment_ops`, for claims.
 pub fn assertion_ops<S: Snapshot>(snap: &S, ids: &[ObjectId]) -> Result<Vec<IndexOp>, StoreError> {
     if ids.is_empty() {
         return Ok(vec![]);
@@ -307,38 +350,57 @@ pub fn assertion_ops<S: Snapshot>(snap: &S, ids: &[ObjectId]) -> Result<Vec<Inde
             })
             .collect()
     };
-    let mut by_assertion: HashMap<&ObjectId, Vec<&memex_types::EvidenceRow>> = HashMap::new();
+    let sources = sources_by_id(snap, segments.values().map(|s| s.source_id.clone()))?;
+    let mut by_assertion: HashMap<&ObjectId, Vec<&EvidenceRow>> = HashMap::new();
     for e in &evidence {
         by_assertion.entry(&e.assertion_id).or_default().push(e);
     }
     let mut found: HashMap<ObjectId, IndexOp> = HashMap::with_capacity(assertions.len());
     for a in &assertions {
-        let mut text = format!("{} {} ", a.subject, a.predicate);
-        value_text(&a.value, &mut text);
-        let (mut sources, mut language) = (BTreeSet::new(), None);
-        for e in by_assertion.get(&a.header.id).into_iter().flatten() {
-            text.push_str(&e.quote);
-            text.push('\n');
-            if let Some(s) = segments.get(&e.segment_id) {
-                sources.insert(s.source_id.clone());
-                language = language.or_else(|| s.language.clone());
-            }
-        }
-        found.insert(
-            a.header.id.clone(),
-            IndexOp::Upsert(IndexDoc {
-                id: a.header.id.clone(),
-                kind: DocKind::Claim,
-                language,
-                text,
-                source_ids: sources.into_iter().collect(),
-                epistemic: epistemic_name(a),
-                valid_from_ms: a.valid_from_ms,
-                valid_to_ms: a.valid_to_ms,
-            }),
-        );
+        let empty = vec![];
+        let cited = by_assertion.get(&a.header.id).unwrap_or(&empty);
+        found.insert(a.header.id.clone(), IndexOp::Upsert(assertion_doc(a, cited, &segments, &sources)));
     }
     Ok(ids.iter().map(|id| found.remove(id).unwrap_or_else(|| IndexOp::Delete(id.clone()))).collect())
+}
+
+/// The words a claim states, in the same form everywhere it's shown or indexed.
+pub(crate) fn claim_text(a: &AssertionRow) -> String {
+    let mut text = format!("{} {} ", a.subject, a.predicate);
+    value_text(&a.value, &mut text);
+    text
+}
+
+/// The document for a claim, which takes its sources from its evidence, and its language from the first evidence with one, since claims keep their source's language.
+pub(crate) fn assertion_doc(
+    a: &AssertionRow,
+    cited: &[&EvidenceRow],
+    segments: &HashMap<ObjectId, SegmentRow>,
+    sources: &HashMap<ObjectId, SourceRow>,
+) -> IndexDoc {
+    let mut text = claim_text(a);
+    let (mut source_ids, mut language) = (BTreeSet::new(), None);
+    for e in cited {
+        text.push_str(&e.quote);
+        text.push('\n');
+        if let Some(s) = segments.get(&e.segment_id) {
+            source_ids.insert(s.source_id.clone());
+            language = language.or_else(|| s.language.clone());
+        }
+    }
+    let trust_tiers: BTreeSet<String> = source_ids.iter().filter_map(|id| sources.get(id)).map(|s| s.trust_tier.clone()).collect();
+    IndexDoc {
+        id: a.header.id.clone(),
+        kind: DocKind::Claim,
+        language,
+        text,
+        source_ids: source_ids.into_iter().collect(),
+        epistemic: epistemic_name(a),
+        valid_from_ms: a.valid_from_ms,
+        valid_to_ms: a.valid_to_ms,
+        doc_type: Some(a.predicate.clone()),
+        trust_tiers: trust_tiers.into_iter().collect(),
+    }
 }
 
 /// Drops hits that stopped being current after they were indexed. Two store calls at most, however many hits.
@@ -396,7 +458,7 @@ pub fn build_query(text: &str, filter: LexicalFilter, limit: usize) -> Result<Le
 #[cfg(test)]
 mod tests {
     use super::*;
-    use memex_types::{Epistemic, EvidenceRow, Header, Stance, VaultId};
+    use memex_types::{Epistemic, Header, Stance, VaultId};
     use serde_json::json;
 
     fn word(w: &str) -> QueryTerm {

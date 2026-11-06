@@ -20,6 +20,7 @@ impl ServerEdges for Fakes {
     type Lexical = memex_core::testing::MemLexical;
     type Vector = MemVector;
     type Embedder = FakeEmbedder;
+    type Reranker = memex_core::testing::FakeReranker;
 }
 
 struct World {
@@ -321,6 +322,8 @@ fn the_document_title_is_part_of_what_gets_embedded() {
         epistemic: None,
         valid_from_ms: None,
         valid_to_ms: None,
+        doc_type: None,
+        trust_tiers: vec![],
     };
     assert_eq!(embedding_text(&doc, Some("Manual")), "Manual\nbody");
     assert_eq!(embedding_text(&doc, Some("")), "body");

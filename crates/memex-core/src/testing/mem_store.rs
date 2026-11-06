@@ -1,7 +1,7 @@
 use crate::{CommitItem, PAGE_LIMIT, Receipt, Snapshot, Store, StoreError, WriterLease};
 use memex_types::{
-    AssertionRow, ChangeSetRow, Event, EvidenceRow, JobRow, JobState, Mutation, ObjectId, RenditionRow, Row, RowKey, SegmentRow, SourceRow, Status, Table,
-    VaultId,
+    AssertionRow, ChangeSetRow, EdgeRow, Event, EvidenceRow, JobRow, JobState, Mutation, ObjectId, RenditionRow, Row, RowKey, SegmentRow, SourceRow, Status,
+    Table, VaultId,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -149,6 +149,42 @@ impl Snapshot for MemSnapshot<'_> {
                 _ => None,
             })
             .collect())
+    }
+
+    fn edges_touching(&self, ids: &[ObjectId], kind: &str) -> Result<Vec<EdgeRow>, StoreError> {
+        self.count();
+        Ok(self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::Edge(e) if e.kind == kind && e.header.status == Status::Active && (ids.contains(&e.from) || ids.contains(&e.to)) => Some(e.clone()),
+                _ => None,
+            })
+            .collect())
+    }
+
+    fn sections_of(&self, sections: &[(ObjectId, String)], limit: usize) -> Result<Vec<SegmentRow>, StoreError> {
+        self.count();
+        let mut found: Vec<SegmentRow> = self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::Segment(s)
+                    if s.rendition_id
+                        .as_ref()
+                        .zip(s.heading.as_ref())
+                        .is_some_and(|(r, h)| sections.iter().any(|(a, b)| a == r && b == h)) =>
+                {
+                    Some(s.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        found.sort_by(|a, b| (&a.rendition_id, a.start).cmp(&(&b.rendition_id, b.start)));
+        found.truncate(limit);
+        Ok(found)
     }
 
     fn broken_anchors(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<EvidenceRow>, StoreError> {

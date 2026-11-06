@@ -15,7 +15,7 @@ pub struct ModelFile {
     pub size: u64,
 }
 
-/// What embedding needs. Spec 020 adds the reranker.
+/// What embedding needs.
 pub const EMBED_DIR: &str = "multilingual-e5-small";
 pub const EMBED_MODELS: [ModelFile; 2] = [
     ModelFile {
@@ -29,6 +29,23 @@ pub const EMBED_MODELS: [ModelFile; 2] = [
         url: "https://huggingface.co/intfloat/multilingual-e5-small/resolve/614241f622f53c4eeff9890bdc4f31cfecc418b3/tokenizer.json",
         sha256: "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
         size: 17082730,
+    },
+];
+
+/// What reranking needs. This int8 file is arm64-specific, as spec 005 noted. Reranking is opt-in, so the server starts without it.
+pub const RERANK_DIR: &str = "mmarco-mMiniLMv2-L12-H384-v1";
+pub const RERANK_MODELS: [ModelFile; 2] = [
+    ModelFile {
+        file: "mmarco-mMiniLMv2-L12-H384-v1/model_qint8_arm64.onnx",
+        url: "https://huggingface.co/cross-encoder/mmarco-mMiniLMv2-L12-H384-v1/resolve/1427fd652930e4ba29e8149678df786c240d8825/onnx/model_qint8_arm64.onnx",
+        sha256: "1825907d6c1a9001ff78124780bbde20a614a8c3df3b63409cf3c72c6fe5c8b4",
+        size: 118620017,
+    },
+    ModelFile {
+        file: "mmarco-mMiniLMv2-L12-H384-v1/tokenizer.json",
+        url: "https://huggingface.co/cross-encoder/mmarco-mMiniLMv2-L12-H384-v1/resolve/1427fd652930e4ba29e8149678df786c240d8825/tokenizer.json",
+        sha256: "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626",
+        size: 17082660,
     },
 ];
 
