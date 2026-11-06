@@ -81,7 +81,8 @@ Postgres is the system of record and the one required external system.
   whole vault be a schema drop.
 - **Migrations** are versioned SQL embedded in the binary and run by an explicit `migrate` command. The server refuses to
   start on a schema version it doesn't know.
-- **Client.** The `postgres` crate, pure Rust with no `libpq`, so the binary needs no extra system library. See spec 006. No TLS yet, which suits the same-machine default (spec 059).
+- **Client.** The `postgres` crate, pure Rust with no `libpq`, so the binary needs no extra system library. See spec 006.
+- **TLS.** rustls, with no system library. The connection URL's `sslmode` is `disable`, `require` (encrypts but checks nothing) or `verify-full` (checks the certificate against the CA file in `sslrootcert`, and the host name, which must be in the certificate's subject alternative names). With no `sslmode`, a host on this machine gets `disable` and any other host gets `verify-full`, so it needs `sslrootcert` and never falls back to plaintext. See spec 059.
 - **Durability checks.** The server refuses to start if `fsync` or `synchronous_commit` is off. It can't see whether a flush reaches the drive. Docker Desktop's doesn't appear to, so it's for development. Native macOS needs `wal_sync_method=fsync_writethrough`. See specs 006 and 058.
 - **Group commit.** A commit per event reaches about 400 events/s and a batch of 10 about 3,500, so one writer per vault batches what's waiting.
 - **Secrets.** The connection URL arrives through `Settings` and is redacted from logs and status output.
