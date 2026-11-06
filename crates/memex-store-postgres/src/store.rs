@@ -1,10 +1,11 @@
 use crate::migrate::{LATEST_SERVER_VERSION, LATEST_VAULT_VERSION, SERVER_MIGRATIONS, VAULT_MIGRATIONS};
 use crate::net::net_mutations;
+use crate::tls::Target;
 use memex_types::{
     AssertionRow, ChangeSetRow, EdgeRow, Event, EvidenceRow, Header, JobRow, JobState, Mutation, ObjectId, PageRow, RenditionRow, Row, RowKey, SegmentRow,
     SourceRow, Status, Table, VaultId,
 };
-use postgres::{Client, NoTls, Statement, types::ToSql};
+use postgres::{Client, Statement, types::ToSql};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
@@ -28,7 +29,7 @@ pub enum PgError {
     MissingRow {
         key: RowKey,
     },
-    /// The server's settings or schema version mean this binary must not run on it.
+    /// The server's settings or schema version, or the connection URL's TLS options, mean this binary must not run on it.
     Refused(String),
     Backend(String),
 }
@@ -41,11 +42,12 @@ impl fmt::Display for PgError {
 
 impl std::error::Error for PgError {}
 
-/// The server's own message when there is one. Neither form includes the password from the connection URL.
+/// The server's own message when there is one, otherwise the error and its cause, which says why a TLS handshake failed. Neither form includes the password from the connection URL.
 pub(crate) fn describe(e: &postgres::Error) -> String {
-    match e.as_db_error() {
-        Some(db) => format!("{}: {}", db.code().code(), db.message()),
-        None => e.to_string(),
+    match (e.as_db_error(), std::error::Error::source(e)) {
+        (Some(db), _) => format!("{}: {}", db.code().code(), db.message()),
+        (None, Some(cause)) => format!("{e}: {cause}"),
+        (None, None) => e.to_string(),
     }
 }
 
@@ -106,7 +108,7 @@ pub struct PgLease {
 }
 
 pub struct PgStore {
-    url: String,
+    target: Target,
     pool: Mutex<Vec<Conn>>,
     pool_max: usize,
     writers: Mutex<HashMap<VaultId, Arc<Mutex<Writer>>>>,
@@ -139,7 +141,7 @@ fn lock_key(vault: &VaultId) -> i64 {
 impl PgStore {
     pub fn connect(url: &str, pool_max: usize) -> Result<Self, PgError> {
         let store = Self {
-            url: url.to_string(),
+            target: Target::parse(url)?,
             pool: Mutex::new(vec![]),
             pool_max,
             writers: Mutex::new(HashMap::new()),
@@ -151,7 +153,7 @@ impl PgStore {
     }
 
     fn new_client(&self) -> Result<Client, PgError> {
-        Client::connect(&self.url, NoTls).map_err(backend)
+        self.target.connect().map_err(backend)
     }
 
     pub fn take_conn(&self) -> Result<Conn, PgError> {

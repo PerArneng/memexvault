@@ -7,9 +7,12 @@ publish = false
 
 [dependencies]
 memex-types.workspace = true
+percent-encoding = "2"
 postgres.workspace = true
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json.workspace = true
 sha2.workspace = true
+tokio-postgres-rustls = "0.14"
 
 [lints]
 workspace = true

@@ -71,6 +71,8 @@ the repository root:
 - Tests that need Postgres are ignored by default, so they show as not run rather than passed: `docker compose up -d`, then
   `MEMEX_TEST_DATABASE_URL=postgres://postgres:memex@127.0.0.1:55432/memex cargo test -p memexvault --release -- --ignored --test-threads=1 pg_`.
   The `pg_kill_postgres` test also needs `MEMEX_TEST_CONTAINER=memexvault-postgres-1` and kills that container repeatedly.
+- TLS to Postgres needs a second server: `scripts/pg-tls-certs.sh`, then `docker compose --profile tls up -d postgres-tls` (name the service, or the default one starts too), then
+  `MEMEX_TEST_DATABASE_URL=postgres://postgres:memex@127.0.0.1:55432/memex MEMEX_TEST_TLS_CERTS=$PWD/target/pg-tls cargo test -p memexvault --release --test postgres_tls -- --ignored --test-threads=1`. The certificates are throwaway and git-ignored.
 - The keyword index harness needs Postgres and the corpus from spec 004: set `MEMEX_TEST_DATABASE_URL`, `MEMEX_TEST_DATA` and `MEMEX_TEST_CORPUS`, then
   `cargo test -p memexvault --release --test lexical_harness -- --ignored --nocapture --exact lexical_bench_200k` or `lexical_kill_200_times`.
 - The vector index needs Postgres: `cargo test -p memexvault --release --test vector -- --ignored --test-threads=1 pg_`. `real_model_matches_the_spike_and_is_fast_enough` in that file also needs `MEMEX_TEST_E5` (`model.onnx` and `tokenizer.json`), and `MEMEX_TEST_CORPUS` and `MEMEX_TEST_VECTORS` from spec 004. The harness uses the same variables: `cargo test -p memexvault --release --test vector_harness -- --ignored --nocapture --exact vector_bench_200k` or `vector_kill_200_times`.
