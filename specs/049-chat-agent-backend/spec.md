@@ -10,7 +10,7 @@ description: Add the chat agent with threads, read and propose tools, and an AG-
 An agent that answers from the vault with citations and can propose changes, streamed over AG-UI. Injection fixtures commit nothing, and it can't do anything a `propose`-scoped client can't do.
 
 ## Background
-**Depends on:** 013, 017, 020, 034. Design: `docs/architecture.md`, sections Chat agent, Prompt injection.
+**Depends on:** 013, 017, 020, 024, 034. Design: `docs/architecture.md`, sections Chat agent, Prompt injection.
 
 Spec 034's Result lists what this spec inherits: terminal events repeat content, output guardrails turn streaming off, and cancelled runs' token use, thinking and `MaxTokens` weren't measured.
 

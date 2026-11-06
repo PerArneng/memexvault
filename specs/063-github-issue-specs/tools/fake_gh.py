@@ -56,8 +56,15 @@ def run(pos: list[str], named: dict[str, list[str]], state: dict, issues: dict) 
         print(json.dumps({"nameWithOwner": "o/r", "viewerPermission": state.get("permission", "ADMIN")}))
         return 0
     if pos[:2] == ["issue", "list"]:
-        label = named["--label"][0]
-        print(json.dumps([view(i) for i in issues.values() if label in i["labels"]]))
+        scheduled = state.get("close_after_lists")
+        if scheduled:  # lets a test finish a parent wave while a poller is waiting
+            scheduled["lists"] -= 1
+            if scheduled["lists"] <= 0:
+                for n in scheduled["numbers"]:
+                    issues[str(n)].update(state="CLOSED", stateReason="COMPLETED")
+                state["close_after_lists"] = None
+        label = named.get("--label", [None])[0]
+        print(json.dumps([view(i) for i in issues.values() if label is None or label in i["labels"]]))
         return 0
     if pos[:2] == ["issue", "create"]:
         n = state["next"]

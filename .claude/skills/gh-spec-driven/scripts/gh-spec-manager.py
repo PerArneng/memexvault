@@ -270,6 +270,7 @@ class ScriptFailure(Exception):
 Status = Literal["todo", "working", "hold", "done", "dropped"]
 SPEC_LABEL = "spec"
 IDEA_LABEL = "idea"
+WAVE_LABEL = "wave"
 WORKING_LABEL = "status:working"
 HOLD_LABEL = "status:hold"
 STATE_MARKS = ("> **On hold", "> **Dropped")
@@ -618,6 +619,8 @@ description: {json.dumps(description, ensure_ascii=False) if needs_yaml_quotes(d
 
 # {spec_id} {name}
 
+**Depends on:** none.
+
 ## Goal
 What changes and why it matters (the expected outcome, with numbers where they exist).
 
@@ -667,6 +670,8 @@ def check_adopt(issue: Issue | None, number: int) -> Issue:
         raise ScriptFailure(f"only an open issue can become a spec {kv(id=number, state=issue.state)}")
     if SPEC_LABEL in issue.labels:
         raise ScriptFailure(f"this issue is already a spec {kv(id=number, title=issue.title)}")
+    if WAVE_LABEL in issue.labels:
+        raise ScriptFailure(f"a wave issue can't become a spec {kv(id=number, title=issue.title)}")
     return issue
 
 

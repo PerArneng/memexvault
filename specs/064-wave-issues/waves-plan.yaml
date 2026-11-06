@@ -1,0 +1,82 @@
+# The reviewed wave plan. Apply with: wave-plan.py apply specs/064-wave-issues/waves-plan.yaml
+exclude: [64]  # this spec, which creates the waves
+waves:
+  - key: B1
+    name: entities, browser session, Postgres TLS
+    description: Add the entity registry, browser sessions and Postgres TLS. They touch the core domain, HTTP auth and the store connection, so overlap should be limited to route and migration lists.
+    issues: [23, 37, 59]
+  - key: B2
+    name: wiki pages, extraction agent
+    description: Add wiki pages and the extraction agent. Pages touch projectors and search, and extraction touches the agent runner and jobs.
+    issues: [22, 24]
+    after: [B1]
+  - key: B3
+    name: caches, review gate, MCP server
+    description: Add caches on the search read path, the review gate in governance, and the MCP server as a thin new crate.
+    issues: [21, 25, 29]
+    after: [B2]
+  - key: B4
+    name: audit agent, meeting ingest
+    description: Add scheduled audit agents and meeting ingest. Audit builds on governance, and meetings on jobs and anchors.
+    issues: [26, 28]
+    after: [B3]
+  - key: B5
+    name: activity stream, chat backend
+    description: Add the live activity stream and the chat agent. Both stream events, but through separate routes and modules.
+    issues: [38, 49]
+    after: [B4]
+  - key: B6
+    name: backup, restore and erasure
+    description: Add backup, restore, reindex and the erasure cascade. Alone, because it touches most of the system.
+    issues: [30]
+    after: [B5]
+  - key: B7
+    name: admin API
+    description: Expose operations, settings, cost and status over HTTP. Alone, because it builds directly on the operations work.
+    issues: [39]
+    after: [B6]
+  - key: C1
+    name: console shell
+    description: Build login, vault switching, navigation and the generated API client. Alone, because every screen builds on it.
+    issues: [40]
+    after: [B1]
+  - key: C2
+    name: wiki screen
+    description: Build wiki browsing and the Markdown editor.
+    issues: [44]
+    after: [C1, B2]
+  - key: C3
+    name: document viewer screen
+    description: Build source browsing and the highlight viewer. Alone, because four later screens build on it.
+    issues: [42]
+    after: [C1, B4]
+  - key: C4
+    name: ingest, search, entity and review screens
+    description: Build four separate screens on the viewer. The shell owns navigation, so they should overlap little.
+    issues: [41, 43, 45, 46]
+    after: [C3, B5]
+  - key: C5
+    name: chat screen
+    description: Build the AG-UI chat, with citations that open the viewer and proposal cards from the review screen.
+    issues: [50]
+    after: [C4]
+  - key: C6
+    name: audit and admin screens
+    description: Build the audit dashboards and the admin screens, as separate screens on the admin API.
+    issues: [47, 48]
+    after: [B7, C1]
+  - key: A1
+    name: backend acceptance
+    description: Measure every backend target end to end. Alone and on a quiet machine, because other work skews the measurements.
+    issues: [31]
+    after: [B7, C2, C5, C6]
+  - key: A2
+    name: 1M scale benchmark
+    description: Measure every target at 1M segments. Heavy, and needs more disk to be approved.
+    issues: [33]
+    after: [A1]
+  - key: A3
+    name: console acceptance
+    description: Prove the whole console works end to end and that all functionality has a UI.
+    issues: [51]
+    after: [A1]

@@ -26,10 +26,10 @@ are source material, not decisions: treat their claims as unverified.
 
 ## Start here
 
-Run `uv run .claude/skills/gh-spec-driven/scripts/gh-spec-manager.py list` to see what
-is in progress and what is next. Respect each spec's `Depends on` line: spec 032,
-the Postgres store, comes right after 009 despite its id. Specs 035 and 036 run
-alongside the backend, and each console screen follows its backend spec.
+Run `uv run .claude/skills/gh-spec-driven/scripts/wave-manager.py next` to see which
+waves can start and what to start in them, and
+`uv run .claude/skills/gh-spec-driven/scripts/gh-spec-manager.py list` to see every spec.
+Backend and console run as separate tracks of waves, and each console screen follows its backend spec.
 
 ## Working in this repository
 
@@ -54,6 +54,13 @@ only the content and never moves. The workflow needs `gh` logged in with write a
 the repo; the product doesn't depend on GitHub. The repo is public, so issues are too:
 keep them to what could appear in the repo, and don't create test issues on it.
 
+Waves are issues labelled `wave`, titled `wave: ...`, that group specs fairly safe to do in parallel and list the waves
+that must finish first, so they form a graph. Work on issues from a wave that `next` offers, and don't start a blocked wave:
+`wave-manager.py gate <wave>` exits 0 when it may start and 3 when it's blocked, and `--wait` polls until it opens. Each issue in a wave gets its own
+worktree, and they land on `main` one at a time. Run `wave-manager.py sync` after `done`. New specs need a `Depends on` line and a
+place in a wave. `wave-manager.py dot | dot -Tsvg -o waves.svg` draws the graph. The `gh-spec-driven` skill covers waves in full, and
+`wave-plan.py` helps group specs into them.
+
 Each spec's Verification section states its own concrete check. Backend commands, from
 the repository root:
 
@@ -75,7 +82,7 @@ The console's commands run from `web/`: `pnpm install`, `pnpm build`,
 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm run licenses`, `pnpm run contrast`
 and `pnpm e2e`. Write down what was measured, not just that it was done.
 Run `check` before committing spec changes, and name the spec in the commit
-message (`spec #63: ...`). Older commits use `spec 063: ...`.
+message (`spec #63: ...`). Older commits use `spec 063: ...`. Also run `wave-manager.py check` after changing waves or `Depends on` lines.
 
 ## License
 

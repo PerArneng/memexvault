@@ -1,0 +1,31 @@
+# Which track and code areas each todo spec touches, judged from its Approach section and from the files specs 018-020 changed.
+# Registration lists (routes.rs, migrate.rs, main.rs) are nearly always touched, so they aren't areas: that overlap is accepted.
+# wave-plan.py propose splits specs that share an area. Different tracks become parallel waves.
+specs:
+  21: {track: backend, areas: [search-read, settings]}
+  22: {track: backend, areas: [domain-model, projectors, search-read]}
+  23: {track: backend, areas: [domain-model, projectors, search-filter]}
+  24: {track: backend, areas: [agent-runner, jobs]}
+  25: {track: backend, areas: [agent-runner, governance]}
+  26: {track: backend, areas: [agent-runner, governance]}
+  28: {track: backend, areas: [jobs, anchors]}
+  29: {track: backend, areas: [mcp]}
+  30: {track: backend, areas: [ops, whole-system]}
+  31: {track: acceptance, areas: [quiet-machine]}
+  33: {track: acceptance, areas: [quiet-machine]}
+  37: {track: backend, areas: [http-auth]}
+  38: {track: backend, areas: [streams, jobs]}
+  39: {track: backend, areas: [ops, settings]}
+  40: {track: console, areas: [web-shell]}
+  41: {track: console, areas: [screen-ingest]}
+  42: {track: console, areas: [screen-viewer]}
+  43: {track: console, areas: [screen-search]}
+  44: {track: console, areas: [screen-wiki]}
+  45: {track: console, areas: [screen-entities]}
+  46: {track: console, areas: [screen-review]}
+  47: {track: console, areas: [screen-audit]}
+  48: {track: console, areas: [screen-admin]}
+  49: {track: backend, areas: [agent-runner, streams]}
+  50: {track: console, areas: [screen-chat]}
+  51: {track: acceptance, areas: [quiet-machine, web-e2e]}
+  59: {track: backend, areas: [store-connection]}
