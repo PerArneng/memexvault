@@ -44,7 +44,7 @@ There is no LLM on the read path. The calling agent does the generating.
 Query caching (021), entity and page results (added by 022 and 023), and LLM query rewriting.
 
 ## Result
-Built, and recall passes. **Verification 2 fails as written:** with 8 concurrent clients, hybrid search is p95 81 ms against ≤50 ms, and rerank is 1,030 ms against ≤300 ms. With 1 client both pass, at 31 ms and 229 ms. Embedding the query takes most of that time, so this waits on the user's decision, below.
+Built, and recall passes. **Verification 2 fails as written:** with 8 concurrent clients, hybrid search is p95 81 ms against ≤50 ms, and rerank is 1,030 ms against ≤300 ms. With 1 client both pass, at 31 ms and 229 ms. Embedding the query takes most of hybrid's time. The user chose to close this spec with both 8-client targets unmet, and not to adopt int8. Spec 062 reviews the hybrid miss, and spec 055 the rerank miss.
 
 **What was built**
 - `GET /api/v1/vaults/{id}/search` and `Server::search`, on `memex_core::search`: `plan`, `fusion`, `budget`, `relevance`, `assemble`, `history` and `run`.
@@ -106,7 +106,7 @@ The load average was 8 to 19 during these runs, from other work on the machine, 
 
 These three were one earlier run each, on a busier machine.
 
-**One option tried, not adopted:** embedding queries with spec 005's int8 model against the same f32 passage vectors gives hybrid p95 52.1 ms at 8 clients and 25.5 ms at 1. In the run on the earlier code, recall was 97.5% with cross-language at 90% and 20/200 wrong flags, against 15/200. That's close to the target but not under it, and the int8 file is our own quantization, which `models fetch` has no pinned source for.
+**One option tried, and not adopted by the user's decision:** embedding queries with spec 005's int8 model against the same f32 passage vectors gives hybrid p95 52.1 ms at 8 clients and 25.5 ms at 1. In the run on the earlier code, recall was 97.5% with cross-language at 90% and 20/200 wrong flags, against 15/200. That's close to the target but not under it, and the int8 file is our own quantization, which `models fetch` has no pinned source for.
 
 **Other answers specs asked for**
 - **Decompounding (018) isn't needed.** Hybrid finds all 16 compound questions. Keyword search alone misses 3, and vectors make up for them.
@@ -136,4 +136,4 @@ These three were one earlier run each, on a busier machine.
 
 **Other verification.** `cargo test --workspace`: 353 passed, 0 failed, 39 ignored. `cargo clippy`, `cargo fmt --check` and `cargo deny check licenses` pass. `pg_contract`, `pg_bad_cases` and the `pg_vector_` tests pass on the final code. `pg_batched_lookups`, `pg_group_commit_throughput`, `pg_kill_jobs_200_times`, `pg_kill_memexvault_1000_times`, `pg_registry_contract` and `pg_replay_of_100k_events_matches_mem_store` passed in a run just before the `sections_of` fix, which they don't exercise. The keyword and vector kill harnesses from specs 018 and 019 weren't run again. `pg_child`, `pg_job_child`, `pg_kill_postgres_100_times` and the full-disk test need what a plain run doesn't provide, as in spec 019, and weren't run. The real binary, driven over HTTP, did upload to search in about 2 s on a small text file, with rerank on the real model.
 
-**Follow-ups:** the decision on concurrent latency. Spec 021 caches query embeddings, which helps repeated questions only. Spec 042 needs segment rectangles. Spec 033 measures 1M. Spec 055 has new numbers.
+**Follow-ups:** spec 062 reviews hybrid latency at 8 clients, and spec 055 rerank latency at 8 clients. Spec 021 caches query embeddings, which helps repeated questions only. Spec 042 needs segment rectangles. Spec 033 measures 1M. Spec 055 has new numbers.

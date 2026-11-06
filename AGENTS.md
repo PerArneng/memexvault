@@ -7,7 +7,7 @@ Guidance for AI coding agents working in this repository.
 memexvault is a knowledge base, or "second brain", for AI agents.
 
 The repository holds this file, the license, the spec-driven workflow, the console's
-workspace in `web/`, the backend's Cargo workspace in `crates/`, and specs 002-061, which plan
+workspace in `web/`, the backend's Cargo workspace in `crates/`, and specs 002-062, which plan
 the backend and web console and record what's done.
 [docs/architecture.md](docs/architecture.md) holds the backend's shared design, and
 [docs/frontend-architecture.md](docs/frontend-architecture.md) holds the console's.

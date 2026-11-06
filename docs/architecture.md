@@ -272,7 +272,7 @@ Intent is classified by deterministic rules, with no LLM on the read path:
 5. Optional cross-encoder rerank of the top 20.
 6. Hits are assembled into a token-budgeted evidence package with claims first, citations, conflicts and trust notes.
 
-`GET /api/v1/vaults/{id}/search` is the one search API. Spec 020 has its measurements: recall@20 97.5% on the golden set at 200k, and p95 31 ms with 1 client, but 81 ms with 8, against the ≤50 ms target. The rules behind it:
+`GET /api/v1/vaults/{id}/search` is the one search API. Spec 020 has its measurements: recall@20 97.5% on the golden set at 200k, and p95 31 ms with 1 client, but 81 ms with 8, against the ≤50 ms target, which spec 062 reviews. The rules behind it:
 
 - **Filters** are kind, type, source, trust tier, epistemic status and valid time. Type is a segment's media type or a claim's predicate, and spec 023 adds entity types. The fence checks them again on current rows, so a changed trust tier can't leak.
 - **A failed signal degrades the search.** Hybrid answers from the other signal and names the failed one in `degraded`. If both fail, it returns 503, and it never serves unfenced results.
