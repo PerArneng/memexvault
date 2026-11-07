@@ -35,6 +35,15 @@ embedded by reference, so a fact never drifts between pages.
 7. Bad cases: broken links are listed and not fatal, link cycles terminate, and oversized pages are refused.
 8. Export followed by import reproduces the page content and links.
 
+**How item 6's k-hop half is decided.** `golden.jsonl` has no relational questions and its corpus has no links, so the coordinator decided on a separate fixture, `crates/memexvault/tests/fixtures/golden/golden_relational.jsonl`, leaving `golden.jsonl` untouched. It holds about 40 two-hop questions, written by a helper with no access to the search code. Each question matches passage A, its answer is only in passage B, and pages for A and B are joined by a wiki link built for the test, with distractor links. The fixture refers to passages by line and hash, and holds only short question and answer text.
+
+Fixed before the first measurement, and not to be changed after seeing numbers. k-hop ships enabled only if all three hold, measured on and off in the same run:
+- relational recall@20 rises by at least 10 points with k-hop on,
+- recall on the existing 230 questions doesn't drop, and
+- hybrid p95 doesn't rise by more than 10%.
+
+If it passes, it runs by default only on queries a deterministic rule classes as relational. If it misses any of the three, it ships off and the numbers are recorded. Parameters, also fixed first: 1 hop, the top 5 fused candidates as seeds, at most 8 neighbouring pages per seed, at most 10 added candidates, and a neighbour scores half its seed's fused score.
+
 ## Out of scope
 Live co-editing, page permissions and page templates.
 
