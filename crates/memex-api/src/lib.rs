@@ -1,7 +1,9 @@
 //! Pure: request and response types for the HTTP API, and their translation from domain data. No web framework.
+mod convert;
 mod entities;
 mod extraction;
 mod pages;
+pub use convert::*;
 pub use entities::*;
 pub use extraction::*;
 use memex_types::{

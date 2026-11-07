@@ -6,8 +6,8 @@ pub use entities::{
 };
 pub use extraction::{ExtractJobError, ExtractionReport};
 pub use pages::{
-    BacklinkView, ClaimRefStatus, ClaimReference, ImportedPage, NewPage, OutgoingLink, PageChange, PageDiff, PageRedirect, PageRevisionView, PageView,
-    UnresolvedLink,
+    BacklinkView, ClaimRefStatus, ClaimReference, ImportedPage, NeighborView, NewPage, OutgoingLink, PageChange, PageDiff, PageRedirect, PageRevisionView,
+    PageView, UnresolvedLink,
 };
 
 use crate::auth::{Caller, Decision, Operation, authorize};

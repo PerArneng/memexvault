@@ -191,8 +191,8 @@ fn main() -> ExitCode {
     if command == "models" {
         return models_command(&args[1..], &settings);
     }
-    if !matches!(command, "migrate" | "bootstrap" | "serve") {
-        return fail("usage: memexvault migrate | bootstrap <name> | serve | models fetch | models check | --version");
+    if !matches!(command, "migrate" | "bootstrap" | "serve" | "mcp") {
+        return fail("usage: memexvault migrate | bootstrap <name> | serve | mcp | models fetch | models check | --version");
     }
     let (pg, server) = match build(&settings) {
         Ok(b) => b,
@@ -224,8 +224,21 @@ fn main() -> ExitCode {
             if let Err(e) = pg.check_server() {
                 return fail(e);
             }
+            // The MCP stdio server is this whole server, for one local client. A vault has one writer, so it can't run beside `serve` on the same vaults.
+            let stdio_token = if command == "mcp" {
+                let Some(token) = settings.mcp_token.clone() else {
+                    return fail("memexvault mcp needs MEMEX_MCP_TOKEN");
+                };
+                if let Err(e) = server.authenticate(&token) {
+                    return fail(format!("MEMEX_MCP_TOKEN: {e}"));
+                }
+                Some(token)
+            } else {
+                None
+            };
             match server.open_vaults() {
                 Ok(n) => tracing::info!(vaults = n, "writer leases held"),
+                Err(e) if stdio_token.is_some() => return fail(format!("{e}. Is `memexvault serve` running? If so, use MCP over its HTTP route instead")),
                 Err(e) => return fail(e),
             }
             let server = Arc::new(server);
@@ -306,7 +319,24 @@ fn main() -> ExitCode {
             let shutdown = async {
                 let _ = tokio::signal::ctrl_c().await;
             };
-            let served = runtime.block_on(memex_http::serve(server, &settings.http_bind, shutdown));
+            let served = match stdio_token {
+                Some(token) => runtime.block_on(async {
+                    tokio::select! {
+                        done = memex_mcp::serve_stdio(server, token) => done.map_err(std::io::Error::other),
+                        () = shutdown => Ok(()),
+                    }
+                }),
+                None => {
+                    let mcp = memex_mcp::routes(
+                        server.clone(),
+                        memex_mcp::McpHttp {
+                            allowed_hosts: settings.mcp_allowed_hosts.clone(),
+                            max_response_bytes: memex_mcp::DEFAULT_MAX_RESPONSE_BYTES,
+                        },
+                    );
+                    runtime.block_on(memex_http::serve_with(server, mcp, &settings.http_bind, shutdown))
+                }
+            };
             stop.store(true, Ordering::Relaxed);
             for t in threads {
                 let _ = t.join();
