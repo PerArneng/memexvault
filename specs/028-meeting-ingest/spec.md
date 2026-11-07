@@ -39,6 +39,8 @@ original file that can be played back.
 Live capture, calendar integration and meeting summaries as a separate feature.
 
 ## Result
+Landed with item 1 missed, by the user's decision: 92.8% against 95% on the recording that decided it, and the miss is recorded in spec 061 for review. The user also approved `Unlicense` for `whisper-rs`.
+
 **Item 1's rule, set before anything was measured.**
 - **Recording:** `en_5m.wav` from spec 027's corpus. It's synthetic speech with four voices, and its truth comes from the synthesizer's word markers, not from hand labels. The other three languages' `*_5m.wav` run the same way and are reported beside it, and they aren't what the rule decides on. If `en_5m.wav` gives under 50 sentence claims, `en_60m.wav` decides under the same rule, and the shortfall is reported.
 - **Claims:** the extraction job runs, with a scripted agent and no LLM, so this says nothing about a model's choice of quotes. It proposes one claim per sentence of every segment the real transcript gave, with no sentence left out, keeping sentences of at least 3 words. A person's approval commits them, and each gets its anchor as it commits, as usual.
@@ -120,3 +122,13 @@ Spec 027's estimate is 91,000 to 113,000 input and 354,000 to 438,000 output tok
 - Speaker labels aren't matched across API chunks.
 - After a revert, re-linking the same participant with the same idempotency key replays the old changeset, so a client must send a new key.
 - `/file` still reads a whole file into memory, while `/stream` doesn't.
+
+**Landing checks,** by the coordinator on the merge with main at dd2c8a2, plus the regenerated API types:
+- `cargo build --workspace`, `cargo test --workspace` (857 passed, 0 failed, 92 ignored), clippy, `cargo fmt --check` and `cargo deny check licenses` all pass.
+- The Postgres command passes 37 of 37 on a fresh database.
+- `pg_bad_cases` passes on a throwaway container, and so do the 8 TLS tests on their own server.
+- `pg_kill_postgres_100_times`, on a throwaway container: 100 cycles, highest acknowledged 7615, lost 0, partial 0, gaps 0, reopen failures 0, recovery p95 0.4 s. It works on the store alone, and doesn't touch recordings.
+- API types regenerated from the server. `pnpm api:check`, `pnpm typecheck` and `pnpm test` pass. The rest of the web checks ran on the branch before the merge.
+- With the real model after the merge: `asr_whisper_passes_the_contract` passes, and `asr_the_api_is_off_unless_named_and_then_runs_on_the_local_clock` passes with 0 requests and 0 bytes while off, and a fake provider when named.
+- **New at the merge, because spec 26 landed first:** `pg_meeting_an_audit_passes_a_recordings_claims`. On a word table made in the test, 60 committed claims all pass the audit's quote and link checks, and no finding goes to review. No LLM ran, so the audit's LLM checks haven't seen a recording.
+- Not run after the merge: item 1 and the other real-audio measures, which didn't change. Not run at all: `pg_child`, `pg_job_child`, `pg_full_disk`, `memexvault serve` transcribing end to end through installed models, and the live API.
