@@ -6,7 +6,10 @@
 use memex_agent_adk::{AdkAgent, LlmEndpoint};
 use memex_core::chat::{CitationReport, check_citations};
 use memex_core::testing::{ChatCall, ManualClock, MemBlobStore, MemRegistry, MemStore, ScriptedChat, SeededRandom};
-use memex_core::{AgentRunner, Caller, ChatInput, ChatLimits, ChatSettingsUpdate, RENDITION_JOB, RenditionInput, Server, ServerEdges, Snapshot, Store, UploadLimits, UploadRequest};
+use memex_core::{
+    AgentRunner, Caller, ChatInput, ChatLimits, ChatSettingsUpdate, RENDITION_JOB, RenditionInput, Server, ServerEdges, Snapshot, Store, UploadLimits,
+    UploadRequest,
+};
 use memex_types::{AgUi, ObjectId, Row, RowKey, Table, VaultId};
 use memexvault::edges::AdkAgentRunner;
 use serde::Deserialize;
@@ -44,7 +47,11 @@ struct Golden {
 fn golden_twenty() -> Vec<Golden> {
     let all = include_str!("fixtures/golden/golden.jsonl");
     let questions: Vec<Golden> = all.lines().map(|l| serde_json::from_str(l).expect("a golden line")).collect();
-    questions.into_iter().filter(|g| g.line.is_some() && g.answer.is_some()).take(QUESTIONS).collect()
+    questions
+        .into_iter()
+        .filter(|g| g.line.is_some() && g.answer.is_some())
+        .take(QUESTIONS)
+        .collect()
 }
 
 struct Rig {
@@ -89,7 +96,13 @@ impl Rig {
             metadata: json!({}),
             replaces: None,
         };
-        let source = self.s.upload(&self.admin, &self.v, req, UploadLimits::default(), &mut text.as_bytes()).unwrap().source.header.id;
+        let source = self
+            .s
+            .upload(&self.admin, &self.v, req, UploadLimits::default(), &mut text.as_bytes())
+            .unwrap()
+            .source
+            .header
+            .id;
         let job = self.s.claim_job(&self.v, RENDITION_JOB, "w").unwrap().unwrap();
         let rows = self
             .s
@@ -111,7 +124,9 @@ impl Rig {
             self.s.engine().clock().advance(Duration::from_secs(60));
             while self.s.project_lexical(&self.v).unwrap() == memex_core::StepOutcome::Progress {}
             while self.s.project_vector(&self.v).unwrap() == memex_core::StepOutcome::Progress {}
-            let Some(job) = self.s.claim_job(&self.v, memex_core::EMBED_JOB, "w").unwrap() else { break };
+            let Some(job) = self.s.claim_job(&self.v, memex_core::EMBED_JOB, "w").unwrap() else {
+                break;
+            };
             self.s.run_embed_job(&self.v, &job).unwrap();
             self.s.complete_job(&self.v, &job, vec![]).unwrap();
         }
@@ -125,7 +140,10 @@ impl Rig {
         let snap = self.s.engine().store().snapshot(&self.v).unwrap();
         [Table::Segment, Table::Assertion].into_iter().any(|table| {
             matches!(
-                snap.get(&RowKey { table, id: ObjectId(id.into()) }),
+                snap.get(&RowKey {
+                    table,
+                    id: ObjectId(id.into())
+                }),
                 Ok(Some(Row::Segment(_) | Row::Assertion(_)))
             )
         })
@@ -159,7 +177,12 @@ impl Rig {
             other => return Err(format!("{other:?}")),
         }
         let view = self.s.get_chat_thread(&self.admin, &self.v, &thread, None, 200).map_err(|e| e.to_string())?;
-        let replies: Vec<String> = view.messages.into_iter().filter(|m| m.message.role == memex_types::ChatRole::Assistant).map(|m| m.message.text).collect();
+        let replies: Vec<String> = view
+            .messages
+            .into_iter()
+            .filter(|m| m.message.role == memex_types::ChatRole::Assistant)
+            .map(|m| m.message.text)
+            .collect();
         replies.last().cloned().ok_or_else(|| "no reply".to_string())
     }
 }
@@ -236,7 +259,10 @@ fn the_scorer_tells_good_replies_from_bad_on_a_scripted_model() {
         let got = r.ask(&agent, n, "How long is it?").unwrap();
         assert_eq!(got, reply);
         assert_eq!(score(&r, &got).passed(), passes, "{reply}");
-        assert!(agent.tool_answers()[0]["data"]["items"].as_array().is_some_and(|i| !i.is_empty()), "the search finds it");
+        assert!(
+            agent.tool_answers()[0]["data"]["items"].as_array().is_some_and(|i| !i.is_empty()),
+            "the search finds it"
+        );
     }
     assert!(!r.resolves("no-such-id"));
     assert!(r.resolves(&segment));
@@ -253,7 +279,10 @@ fn the_scorer_tells_good_replies_from_bad_on_a_scripted_model() {
 #[ignore = "calls an LLM, costs money and sends the corpus's passages to the provider, so run it only when asked"]
 fn live_chat_cites_on_twenty_golden_questions() {
     let env = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("not run: {name} isn't set"));
-    assert!(std::env::var("MEMEX_EVAL_APPROVED").is_ok(), "not run: set MEMEX_EVAL_APPROVED once this run is approved");
+    assert!(
+        std::env::var("MEMEX_EVAL_APPROVED").is_ok(),
+        "not run: set MEMEX_EVAL_APPROVED once this run is approved"
+    );
     let passages = std::fs::read_to_string(format!("{}/passages.txt", env("MEMEX_TEST_CORPUS"))).expect("the corpus");
     let passages: Vec<&str> = passages.lines().collect();
     let endpoint = match env("MEMEX_LLM_PROVIDER").as_str() {

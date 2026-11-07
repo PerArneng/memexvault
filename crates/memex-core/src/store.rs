@@ -1,7 +1,7 @@
 use memex_types::{
-    AssertionRow, AuditCheckRow, AuditOutcome, BlockRow, ChangeSetRow, ChatMessage, ChatReservation, ChatStored, ChatThread, ChatThreadKey, DerivationRow, DocKind, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event,
-    EvidenceRow, FieldFilter, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, QueueCount, RenditionRow, ReviewFilter, RevisionRow, Row, RowKey,
-    SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
+    AssertionRow, AuditCheckRow, AuditOutcome, BlockRow, ChangeSetRow, ChatMessage, ChatReservation, ChatStored, ChatThread, ChatThreadKey, DerivationRow,
+    DocKind, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow,
+    QueueCount, RenditionRow, ReviewFilter, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
 };
 use std::fmt;
 
@@ -266,7 +266,15 @@ pub trait Store {
     /// Threads this source's content reached, at most `limit`, whoever owns them.
     fn chat_threads_citing(&self, vault: &VaultId, source: &ObjectId, limit: usize) -> Result<Vec<ChatThreadKey>, StoreError>;
     /// Charges these tokens to the thread and the day, all or nothing, only if both stay within their limits. Concurrent runs can't both take what's left.
-    fn chat_reserve(&self, vault: &VaultId, key: &ChatThreadKey, day: i64, tokens: u64, thread_limit: u64, day_limit: u64) -> Result<ChatReservation, StoreError>;
+    fn chat_reserve(
+        &self,
+        vault: &VaultId,
+        key: &ChatThreadKey,
+        day: i64,
+        tokens: u64,
+        thread_limit: u64,
+        day_limit: u64,
+    ) -> Result<ChatReservation, StoreError>;
     /// Changes a reservation to what was really spent. A thread that has gone just doesn't get it, and the day always does.
     fn chat_settle(&self, vault: &VaultId, key: &ChatThreadKey, day: i64, delta: i64) -> Result<(), StoreError>;
     /// The tokens charged to this day.

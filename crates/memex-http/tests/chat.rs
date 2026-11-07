@@ -6,10 +6,13 @@ use axum::http::{Request, StatusCode};
 use futures_util::StreamExt;
 use memex_core::chat::{CHAT_AGENT, CHAT_DERIVATION, prompt_hash};
 use memex_core::testing::{ChatCall, ChatStep, ManualClock, MemBlobStore, MemRegistry, MemStore, ScriptedChat, SeededRandom};
-use memex_core::{AgentRunner, Caller, ChatLimits, NewToken, RENDITION_JOB, RenditionInput, Server, ServerEdges, Snapshot, StepOutcome, Store, UploadLimits, UploadRequest};
+use memex_core::{
+    AgentRunner, Caller, ChatLimits, NewToken, RENDITION_JOB, RenditionInput, Server, ServerEdges, Snapshot, StepOutcome, Store, UploadLimits, UploadRequest,
+};
 use memex_http::{chat_routes, embedded_asset, router_with};
 use memex_types::{
-    AgentError, AgentUsage, ChangeSetState, ChatEnd, ChatHost, ChatMessage, ChatRequest, ChatRole, ChatStop, ChatThreadKey, Grant, ObjectId, PrincipalKind, ReviewFilter, Row, RunnerEvent, RunnerPart, Scope, Table, VaultId,
+    AgentError, AgentUsage, ChangeSetState, ChatEnd, ChatHost, ChatMessage, ChatRequest, ChatRole, ChatStop, ChatThreadKey, Grant, ObjectId, PrincipalKind,
+    ReviewFilter, Row, RunnerEvent, RunnerPart, Scope, Table, VaultId,
 };
 use serde_json::{Value, json};
 use std::net::TcpListener;
@@ -71,10 +74,7 @@ impl World {
                 NewToken {
                     principal_id: Some(p.id),
                     name: "t".into(),
-                    grants: vec![Grant {
-                        vault: self.v.clone(),
-                        scope,
-                    }],
+                    grants: vec![Grant { vault: self.v.clone(), scope }],
                     expires_at_ms: None,
                 },
             )
@@ -174,7 +174,9 @@ impl World {
             self.s.engine().clock().advance(Duration::from_secs(60));
             while self.s.project_lexical(&self.v).unwrap() == StepOutcome::Progress {}
             while self.s.project_vector(&self.v).unwrap() == StepOutcome::Progress {}
-            let Some(embed) = self.s.claim_job(&self.v, memex_core::EMBED_JOB, "w").unwrap() else { break };
+            let Some(embed) = self.s.claim_job(&self.v, memex_core::EMBED_JOB, "w").unwrap() else {
+                break;
+            };
             self.s.run_embed_job(&self.v, &embed).unwrap();
             self.s.complete_job(&self.v, &embed, vec![]).unwrap();
         }
@@ -280,13 +282,19 @@ async fn chat_is_off_until_an_admin_turns_it_on_and_nothing_reaches_the_llm_befo
     assert!(body["error"]["message"].as_str().unwrap().contains("off for this vault"), "{body}");
     assert!(agent.requests().is_empty(), "nothing reached the model");
     let reader_caller = w.s.authenticate(&reader).unwrap();
-    assert!(w.s.list_chat_threads(&reader_caller, &w.v, None, 10).unwrap().is_empty(), "and nothing was written");
+    assert!(
+        w.s.list_chat_threads(&reader_caller, &w.v, None, 10).unwrap().is_empty(),
+        "and nothing was written"
+    );
 
     // Read and propose scopes can see the setting and can't change it. Admin can, and the log says who.
     let put = json!({"enabled": true});
     for (name, scope) in [("r2", Scope::Read), ("p2", Scope::Propose)] {
         let t = w.token(name, PrincipalKind::Human, scope);
-        assert_eq!(w.call("PUT", &format!("{}/settings", w.base()), &t, Some(put.clone())).await.0, StatusCode::FORBIDDEN);
+        assert_eq!(
+            w.call("PUT", &format!("{}/settings", w.base()), &t, Some(put.clone())).await.0,
+            StatusCode::FORBIDDEN
+        );
         let (status, got) = w.call("GET", &format!("{}/settings", w.base()), &t, None).await;
         assert_eq!((status, &got["enabled"]), (StatusCode::OK, &json!(false)));
     }
@@ -295,13 +303,18 @@ async fn chat_is_off_until_an_admin_turns_it_on_and_nothing_reaches_the_llm_befo
     assert_eq!((status, &got["enabled"]), (StatusCode::OK, &json!(true)), "{got}");
     let events = w.s.changes_since(&w.admin, &w.v, None).unwrap();
     let who = w.s.authenticate(&vault_admin).unwrap().principal.id;
-    assert!(events.iter().any(|e| e.actor == who && e.payload.to_string().contains("chat_settings")), "on the log with who did it");
+    assert!(
+        events.iter().any(|e| e.actor == who && e.payload.to_string().contains("chat_settings")),
+        "on the log with who did it"
+    );
 
     assert_eq!(w.run(&agent, &reader, "t1", "r1", "hello").await.0, StatusCode::OK);
     assert_eq!(agent.requests().len(), 1);
 
     // And off again.
-    let (status, _) = w.call("PUT", &format!("{}/settings", w.base()), &vault_admin, Some(json!({"enabled": false}))).await;
+    let (status, _) = w
+        .call("PUT", &format!("{}/settings", w.base()), &vault_admin, Some(json!({"enabled": false})))
+        .await;
     assert_eq!(status, StatusCode::OK);
     let before = agent.requests().len();
     let (status, _, body) = w.run(&agent, &reader, "t1", "r2", "hello").await;
@@ -313,7 +326,12 @@ async fn chat_is_off_until_an_admin_turns_it_on_and_nothing_reaches_the_llm_befo
 async fn a_budget_of_zero_is_refused_and_a_server_with_no_model_says_so() {
     let w = world();
     let (status, _) = w
-        .call("PUT", &format!("{}/settings", w.base()), &w.root, Some(json!({"enabled": true, "day_token_budget": 0})))
+        .call(
+            "PUT",
+            &format!("{}/settings", w.base()),
+            &w.root,
+            Some(json!({"enabled": true, "day_token_budget": 0})),
+        )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     w.enable();
@@ -334,9 +352,8 @@ async fn a_stream_with_no_token_or_no_access_is_refused_before_it_opens() {
     assert_eq!(w.run(&agent, "mvx_not_real", "t", "r", "hi").await.0, StatusCode::UNAUTHORIZED);
     let p = w.s.create_principal(&w.admin, "elsewhere", PrincipalKind::Human, false).unwrap();
     let other_vault = w.s.create_vault(&w.admin, "other").unwrap().id;
-    let token = w
-        .s
-        .create_token(
+    let token =
+        w.s.create_token(
             &w.admin,
             NewToken {
                 principal_id: Some(p.id),
@@ -350,7 +367,11 @@ async fn a_stream_with_no_token_or_no_access_is_refused_before_it_opens() {
         )
         .unwrap()
         .token;
-    assert_eq!(w.run(&agent, &token, "t", "r", "hi").await.0, StatusCode::NOT_FOUND, "a vault hidden from them stays hidden");
+    assert_eq!(
+        w.run(&agent, &token, "t", "r", "hi").await.0,
+        StatusCode::NOT_FOUND,
+        "a vault hidden from them stays hidden"
+    );
 }
 
 // ---- A run's shape. ----
@@ -366,21 +387,37 @@ async fn a_reply_streams_is_kept_and_records_a_derivation_with_token_counts() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         types(&frames),
-        ["RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"]
+        [
+            "RUN_STARTED",
+            "TEXT_MESSAGE_START",
+            "TEXT_MESSAGE_CONTENT",
+            "TEXT_MESSAGE_CONTENT",
+            "TEXT_MESSAGE_END",
+            "RUN_FINISHED"
+        ]
     );
     assert_eq!((&frames[0]["threadId"], &frames[0]["runId"]), (&json!("t1"), &json!("r1")));
     assert!(frames[5].get("result").is_none(), "a normal end says nothing more");
     let stored = w.stored(&reader, "t1");
     assert_eq!(stored.len(), 2);
     assert_eq!((stored[0].role, stored[0].text.as_str()), (ChatRole::User, "  what is\n it?"));
-    assert_eq!((stored[1].role, stored[1].text.as_str(), stored[1].stop.as_deref()), (ChatRole::Assistant, "Hello", None));
+    assert_eq!(
+        (stored[1].role, stored[1].text.as_str(), stored[1].stop.as_deref()),
+        (ChatRole::Assistant, "Hello", None)
+    );
     let view = w.s.get_chat_thread(&reader, &w.v, "t1", None, 10).unwrap();
     assert_eq!(view.thread.title, "what is it?");
     assert_eq!(view.thread.tokens, 100, "what the provider said, not what was reserved");
     let d = w.derivations();
     assert_eq!(d.len(), 1);
     assert_eq!(
-        (d[0].usage.input_tokens, d[0].usage.output_tokens, d[0].attempts, d[0].model.as_str(), d[0].prompt_hash.as_str()),
+        (
+            d[0].usage.input_tokens,
+            d[0].usage.output_tokens,
+            d[0].attempts,
+            d[0].model.as_str(),
+            d[0].prompt_hash.as_str()
+        ),
         (90, 10, 1, "scripted-chat", prompt_hash().as_str())
     );
     assert_eq!(d[0].detail, None);
@@ -405,7 +442,10 @@ async fn history_comes_from_the_store_so_a_client_cannot_put_words_in_the_agents
     let requests = agent.requests();
     let second = &requests[1];
     assert_eq!(second.message, "second question");
-    assert_eq!(second.history.iter().map(|t| (t.from_user, t.text.as_str())).collect::<Vec<_>>(), [(true, "first question"), (false, "first answer")]);
+    assert_eq!(
+        second.history.iter().map(|t| (t.from_user, t.text.as_str())).collect::<Vec<_>>(),
+        [(true, "first question"), (false, "first answer")]
+    );
     let everything = format!("{second:?}");
     assert!(!everything.contains("PLANTED"), "{everything}");
     assert_eq!(second.instruction, memex_core::chat::instruction());
@@ -454,17 +494,31 @@ async fn a_principal_cannot_reach_another_principals_threads_whatever_its_scope(
     w.enable();
     let owner_token = w.token("owner", PrincipalKind::Human, Scope::Read);
     let owner = w.s.authenticate(&owner_token).unwrap();
-    let agent = scripted(vec![vec![ChatCall::says("the owner's private answer")], vec![ChatCall::says("the other's own answer")]]);
-    assert_eq!(w.run(&agent, &owner_token, "shared-id", "r1", "the owner's private question").await.0, StatusCode::OK);
+    let agent = scripted(vec![
+        vec![ChatCall::says("the owner's private answer")],
+        vec![ChatCall::says("the other's own answer")],
+    ]);
+    assert_eq!(
+        w.run(&agent, &owner_token, "shared-id", "r1", "the owner's private question").await.0,
+        StatusCode::OK
+    );
     let thread = format!("{}/threads/shared-id", w.base());
 
     let vault_admin = w.token("vault-admin", PrincipalKind::Human, Scope::Admin);
-    for (who, token) in [("same scope", w.token("peer", PrincipalKind::Human, Scope::Read)), ("vault admin", vault_admin.clone()), ("server admin", w.root.clone())] {
+    for (who, token) in [
+        ("same scope", w.token("peer", PrincipalKind::Human, Scope::Read)),
+        ("vault admin", vault_admin.clone()),
+        ("server admin", w.root.clone()),
+    ] {
         let (status, list) = w.call("GET", &format!("{}/threads", w.base()), &token, None).await;
         assert_eq!(status, StatusCode::OK, "{who}");
         assert_eq!(list["items"], json!([]), "{who}");
         assert_eq!(w.call("GET", &thread, &token, None).await.0, StatusCode::NOT_FOUND, "{who}");
-        assert_eq!(w.call("PATCH", &thread, &token, Some(json!({"title": "mine now"}))).await.0, StatusCode::NOT_FOUND, "{who}");
+        assert_eq!(
+            w.call("PATCH", &thread, &token, Some(json!({"title": "mine now"}))).await.0,
+            StatusCode::NOT_FOUND,
+            "{who}"
+        );
         assert_eq!(w.call("DELETE", &thread, &token, None).await.0, StatusCode::NOT_FOUND, "{who}");
     }
     // The owner's is untouched, and naming the same id makes another's own thread, with none of the owner's history.
@@ -506,7 +560,9 @@ async fn your_own_threads_list_rename_read_and_delete() {
     let (_, page) = w.call("GET", &format!("{one}?limit=1"), &w.root, None).await;
     assert_eq!(page["messages"].as_array().unwrap().len(), 1);
     assert_eq!(page["messages"][0]["role"], json!("user"));
-    let (_, next) = w.call("GET", &format!("{one}?limit=1&cursor={}", page["next_cursor"].as_str().unwrap()), &w.root, None).await;
+    let (_, next) = w
+        .call("GET", &format!("{one}?limit=1&cursor={}", page["next_cursor"].as_str().unwrap()), &w.root, None)
+        .await;
     assert_eq!(next["messages"][0]["role"], json!("assistant"));
 
     let spent = w.s.chat_day_spend(&w.admin, &w.v).unwrap().0;
@@ -525,7 +581,10 @@ async fn a_read_token_can_chat_but_cannot_get_a_proposal_through() {
     w.enable();
     let (_, segment) = w.document("d.txt", "trusted", "The bridge is 412 metres long.");
     let token = w.token("reader", PrincipalKind::Human, Scope::Read);
-    let agent = scripted(vec![vec![propose_call("c1", &segment, "The bridge is 412 metres long."), ChatCall::says("Couldn't do that.")]]);
+    let agent = scripted(vec![vec![
+        propose_call("c1", &segment, "The bridge is 412 metres long."),
+        ChatCall::says("Couldn't do that."),
+    ]]);
     let (status, frames, _) = w.run(&agent, &token, "t", "r", "add it").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(types(&frames).last().unwrap(), "RUN_FINISHED", "it carries on after a refusal");
@@ -569,7 +628,10 @@ async fn a_chat_never_exceeds_the_person_asking_and_never_goes_above_propose() {
     }
     assert_eq!(w.committed_count(), 0);
     assert_eq!(w.s.get_changeset(&w.admin, &w.v, &ObjectId(id)).unwrap().state, ChangeSetState::Pending);
-    assert_eq!(agent.requests()[0].tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), ["search", "read", "provenance", "propose"]);
+    assert_eq!(
+        agent.requests()[0].tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+        ["search", "read", "provenance", "propose"]
+    );
 }
 
 /// A model that does something when it's called, for what a script can't reach mid-run.
@@ -666,7 +728,9 @@ async fn a_chat_proposal_goes_through_validators_and_the_queue_with_both_attribu
     assert_eq!(answers[1]["data"]["state"], json!("pending"), "{}", answers[1]);
 
     // In the queue, as anyone reviewing sees it over HTTP.
-    let (status, queue) = w.call("GET", &format!("/api/v1/vaults/{}/review/queue?state=pending", w.v), &w.root, None).await;
+    let (status, queue) = w
+        .call("GET", &format!("/api/v1/vaults/{}/review/queue?state=pending", w.v), &w.root, None)
+        .await;
     assert_eq!(status, StatusCode::OK, "{queue}");
     assert_eq!(queue["items"].as_array().unwrap().len(), 1, "{queue}");
     let (status, got) = w.call("GET", &format!("/api/v1/vaults/{}/changesets/{good}", w.v), &w.root, None).await;
@@ -706,16 +770,23 @@ async fn a_chat_proposal_never_auto_commits_even_on_a_trusted_source_with_the_co
 
     let robot_token = w.token("robot", PrincipalKind::Agent, Scope::Propose);
     let robot = w.s.authenticate(&robot_token).unwrap();
-    w.s.record_audit_samples(&w.v, &robot.principal.id, "", "claim", 500, 0, "test", "plenty").unwrap();
+    w.s.record_audit_samples(&w.v, &robot.principal.id, "", "claim", 500, 0, "test", "plenty")
+        .unwrap();
     let control = memex_core::Proposal {
         ops: serde_json::from_value(json!([claim_op("control", &segment, "The tower is 90 metres tall.")])).unwrap(),
         rationale: "control".into(),
         idempotency_key: "control".into(),
     };
     let control = w.s.propose(&robot, &w.v, control, false).unwrap().changeset.unwrap();
-    assert_eq!(control.state, ChangeSetState::Committed, "the control: an agent with this record does auto-commit from this source");
+    assert_eq!(
+        control.state,
+        ChangeSetState::Committed,
+        "the control: an agent with this record does auto-commit from this source"
+    );
 
-    let row = w.s.record_audit_samples(&w.v, CHAT_AGENT, &prompt_hash(), "claim", 500, 0, "test", "plenty").unwrap();
+    let row =
+        w.s.record_audit_samples(&w.v, CHAT_AGENT, &prompt_hash(), "claim", 500, 0, "test", "plenty")
+            .unwrap();
     assert!(row.on, "the chat agent's own combination has earned it");
     let token = w.token("asker", PrincipalKind::Human, Scope::Propose);
     let agent = scripted(vec![vec![propose_call("c1", &segment, quote)]]);
@@ -747,7 +818,10 @@ struct Fixture {
 }
 
 fn fixtures() -> Vec<Fixture> {
-    include_str!("../../memex-core/tests/fixtures/injection/fixtures.jsonl").lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+    include_str!("../../memex-core/tests/fixtures/injection/fixtures.jsonl")
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect()
 }
 
 /// Item 2 on a scripted agent: the script does everything an injection could want, as if the model had obeyed. This shows the tools can't commit, fetch or reveal anything, whatever the model says. It says nothing about what a model chooses to do.
@@ -767,7 +841,8 @@ async fn an_agent_that_obeys_every_injection_commits_nothing_and_reaches_nothing
         // The worst case for the vault: a source someone trusts, and a combination that has earned auto-commit.
         let (_, segment) = w.document("d.txt", "trusted", &f.text);
         let robot = w.token("robot", PrincipalKind::Agent, Scope::Propose);
-        w.s.record_audit_samples(&w.v, CHAT_AGENT, &prompt_hash(), "claim", 500, 0, "test", "plenty").unwrap();
+        w.s.record_audit_samples(&w.v, CHAT_AGENT, &prompt_hash(), "claim", 500, 0, "test", "plenty")
+            .unwrap();
         let quote: String = f.text.split_inclusive('.').next().unwrap().trim().to_string();
         let calls = vec![
             ChatCall::calls("read", json!({"kind": "segment", "id": segment.0})),
@@ -814,7 +889,12 @@ async fn an_agent_that_obeys_every_injection_commits_nothing_and_reaches_nothing
             assert!(item.changeset.requested_by.is_some(), "{}", f.id);
             assert_eq!(item.changeset.decided_by, None, "{}", f.id);
         }
-        assert_eq!(w.s.engine().store().snapshot(&w.v).unwrap().rows(Table::Assertion, None).unwrap().len(), 0, "{}", f.id);
+        assert_eq!(
+            w.s.engine().store().snapshot(&w.v).unwrap().rows(Table::Assertion, None).unwrap().len(),
+            0,
+            "{}",
+            f.id
+        );
     }
 }
 
@@ -869,7 +949,10 @@ async fn the_day_budget_stops_across_threads_and_deleting_a_thread_gives_nothing
         vec![ChatCall::says("never")],
     ]);
     assert_eq!(w.run(&agent, &w.root, "a", "r1", "hi").await.0, StatusCode::OK);
-    assert_eq!(w.call("DELETE", &format!("{}/threads/a", w.base()), &w.root, None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(
+        w.call("DELETE", &format!("{}/threads/a", w.base()), &w.root, None).await.0,
+        StatusCode::NO_CONTENT
+    );
     assert_eq!(w.run(&agent, &w.root, "b", "r2", "hi").await.0, StatusCode::OK);
     let (_, frames, _) = w.run(&agent, &w.root, "c", "r3", "hi").await;
     assert_eq!(frames.last().unwrap()["result"], json!({"stop": "day_budget"}));
@@ -943,7 +1026,11 @@ async fn a_stream_read_slowly_to_its_end_is_not_cancelled() {
     let w = world();
     w.enable();
     let agent = scripted(vec![vec![ChatCall::says("one"), ChatCall::says("two")]]);
-    let res = w.app(Some(agent.clone())).oneshot(run_request(&w, &w.root, &run_body("t", "r", "hi"))).await.unwrap();
+    let res = w
+        .app(Some(agent.clone()))
+        .oneshot(run_request(&w, &w.root, &run_body("t", "r", "hi")))
+        .await
+        .unwrap();
     let mut stream = res.into_body().into_data_stream();
     let mut text = String::new();
     while let Some(chunk) = stream.next().await {
@@ -966,9 +1053,8 @@ async fn erasing_a_source_deletes_each_thread_it_reached_however_it_got_there() 
     let (source, segment) = w.document("target.txt", "trusted", text);
     let (other, other_segment) = w.document("other.txt", "trusted", "The harbour at Marstrand is shallow.");
     let cp = claim_op("claim-1", &segment, text);
-    let out = w
-        .s
-        .propose(
+    let out =
+        w.s.propose(
             &w.admin,
             &w.v,
             memex_core::Proposal {
@@ -1025,14 +1111,20 @@ async fn erasing_a_source_deletes_each_thread_it_reached_however_it_got_there() 
         let held = w.stored(&w.admin, name).iter().map(|m| m.text.clone()).collect::<String>();
         assert!(!held.contains("Vinga") || recorded.contains(&source), "{name}");
     }
-    let agent = scripted(vec![vec![ChatCall::calls("read", json!({"kind": "segment", "id": other_segment.0})), ChatCall::says(silent)]]);
+    let agent = scripted(vec![vec![
+        ChatCall::calls("read", json!({"kind": "segment", "id": other_segment.0})),
+        ChatCall::says(silent),
+    ]]);
     assert_eq!(w.run(&agent, &w.root, keep, "run-keep", "tell me").await.0, StatusCode::OK);
-    assert_eq!(w.sources(&w.admin, keep), [other.clone()]);
+    assert_eq!(w.sources(&w.admin, keep), [other]);
 
     let erased = w.s.erase_chat_threads_citing(&w.v, &source).unwrap();
     assert_eq!(erased.len(), ways.len(), "{erased:?}");
     for (name, _) in &ways {
-        assert!(matches!(w.s.get_chat_thread(&w.admin, &w.v, name, None, 10), Err(memex_core::ServerError::NotFound)), "{name}");
+        assert!(
+            matches!(w.s.get_chat_thread(&w.admin, &w.v, name, None, 10), Err(memex_core::ServerError::NotFound)),
+            "{name}"
+        );
     }
     assert_eq!(w.stored(&w.admin, keep).len(), 3, "one that read something else stays");
     assert_eq!(w.s.erase_chat_threads_citing(&w.v, &source).unwrap(), vec![], "and asking again finds nothing");
@@ -1069,7 +1161,10 @@ async fn a_run_in_a_deleted_thread_stops_and_cannot_bring_it_back() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(frames.last().unwrap()["result"], json!({"stop": "thread_gone"}));
     assert_eq!(answers.lock().unwrap()[1]["error"]["code"], json!("stopped"));
-    assert!(matches!(w.s.get_chat_thread(&w.admin, &w.v, "t", None, 10), Err(memex_core::ServerError::NotFound)));
+    assert!(matches!(
+        w.s.get_chat_thread(&w.admin, &w.v, "t", None, 10),
+        Err(memex_core::ServerError::NotFound)
+    ));
     assert!(w.sources(&w.admin, "t").is_empty());
 }
 
@@ -1085,9 +1180,8 @@ async fn a_tools_answer_about_a_source_erased_meanwhile_goes_no_further() {
             ..Default::default()
         })
     };
-    let prepared = w
-        .s
-        .prepare_chat(
+    let prepared =
+        w.s.prepare_chat(
             &w.admin,
             &w.v,
             memex_core::ChatInput {
@@ -1117,7 +1211,9 @@ async fn a_tools_answer_about_a_source_erased_meanwhile_goes_no_further() {
 // ---- Item 8: every scenario's stream, kept for `@ag-ui/core`'s schemas to judge. ----
 
 fn fixture_path(name: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/agui").join(format!("{name}.jsonl"))
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/agui")
+        .join(format!("{name}.jsonl"))
 }
 
 /// Writes the frames with `MEMEX_UPDATE_GOLDEN` set, and otherwise holds them to what's committed, which `web/packages/edge-agui` validates against the schemas with `pnpm test`.
@@ -1137,28 +1233,102 @@ fn event_order_is_right(name: &str, frames: &[Value]) {
     assert_eq!(t.iter().filter(|x| *x == "RUN_STARTED").count(), 1, "{name}");
     let ends = t.iter().filter(|x| *x == "RUN_FINISHED" || *x == "RUN_ERROR").count();
     assert_eq!(ends, 1, "{name}: exactly one end");
-    assert!(matches!(t.last().map(String::as_str), Some("RUN_FINISHED" | "RUN_ERROR")), "{name}: the end is last");
+    assert!(
+        matches!(t.last().map(String::as_str), Some("RUN_FINISHED" | "RUN_ERROR")),
+        "{name}: the end is last"
+    );
 }
 
 #[tokio::test]
 async fn every_scripted_scenario_makes_a_well_ordered_stream_kept_for_schema_validation() {
     let fail = |e: AgentError| ChatCall::new(vec![ChatStep::Text("Partly".into()), ChatStep::Fail(e)]);
     let scenarios: Vec<(&str, Option<u64>, Vec<ChatCall>)> = vec![
-        ("text", None, vec![ChatCall::new(vec![ChatStep::Text("Hel".into()), ChatStep::Text("lo ✓ å".into())])]),
+        (
+            "text",
+            None,
+            vec![ChatCall::new(vec![ChatStep::Text("Hel".into()), ChatStep::Text("lo ✓ å".into())])],
+        ),
         ("says_nothing", None, vec![ChatCall::new(vec![])]),
-        ("search_then_answer", None, vec![ChatCall::calls("search", json!({"q": "bridge"})), ChatCall::says("412 m [cite:x].")]),
-        ("text_then_tool", None, vec![ChatCall::new(vec![ChatStep::Text("Looking.".into()), ChatStep::Tool { name: "search".into(), args: json!({"q": "bridge"}) }]), ChatCall::says("Done.")]),
-        ("two_tools_in_one_call", None, vec![ChatCall::new(vec![ChatStep::Tool { name: "search".into(), args: json!({"q": "a"}) }, ChatStep::Tool { name: "search".into(), args: json!({"q": "a"}) }]), ChatCall::says("Done.")]),
-        ("unknown_tool", None, vec![ChatCall::calls("fetch_url", json!({"url": "http://example.invalid/"})), ChatCall::says("No.")]),
-        ("provider_unavailable", None, vec![fail(AgentError::Unavailable("connection refused with some provider text".into()))]),
+        (
+            "search_then_answer",
+            None,
+            vec![ChatCall::calls("search", json!({"q": "bridge"})), ChatCall::says("412 m [cite:x].")],
+        ),
+        (
+            "text_then_tool",
+            None,
+            vec![
+                ChatCall::new(vec![
+                    ChatStep::Text("Looking.".into()),
+                    ChatStep::Tool {
+                        name: "search".into(),
+                        args: json!({"q": "bridge"}),
+                    },
+                ]),
+                ChatCall::says("Done."),
+            ],
+        ),
+        (
+            "two_tools_in_one_call",
+            None,
+            vec![
+                ChatCall::new(vec![
+                    ChatStep::Tool {
+                        name: "search".into(),
+                        args: json!({"q": "a"}),
+                    },
+                    ChatStep::Tool {
+                        name: "search".into(),
+                        args: json!({"q": "a"}),
+                    },
+                ]),
+                ChatCall::says("Done."),
+            ],
+        ),
+        (
+            "unknown_tool",
+            None,
+            vec![ChatCall::calls("fetch_url", json!({"url": "http://example.invalid/"})), ChatCall::says("No.")],
+        ),
+        (
+            "provider_unavailable",
+            None,
+            vec![fail(AgentError::Unavailable("connection refused with some provider text".into()))],
+        ),
         ("provider_rate_limited", None, vec![fail(AgentError::RateLimited("slow down".into()))]),
         ("provider_timeout", None, vec![fail(AgentError::Timeout)]),
         ("provider_refused", None, vec![fail(AgentError::Provider("bad key".into()))]),
-        ("provider_fails_before_text", None, vec![ChatCall::new(vec![ChatStep::Fail(AgentError::Unavailable("down".into()))])]),
-        ("provider_fails_after_a_tool", None, vec![ChatCall::calls("search", json!({"q": "a"})), ChatCall::new(vec![ChatStep::Fail(AgentError::Unavailable("down".into()))])]),
+        (
+            "provider_fails_before_text",
+            None,
+            vec![ChatCall::new(vec![ChatStep::Fail(AgentError::Unavailable("down".into()))])],
+        ),
+        (
+            "provider_fails_after_a_tool",
+            None,
+            vec![
+                ChatCall::calls("search", json!({"q": "a"})),
+                ChatCall::new(vec![ChatStep::Fail(AgentError::Unavailable("down".into()))]),
+            ],
+        ),
         ("budget_before_any_call", Some(50), vec![ChatCall::says("never")]),
-        ("budget_mid_run", Some(250), vec![ChatCall::calls("search", json!({"q": "a"})), ChatCall::calls("search", json!({"q": "b"})), ChatCall::says("never")]),
-        ("cut_at_its_limit", None, vec![ChatCall { truncated: true, ..ChatCall::says("Half a sent") }]),
+        (
+            "budget_mid_run",
+            Some(250),
+            vec![
+                ChatCall::calls("search", json!({"q": "a"})),
+                ChatCall::calls("search", json!({"q": "b"})),
+                ChatCall::says("never"),
+            ],
+        ),
+        (
+            "cut_at_its_limit",
+            None,
+            vec![ChatCall {
+                truncated: true,
+                ..ChatCall::says("Half a sent")
+            }],
+        ),
         ("too_many_calls", None, vec![ChatCall::says("1"), ChatCall::says("2"), ChatCall::says("3")]),
     ];
     let mut names = vec![];
@@ -1175,7 +1345,10 @@ async fn every_scripted_scenario_makes_a_well_ordered_stream_kept_for_schema_val
         event_order_is_right(name, &frames);
         // A failure's text stays on the server.
         let text = frames.iter().map(Value::to_string).collect::<String>();
-        assert!(!text.contains("connection refused") && !text.contains("bad key") && !text.contains("slow down"), "{name}: {text}");
+        assert!(
+            !text.contains("connection refused") && !text.contains("bad key") && !text.contains("slow down"),
+            "{name}: {text}"
+        );
         golden(name, &frames);
         names.push(name);
     }
@@ -1183,7 +1356,10 @@ async fn every_scripted_scenario_makes_a_well_ordered_stream_kept_for_schema_val
     let w = world();
     w.enable();
     let (_, segment) = w.document("d.txt", "trusted", "The bridge is 412 metres long.");
-    let agent = scripted(vec![vec![propose_call("c1", &segment, "The bridge is 412 metres long."), ChatCall::says("Queued for review.")]]);
+    let agent = scripted(vec![vec![
+        propose_call("c1", &segment, "The bridge is 412 metres long."),
+        ChatCall::says("Queued for review."),
+    ]]);
     let (_, frames, _) = w.run(&agent, &w.root, "thread-1", "run-1", "hello").await;
     event_order_is_right("propose", &frames);
     golden("propose", &frames);
@@ -1193,8 +1369,17 @@ async fn every_scripted_scenario_makes_a_well_ordered_stream_kept_for_schema_val
 #[test]
 fn the_openapi_document_describes_chat() {
     let doc = serde_json::to_value(memex_http::openapi()).unwrap();
-    for path in ["/api/v1/vaults/{id}/chat/runs", "/api/v1/vaults/{id}/chat/settings", "/api/v1/vaults/{id}/chat/threads", "/api/v1/vaults/{id}/chat/threads/{tid}"] {
+    for path in [
+        "/api/v1/vaults/{id}/chat/runs",
+        "/api/v1/vaults/{id}/chat/settings",
+        "/api/v1/vaults/{id}/chat/threads",
+        "/api/v1/vaults/{id}/chat/threads/{tid}",
+    ] {
         assert!(doc["paths"].get(path).is_some(), "{path}");
     }
-    assert!(doc["paths"]["/api/v1/vaults/{id}/chat/runs"]["post"]["responses"]["200"]["content"].get("text/event-stream").is_some());
+    assert!(
+        doc["paths"]["/api/v1/vaults/{id}/chat/runs"]["post"]["responses"]["200"]["content"]
+            .get("text/event-stream")
+            .is_some()
+    );
 }

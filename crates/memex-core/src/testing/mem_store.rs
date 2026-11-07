@@ -1,7 +1,8 @@
 use crate::{CommitItem, PAGE_LIMIT, Receipt, Snapshot, Store, StoreError, WriterLease};
 use memex_types::{
-    AssertionRow, BlockKind, BlockRow, CLAIM_REF, ChangeSetRow, ChatMessage, ChatReservation, ChatStored, ChatThread, ChatThreadKey, EdgeDirection, EdgeRow, Event, EvidenceRow, JobRow, JobState, Mutation, ObjectId, PageRow,
-    RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SourceRow, Status, Table, VaultId, WIKI_LINK, slug_of_target,
+    AssertionRow, BlockKind, BlockRow, CLAIM_REF, ChangeSetRow, ChatMessage, ChatReservation, ChatStored, ChatThread, ChatThreadKey, EdgeDirection, EdgeRow,
+    Event, EvidenceRow, JobRow, JobState, Mutation, ObjectId, PageRow, RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SourceRow, Status, Table, VaultId,
+    WIKI_LINK, slug_of_target,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -793,7 +794,9 @@ impl Store for MemStore {
     }
 
     fn chat_sources(&self, vault: &VaultId, key: &ChatThreadKey) -> Result<Vec<ObjectId>, StoreError> {
-        self.with_chat(vault, |c| c.sources.get(&chat_key(key)).map(|s| s.iter().cloned().collect()).unwrap_or_default())
+        self.with_chat(vault, |c| {
+            c.sources.get(&chat_key(key)).map(|s| s.iter().cloned().collect()).unwrap_or_default()
+        })
     }
 
     fn chat_threads_citing(&self, vault: &VaultId, source: &ObjectId, limit: usize) -> Result<Vec<ChatThreadKey>, StoreError> {
@@ -810,7 +813,15 @@ impl Store for MemStore {
         })
     }
 
-    fn chat_reserve(&self, vault: &VaultId, key: &ChatThreadKey, day: i64, tokens: u64, thread_limit: u64, day_limit: u64) -> Result<ChatReservation, StoreError> {
+    fn chat_reserve(
+        &self,
+        vault: &VaultId,
+        key: &ChatThreadKey,
+        day: i64,
+        tokens: u64,
+        thread_limit: u64,
+        day_limit: u64,
+    ) -> Result<ChatReservation, StoreError> {
         self.with_chat(vault, |c| {
             let Some(t) = c.threads.get_mut(&chat_key(key)) else {
                 return ChatReservation::ThreadGone;

@@ -117,7 +117,9 @@ where
         if has_agent {
             Ok(prepared)
         } else {
-            Err(ServerError::Unavailable("this server has no chat model configured, so nothing can answer".into()))
+            Err(ServerError::Unavailable(
+                "this server has no chat model configured, so nothing can answer".into(),
+            ))
         }
     })
     .await?;
@@ -136,7 +138,9 @@ where
         Some((frame(&event), (receiver, guard)))
     });
     let mut response = Sse::new(events).keep_alive(KeepAlive::new().interval(KEEP_ALIVE)).into_response();
-    response.headers_mut().insert(header::CACHE_CONTROL, header::HeaderValue::from_static("no-store"));
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, header::HeaderValue::from_static("no-store"));
     Ok(response)
 }
 
@@ -220,7 +224,12 @@ where
     if let Some(cursor) = &l.cursor
         && memex_api::parse_thread_cursor(cursor).is_none()
     {
-        return Err(ApiError::new(StatusCode::BAD_REQUEST, "invalid", "that isn't a cursor this route gave out", &rid.0));
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid",
+            "that isn't a cursor this route gave out",
+            &rid.0,
+        ));
     }
     let limit = l.limit;
     let rows = authed(server, headers, &rid, move |s, c| {

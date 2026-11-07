@@ -290,7 +290,11 @@ impl AdkAgent {
                 return failed(e);
             }
         }
-        let runner = Runner::builder().app_name("memex").agent(agent as Arc<dyn Agent>).session_service(sessions).build();
+        let runner = Runner::builder()
+            .app_name("memex")
+            .agent(agent as Arc<dyn Agent>)
+            .session_service(sessions)
+            .build();
         let runner = match runner {
             Ok(r) => r,
             Err(e) => return failed(e),
@@ -299,7 +303,9 @@ impl AdkAgent {
             return ChatEnd::Failed(AgentError::Provider("bad session name".into()));
         };
         let config = RunConfig::builder().streaming_mode(StreamingMode::SSE).build();
-        let events = runner.run_with_config(user, session, Content::new("user").with_text(&req.message), Some(config)).await;
+        let events = runner
+            .run_with_config(user, session, Content::new("user").with_text(&req.message), Some(config))
+            .await;
         let mut events = match events {
             Ok(s) => s,
             Err(e) => return failed(e),
@@ -443,7 +449,11 @@ mod tests {
             if let Some(end) = text.find("\r\n\r\n") {
                 let length = text[..end]
                     .lines()
-                    .find_map(|l| l.to_lowercase().strip_prefix("content-length: ").map(|v| v.trim().parse::<usize>().unwrap_or(0)))
+                    .find_map(|l| {
+                        l.to_lowercase()
+                            .strip_prefix("content-length: ")
+                            .map(|v| v.trim().parse::<usize>().unwrap_or(0))
+                    })
                     .unwrap_or(0);
                 if data.len() >= end + 4 + length {
                     break;
@@ -503,7 +513,8 @@ mod tests {
     }
 
     fn tool_reply(name: &str, args: &str, used: Value) -> String {
-        let call = json!({"role": "assistant", "tool_calls": [{"index": 0, "id": "call-1", "type": "function", "function": {"name": name, "arguments": args}}]});
+        let call =
+            json!({"role": "assistant", "tool_calls": [{"index": 0, "id": "call-1", "type": "function", "function": {"name": name, "arguments": args}}]});
         chunk(call, Value::Null, Value::Null) + &chunk(json!({}), json!("tool_calls"), used) + "data: [DONE]\n\n"
     }
 
@@ -552,7 +563,12 @@ mod tests {
         settled(&host, 2);
         assert_eq!(host.before.lock().unwrap().len(), 2, "asked before each call");
         let events = host.events.lock().unwrap();
-        assert!(events.iter().flat_map(|e| &e.parts).any(|p| matches!(p, RunnerPart::ToolResult { name, .. } if name == "search")));
+        assert!(
+            events
+                .iter()
+                .flat_map(|e| &e.parts)
+                .any(|p| matches!(p, RunnerPart::ToolResult { name, .. } if name == "search"))
+        );
         let sent = seen.lock().unwrap().join("\n");
         assert!(sent.contains("from the tool"), "the second call sees the tool's answer");
         assert!(sent.contains("\"tools\""), "{sent}");
@@ -605,7 +621,10 @@ mod tests {
     fn a_reply_cut_at_its_limit_says_so() {
         let body = chunk(json!({"content": "half"}), Value::Null, Value::Null) + &chunk(json!({}), json!("length"), usage(5, 77)) + "data: [DONE]\n\n";
         let (url, _) = script(vec![("200 OK", body)]);
-        assert_eq!(agent(&url).chat(&request(vec![]), Arc::new(Host::default())), ChatEnd::Finished { truncated: true });
+        assert_eq!(
+            agent(&url).chat(&request(vec![]), Arc::new(Host::default())),
+            ChatEnd::Finished { truncated: true }
+        );
     }
 
     #[test]
@@ -613,7 +632,9 @@ mod tests {
         let error = json!({"error": {"message": "boom test-key-not-real"}}).to_string();
         let (url, _) = script(vec![("400 Bad Request", error.clone())]);
         let end = agent(&url).chat(&request(vec![]), Arc::new(Host::default()));
-        let ChatEnd::Failed(AgentError::Provider(text)) = end else { panic!("{end:?}") };
+        let ChatEnd::Failed(AgentError::Provider(text)) = end else {
+            panic!("{end:?}")
+        };
         assert!(!text.contains("test-key-not-real"), "{text}");
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let down = format!("http://{}/v1", listener.local_addr().unwrap());
@@ -627,7 +648,10 @@ mod tests {
         let canary = TcpListener::bind("127.0.0.1:0").unwrap();
         canary.set_nonblocking(true).unwrap();
         let fetch = format!("{{\"url\":\"http://{}/secret\"}}", canary.local_addr().unwrap());
-        let (url, seen) = script(vec![("200 OK", tool_reply("fetch_url", &fetch, usage(5, 5))), ("200 OK", text_reply(&["done"], usage(5, 1)))]);
+        let (url, seen) = script(vec![
+            ("200 OK", tool_reply("fetch_url", &fetch, usage(5, 5))),
+            ("200 OK", text_reply(&["done"], usage(5, 1))),
+        ]);
         let host = Arc::new(Host::default());
         let end = agent(&url).chat(&request(vec![search_tool()]), host.clone());
         assert_eq!(end, ChatEnd::Finished { truncated: false });

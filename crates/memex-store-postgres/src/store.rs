@@ -2,9 +2,9 @@ use crate::migrate::{LATEST_SERVER_VERSION, LATEST_VAULT_VERSION, SERVER_MIGRATI
 use crate::net::net_mutations;
 use crate::tls::Target;
 use memex_types::{
-    AssertionRow, BlockKind, BlockRow, ChangeSetRow, ChatMessage, ChatReservation, ChatStored, ChatThread, ChatThreadKey, DocKind, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, FilterValue,
-    Header, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Status, Table,
-    ValueMatch, VaultId,
+    AssertionRow, BlockKind, BlockRow, ChangeSetRow, ChatMessage, ChatReservation, ChatStored, ChatThread, ChatThreadKey, DocKind, EdgeDirection, EdgeRow,
+    EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, FilterValue, Header, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, RenditionRow,
+    RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Status, Table, ValueMatch, VaultId,
 };
 use postgres::{Client, Statement, types::ToSql};
 use serde_json::Value;
@@ -533,16 +533,21 @@ impl PgStore {
             let sql = format!("SELECT owner_id, thread_id FROM {s}.chat_thread_sources WHERE source_id = $1 ORDER BY owner_id, thread_id LIMIT $2");
             Ok(c.query(&sql, &[&source.0, &(limit as i64)])?
                 .iter()
-                .map(|r| ChatThreadKey {
-                    owner: r.get(0),
-                    id: r.get(1),
-                })
+                .map(|r| ChatThreadKey { owner: r.get(0), id: r.get(1) })
                 .collect())
         })
     }
 
     /// One transaction, so it charges both or neither. Conditional updates can't both take the last of a budget.
-    pub fn chat_reserve(&self, vault: &VaultId, key: &ChatThreadKey, day: i64, tokens: u64, thread_limit: u64, day_limit: u64) -> Result<ChatReservation, PgError> {
+    pub fn chat_reserve(
+        &self,
+        vault: &VaultId,
+        key: &ChatThreadKey,
+        day: i64,
+        tokens: u64,
+        thread_limit: u64,
+        day_limit: u64,
+    ) -> Result<ChatReservation, PgError> {
         let (n, tl, dl) = (tokens as i64, thread_limit as i64, day_limit as i64);
         self.with_chat(vault, |c, s| {
             let mut t = c.client.transaction()?;
@@ -586,7 +591,10 @@ impl PgStore {
                 &format!("UPDATE {s}.chat_threads SET tokens = greatest(tokens + $3, 0) WHERE owner_id = $1 AND id = $2"),
                 &[&key.owner, &key.id, &delta],
             )?;
-            t.execute(&format!("UPDATE {s}.chat_spend SET tokens = greatest(tokens + $2, 0) WHERE day = $1"), &[&day, &delta])?;
+            t.execute(
+                &format!("UPDATE {s}.chat_spend SET tokens = greatest(tokens + $2, 0) WHERE day = $1"),
+                &[&day, &delta],
+            )?;
             t.commit()
         })
     }
@@ -883,6 +891,12 @@ fn upsert_json_row(t: &mut postgres::Transaction<'_>, cache: &mut Statements, sc
             t,
             cache,
             &format!("INSERT INTO {schema}.audit_planted (id, row) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET row = excluded.row"),
+            &[&id, &json],
+        ),
+        Row::ChatSettings(_) => exec(
+            t,
+            cache,
+            &format!("INSERT INTO {schema}.chat_settings (id, row) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET row = excluded.row"),
             &[&id, &json],
         ),
         Row::Block(x) => exec(

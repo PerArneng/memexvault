@@ -146,7 +146,7 @@ impl Mapper {
     }
 
     fn text(&mut self, delta: &str, out: &mut Vec<AgUi>) {
-        // The schema refuses an empty delta.
+        // An empty delta says nothing, and can't start a message.
         if delta.is_empty() {
             return;
         }
@@ -428,7 +428,10 @@ fn sentences_of(reply: &str) -> Vec<String> {
         i += 1;
     }
     out.push(current);
-    out.into_iter().map(|s| s.trim().to_string()).filter(|s| s.chars().any(char::is_alphanumeric)).collect()
+    out.into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| s.chars().any(char::is_alphanumeric))
+        .collect()
 }
 
 fn citations_in(sentence: &str) -> Vec<String> {
@@ -486,7 +489,13 @@ mod tests {
 
     fn delta_text(out: &[AgUi]) -> String {
         out.iter()
-            .filter_map(|e| if let AgUi::TextMessageContent { delta, .. } = e { Some(delta.as_str()) } else { None })
+            .filter_map(|e| {
+                if let AgUi::TextMessageContent { delta, .. } = e {
+                    Some(delta.as_str())
+                } else {
+                    None
+                }
+            })
             .collect()
     }
 
@@ -520,7 +529,11 @@ mod tests {
             name: "f".into(),
             args: json!({}),
         };
-        let out = run(&[ev("a", true, vec![call.clone()]), ev("a", true, vec![call.clone()]), ev("a", false, vec![call.clone(), call])]);
+        let out = run(&[
+            ev("a", true, vec![call.clone()]),
+            ev("a", true, vec![call.clone()]),
+            ev("a", false, vec![call.clone(), call]),
+        ]);
         assert_eq!(out.iter().filter(|e| matches!(e, AgUi::ToolCallStart { .. })).count(), 2);
     }
 
@@ -537,8 +550,20 @@ mod tests {
             result: json!(1),
         };
         let out = run(&[ev("a", false, vec![call]), ev("b", false, vec![result])]);
-        let start = out.iter().find_map(|e| if let AgUi::ToolCallStart { tool_call_id, .. } = e { Some(tool_call_id) } else { None });
-        let result = out.iter().find_map(|e| if let AgUi::ToolCallResult { tool_call_id, .. } = e { Some(tool_call_id) } else { None });
+        let start = out.iter().find_map(|e| {
+            if let AgUi::ToolCallStart { tool_call_id, .. } = e {
+                Some(tool_call_id)
+            } else {
+                None
+            }
+        });
+        let result = out.iter().find_map(|e| {
+            if let AgUi::ToolCallResult { tool_call_id, .. } = e {
+                Some(tool_call_id)
+            } else {
+                None
+            }
+        });
         assert_eq!(start, result);
     }
 
@@ -563,7 +588,10 @@ mod tests {
     fn an_early_end_says_why_and_a_normal_one_says_nothing() {
         let mut m = Mapper::new("th", "r");
         let frame = serde_json::to_value(&m.finish(Some("day_budget"))[0]).unwrap();
-        assert_eq!(frame, json!({"type": "RUN_FINISHED", "threadId": "th", "runId": "r", "result": {"stop": "day_budget"}}));
+        assert_eq!(
+            frame,
+            json!({"type": "RUN_FINISHED", "threadId": "th", "runId": "r", "result": {"stop": "day_budget"}})
+        );
         let mut m = Mapper::new("th", "r");
         assert!(serde_json::to_value(&m.finish(None)[0]).unwrap().get("result").is_none());
     }
@@ -593,7 +621,10 @@ mod tests {
         t.end(Some("cancelled"));
         let done = t.take();
         assert_eq!(done.len(), 3);
-        assert_eq!((done[0].role, done[0].text.as_str(), done[0].stop.as_deref()), (ChatRole::Assistant, "Looking", None));
+        assert_eq!(
+            (done[0].role, done[0].text.as_str(), done[0].stop.as_deref()),
+            (ChatRole::Assistant, "Looking", None)
+        );
         assert_eq!(done[1].role, ChatRole::Tool);
         let call = done[1].tool_call.as_ref().unwrap();
         assert_eq!((call.id.as_str(), call.name.as_str(), call.args.as_str()), ("c1", "search", r#"{"q":"x"}"#));
@@ -604,7 +635,11 @@ mod tests {
     #[test]
     fn a_call_that_cannot_fit_is_not_made_and_one_that_can_writes_what_is_left() {
         assert_eq!(output_room(100, 99, 500), None, "the input alone is over");
-        assert_eq!(output_room(100, 100 + u64::from(MIN_OUTPUT_TOKENS) - 1, 500), None, "too little left to be worth it");
+        assert_eq!(
+            output_room(100, 100 + u64::from(MIN_OUTPUT_TOKENS) - 1, 500),
+            None,
+            "too little left to be worth it"
+        );
         assert_eq!(output_room(100, 300, 500), Some(200), "it shrinks to what's left");
         assert_eq!(output_room(100, 10_000, 500), Some(500));
     }
@@ -655,7 +690,10 @@ mod tests {
         assert!(!INSTRUCTION.contains('{'), "ADK would read this as a template variable");
         let digest = Sha256::digest(CHAT_TOOLS_JSON.as_bytes());
         let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(hex, "2093488fbd6b8726600db4cb10553c47af762d85d910da6f98af87ba3cf4fb96", "a change here is a new prompt, on purpose or not");
+        assert_eq!(
+            hex, "2093488fbd6b8726600db4cb10553c47af762d85d910da6f98af87ba3cf4fb96",
+            "a change here is a new prompt, on purpose or not"
+        );
     }
 
     #[test]

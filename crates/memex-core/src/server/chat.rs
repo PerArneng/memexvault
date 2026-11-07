@@ -273,7 +273,10 @@ impl<E: ServerEdges> Server<E> {
     pub fn propose_from_chat(&self, caller: &Caller, context: &ChatToolContext, ops: Vec<Op>, rationale: String) -> Result<ProposalOutcome, ServerError> {
         self.allow(caller, Operation::VaultContentPropose(&context.vault))?;
         let text = serde_json::to_string(&ops).map_err(|e| ServerError::Invalid(e.to_string()))?;
-        let idempotency_key = format!("chat:{}", sha256_hex(&format!("{}\u{1f}{}\u{1f}{text}", context.thread.owner, context.thread.id)));
+        let idempotency_key = format!(
+            "chat:{}",
+            sha256_hex(&format!("{}\u{1f}{}\u{1f}{text}", context.thread.owner, context.thread.id))
+        );
         let by = ProposedBy {
             actor: CHAT_AGENT,
             machine: true,
@@ -431,7 +434,13 @@ where
     /// Whether the person still may do this, read fresh, so a token revoked mid-run ends the run's reach at once.
     fn current_caller(&self) -> Option<Caller> {
         let held = self.caller.lock().expect("lock").token_id.clone();
-        let fresh = self.server.registry.token(&held).ok().flatten().and_then(|t| self.server.caller_from_token(t).ok());
+        let fresh = self
+            .server
+            .registry
+            .token(&held)
+            .ok()
+            .flatten()
+            .and_then(|t| self.server.caller_from_token(t).ok());
         match fresh {
             Some(caller) if self.server.allow(&caller, Operation::VaultContentRead(&self.context.vault)).is_ok() => {
                 *self.caller.lock().expect("lock") = caller.clone();
@@ -609,7 +618,9 @@ where
         }
         let store = self.server.engine.store();
         let day = chat::day_of(self.server.now());
-        let read = store.chat_thread(vault, &self.context.thread).and_then(|t| Ok((t, store.chat_day_tokens(vault, day)?)));
+        let read = store
+            .chat_thread(vault, &self.context.thread)
+            .and_then(|t| Ok((t, store.chat_day_tokens(vault, day)?)));
         let (thread, day_spent) = match read {
             Ok(found) => found,
             Err(e) => {
@@ -623,7 +634,11 @@ where
         };
         let thread_left = self.thread_budget.saturating_sub(thread.tokens);
         let day_left = self.day_budget.saturating_sub(day_spent);
-        let tighter = if thread_left <= day_left { ChatStop::ThreadBudget } else { ChatStop::DayBudget };
+        let tighter = if thread_left <= day_left {
+            ChatStop::ThreadBudget
+        } else {
+            ChatStop::DayBudget
+        };
         let Some(output) = chat::output_room(input_estimate, thread_left.min(day_left), self.output_tokens) else {
             return Err(tighter);
         };

@@ -294,11 +294,23 @@ impl Store for PostgresStore {
         self.0.chat_delete_thread(vault, key).map_err(|e| translate(vault, e))
     }
 
-    fn chat_append_messages(&self, vault: &VaultId, key: &memex_types::ChatThreadKey, messages: &[memex_types::ChatMessage], now_ms: i64) -> Result<bool, StoreError> {
+    fn chat_append_messages(
+        &self,
+        vault: &VaultId,
+        key: &memex_types::ChatThreadKey,
+        messages: &[memex_types::ChatMessage],
+        now_ms: i64,
+    ) -> Result<bool, StoreError> {
         self.0.chat_append_messages(vault, key, messages, now_ms).map_err(|e| translate(vault, e))
     }
 
-    fn chat_messages(&self, vault: &VaultId, key: &memex_types::ChatThreadKey, after: Option<u64>, limit: usize) -> Result<Vec<memex_types::ChatStored>, StoreError> {
+    fn chat_messages(
+        &self,
+        vault: &VaultId,
+        key: &memex_types::ChatThreadKey,
+        after: Option<u64>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::ChatStored>, StoreError> {
         self.0.chat_messages(vault, key, after, limit).map_err(|e| translate(vault, e))
     }
 
@@ -323,7 +335,9 @@ impl Store for PostgresStore {
         thread_limit: u64,
         day_limit: u64,
     ) -> Result<memex_types::ChatReservation, StoreError> {
-        self.0.chat_reserve(vault, key, day, tokens, thread_limit, day_limit).map_err(|e| translate(vault, e))
+        self.0
+            .chat_reserve(vault, key, day, tokens, thread_limit, day_limit)
+            .map_err(|e| translate(vault, e))
     }
 
     fn chat_settle(&self, vault: &VaultId, key: &memex_types::ChatThreadKey, day: i64, delta: i64) -> Result<(), StoreError> {

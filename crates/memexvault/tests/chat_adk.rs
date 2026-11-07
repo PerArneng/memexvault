@@ -94,12 +94,18 @@ impl Rig {
         assert_eq!(res.status(), StatusCode::OK);
         let bytes = to_bytes(res.into_body(), 10_000_000).await.unwrap();
         let text = String::from_utf8_lossy(&bytes).into_owned();
-        text.split("\n\n").filter_map(|f| f.strip_prefix("data: ")).map(|d| serde_json::from_str(d).unwrap()).collect()
+        text.split("\n\n")
+            .filter_map(|f| f.strip_prefix("data: "))
+            .map(|d| serde_json::from_str(d).unwrap())
+            .collect()
     }
 
     fn derivation(&self) -> Option<memex_types::DerivationRow> {
         let snap = self.s.engine().store().snapshot(&self.v).unwrap();
-        snap.rows(Table::Derivation, None).unwrap().into_iter().find_map(|r| if let Row::Derivation(d) = r { Some(d) } else { None })
+        snap.rows(Table::Derivation, None)
+            .unwrap()
+            .into_iter()
+            .find_map(|r| if let Row::Derivation(d) = r { Some(d) } else { None })
     }
 }
 
@@ -116,7 +122,11 @@ fn read_request(stream: &mut TcpStream) -> String {
         if let Some(end) = text.find("\r\n\r\n") {
             let length = text[..end]
                 .lines()
-                .find_map(|l| l.to_lowercase().strip_prefix("content-length: ").map(|v| v.trim().parse::<usize>().unwrap_or(0)))
+                .find_map(|l| {
+                    l.to_lowercase()
+                        .strip_prefix("content-length: ")
+                        .map(|v| v.trim().parse::<usize>().unwrap_or(0))
+                })
                 .unwrap_or(0);
             if data.len() >= end + 4 + length {
                 break;
@@ -145,7 +155,10 @@ fn upstream(replies: Vec<Reply>) -> (String, Arc<Mutex<Vec<String>>>) {
             log.lock().unwrap().push(read_request(&mut stream));
             match replies.next().unwrap_or(Reply::Whole("500 Internal Server Error", "{}".into())) {
                 Reply::Whole(status, body) => {
-                    let head = format!("HTTP/1.1 {status}\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
+                    let head = format!(
+                        "HTTP/1.1 {status}\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
                     let _ = stream.write_all(head.as_bytes());
                 }
                 Reply::Cut(body) => {
@@ -176,7 +189,11 @@ fn text(parts: &[&str], finish: &str) -> String {
 }
 
 fn tool(name: &str, args: &str) -> String {
-    let call = json!({"role": "assistant", "tool_calls": [{"index": 0, "id": "call-1", "type": "function", "function": {"name": name, "arguments": args}}]});
+    tool_with_id("call-1", name, args)
+}
+
+fn tool_with_id(id: &str, name: &str, args: &str) -> String {
+    let call = json!({"role": "assistant", "tool_calls": [{"index": 0, "id": id, "type": "function", "function": {"name": name, "arguments": args}}]});
     chunk(call, Value::Null, Value::Null) + &chunk(json!({}), json!("tool_calls"), used(10, 2)) + "data: [DONE]\n\n"
 }
 
@@ -185,12 +202,18 @@ fn types(frames: &[Value]) -> Vec<&str> {
 }
 
 fn delta_text(frames: &[Value]) -> String {
-    frames.iter().filter(|f| f["type"] == "TEXT_MESSAGE_CONTENT").map(|f| f["delta"].as_str().unwrap()).collect()
+    frames
+        .iter()
+        .filter(|f| f["type"] == "TEXT_MESSAGE_CONTENT")
+        .map(|f| f["delta"].as_str().unwrap())
+        .collect()
 }
 
 /// The same golden files as the scripted scenarios, so one schema check covers both.
 fn golden(name: &str, frames: &[Value]) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../memex-http/tests/fixtures/agui").join(format!("adk_{name}.jsonl"));
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../memex-http/tests/fixtures/agui")
+        .join(format!("adk_{name}.jsonl"));
     let text: String = frames.iter().map(|f| format!("{f}\n")).collect();
     if std::env::var_os("MEMEX_UPDATE_GOLDEN").is_some() {
         std::fs::write(path, &text).unwrap();
@@ -255,7 +278,10 @@ async fn a_model_calling_for_a_url_gets_nothing_and_no_connection_is_made() {
     let canary = TcpListener::bind("127.0.0.1:0").unwrap();
     canary.set_nonblocking(true).unwrap();
     let args = format!("{{\"url\":\"http://{}/x\"}}", canary.local_addr().unwrap());
-    let (url, seen) = upstream(vec![Reply::Whole("200 OK", tool("fetch_url", &args)), Reply::Whole("200 OK", text(&["Sorry."], "stop"))]);
+    let (url, seen) = upstream(vec![
+        Reply::Whole("200 OK", tool("fetch_url", &args)),
+        Reply::Whole("200 OK", text(&["Sorry."], "stop")),
+    ]);
     let r = rig(&url);
     let frames = r.frames().await;
     assert_eq!(types(&frames).last(), Some(&"RUN_FINISHED"));
@@ -314,7 +340,10 @@ async fn a_reply_cut_at_its_limit_says_so_as_spec_034_left_open() {
 
 #[tokio::test]
 async fn a_tool_only_agent_stops_at_its_call_limit_cleanly() {
-    let (url, _) = upstream(vec![Reply::Whole("200 OK", tool("search", "{\"q\":\"a\"}")); 10]);
+    let replies = (0..10)
+        .map(|n| Reply::Whole("200 OK", tool_with_id(&format!("call-{n}"), "search", "{\"q\":\"a\"}")))
+        .collect();
+    let (url, _) = upstream(replies);
     let r = rig(&url);
     r.s.set_chat(Some(ChatLimits {
         max_model_calls: 2,
@@ -337,7 +366,11 @@ async fn a_client_going_away_closes_the_providers_connection_within_a_second_and
         read_request(&mut stream);
         let _ = stream.write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n");
         loop {
-            if stream.write_all(chunk(json!({"content": "word "}), Value::Null, Value::Null).as_bytes()).and_then(|()| stream.flush()).is_err() {
+            if stream
+                .write_all(chunk(json!({"content": "word "}), Value::Null, Value::Null).as_bytes())
+                .and_then(|()| stream.flush())
+                .is_err()
+            {
                 *saw.lock().unwrap() = Some(Instant::now());
                 return;
             }
@@ -360,7 +393,10 @@ async fn a_client_going_away_closes_the_providers_connection_within_a_second_and
         tokio::time::sleep(Duration::from_millis(1)).await;
     }
     let close = closed.lock().unwrap().unwrap().saturating_duration_since(gone);
-    println!("client gone to provider's connection closed: {close:?}, to the run's record written: {:?}", gone.elapsed());
+    println!(
+        "client gone to provider's connection closed: {close:?}, to the run's record written: {:?}",
+        gone.elapsed()
+    );
     assert!(close < Duration::from_secs(1), "{close:?}");
     let d = r.derivation().unwrap();
     assert!(d.usage.input_tokens > 0 && d.usage.output_tokens > 0, "{:?}", d.usage);

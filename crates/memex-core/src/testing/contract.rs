@@ -649,9 +649,16 @@ fn chat_threads<S: Store>(store: &S, v: &VaultId) {
     let lease = store.open_vault(v).expect("open");
     let (a, b) = (chat_key("ann", "t1"), chat_key("bob", "t1"));
     assert!(store.chat_create_thread(v, &chat_thread("ann", "t1", 10)).expect("create"));
-    assert!(!store.chat_create_thread(v, &chat_thread("ann", "t1", 99)).expect("again"), "an existing thread stays");
+    assert!(
+        !store.chat_create_thread(v, &chat_thread("ann", "t1", 99)).expect("again"),
+        "an existing thread stays"
+    );
     assert_eq!(store.chat_thread(v, &a).expect("get").expect("there").created_at_ms, 10);
-    assert_eq!(store.chat_thread(v, &b).expect("get"), None, "the same id under another owner is another thread");
+    assert_eq!(
+        store.chat_thread(v, &b).expect("get"),
+        None,
+        "the same id under another owner is another thread"
+    );
     assert!(store.chat_create_thread(v, &chat_thread("bob", "t1", 20)).expect("create"));
     assert!(store.chat_create_thread(v, &chat_thread("ann", "t2", 30)).expect("create"));
     // Newest first, by owner, paged by (updated, id).
@@ -667,10 +674,13 @@ fn chat_threads<S: Store>(store: &S, v: &VaultId) {
         chat_message("2", ChatRole::Assistant, "hi"),
         chat_message("3", ChatRole::Tool, "data"),
     );
-    assert!(store.chat_append_messages(v, &a, &[one.clone()], 40).expect("append"));
+    assert!(store.chat_append_messages(v, &a, std::slice::from_ref(&one), 40).expect("append"));
     assert!(store.chat_append_messages(v, &a, &[two.clone(), three.clone()], 41).expect("append"));
     let read = store.chat_messages(v, &a, None, 10).expect("read");
-    assert_eq!(read.iter().map(|m| (m.seq, m.message.clone())).collect::<Vec<_>>(), vec![(0, one), (1, two), (2, three)]);
+    assert_eq!(
+        read.iter().map(|m| (m.seq, m.message.clone())).collect::<Vec<_>>(),
+        vec![(0, one), (1, two), (2, three)]
+    );
     assert_eq!(store.chat_messages(v, &a, Some(0), 1).expect("page")[0].seq, 1);
     assert!(store.chat_messages(v, &b, None, 10).expect("other").is_empty());
     assert_eq!(store.chat_thread(v, &a).expect("get").expect("there").updated_at_ms, 41);
@@ -682,8 +692,8 @@ fn chat_threads<S: Store>(store: &S, v: &VaultId) {
     // Sources are a set, and find threads across owners.
     let (s1, s2) = (ObjectId("s1".into()), ObjectId("s2".into()));
     assert!(store.chat_record_sources(v, &a, &[s1.clone(), s2.clone()]).expect("sources"));
-    assert!(store.chat_record_sources(v, &a, &[s1.clone()]).expect("again"));
-    assert!(store.chat_record_sources(v, &b, &[s1.clone()]).expect("sources"));
+    assert!(store.chat_record_sources(v, &a, std::slice::from_ref(&s1)).expect("again"));
+    assert!(store.chat_record_sources(v, &b, std::slice::from_ref(&s1)).expect("sources"));
     assert_eq!(store.chat_sources(v, &a).expect("read"), vec![s1.clone(), s2.clone()]);
     let citing = store.chat_threads_citing(v, &s1, 10).expect("citing");
     assert_eq!(citing.len(), 2);
@@ -714,9 +724,15 @@ fn chat_threads<S: Store>(store: &S, v: &VaultId) {
     assert_eq!(store.chat_threads_citing(v, &s2, 10).expect("citing"), vec![]);
     assert_eq!(store.chat_threads_citing(v, &s1, 10).expect("citing"), vec![b.clone()]);
     assert_eq!(store.chat_day_tokens(v, 7).expect("day"), 45, "deleting a thread gives nothing back");
-    assert!(!store.chat_append_messages(v, &a, &[chat_message("4", ChatRole::User, "late")], 60).expect("append"));
-    assert!(!store.chat_record_sources(v, &a, &[s1.clone()]).expect("record"));
-    store.chat_settle(v, &a, 7, 5).expect("a settlement for a thread that has gone still reaches the day");
+    assert!(
+        !store
+            .chat_append_messages(v, &a, &[chat_message("4", ChatRole::User, "late")], 60)
+            .expect("append")
+    );
+    assert!(!store.chat_record_sources(v, &a, std::slice::from_ref(&s1)).expect("record"));
+    store
+        .chat_settle(v, &a, 7, 5)
+        .expect("a settlement for a thread that has gone still reaches the day");
     assert_eq!(store.chat_day_tokens(v, 7).expect("day"), 50);
     // Chat stays off the log.
     assert_eq!(store.snapshot(v).expect("snap").head().expect("head"), None);

@@ -83,7 +83,9 @@ pub fn authorize(caller: &Caller, op: Operation<'_>) -> Decision {
         Operation::VaultList => Decision::Allow,
         Operation::VaultRead(v) | Operation::VaultContentRead(v) => vault_needs(caller, v, Scope::Read),
         Operation::VaultContentPropose(v) => vault_needs(caller, v, Scope::Propose),
-        Operation::VaultRename(v) | Operation::VaultDelete(v) | Operation::VaultChatSettings(v) | Operation::VaultContentReview(v) => vault_needs(caller, v, Scope::Admin),
+        Operation::VaultRename(v) | Operation::VaultDelete(v) | Operation::VaultChatSettings(v) | Operation::VaultContentReview(v) => {
+            vault_needs(caller, v, Scope::Admin)
+        }
         // A vault admin can hand out access to that vault, and no one can grant what they don't hold.
         Operation::TokenCreate { grants } => {
             if caller.principal.server_admin {

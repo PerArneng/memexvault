@@ -173,7 +173,9 @@ impl ChatStop {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatEnd {
     /// `truncated` means the last reply hit its token limit.
-    Finished { truncated: bool },
+    Finished {
+        truncated: bool,
+    },
     Stopped(ChatStop),
     Failed(AgentError),
 }

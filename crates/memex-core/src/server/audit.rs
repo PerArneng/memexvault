@@ -1647,7 +1647,10 @@ mod chat_proposal_tests {
             original_ops: None,
             requested_by: None,
         };
-        assert!(combination_of(&claim, Some(&cs), "claim").is_some(), "the control: an agent's own claim has one");
+        assert!(
+            combination_of(&claim, Some(&cs), "claim").is_some(),
+            "the control: an agent's own claim has one"
+        );
         cs.requested_by = Some("a-person".into());
         assert_eq!(combination_of(&claim, Some(&cs), "claim"), None);
     }

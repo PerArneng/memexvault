@@ -2,7 +2,9 @@
 // These tests read the environment and print what they measure.
 #![allow(clippy::disallowed_methods, clippy::disallowed_macros)]
 use memex_core::testing::{ChatCall, ChatStep, FakeEmbedder, FakeRasterizer, FakeReranker, ManualClock, MemBlobStore, MemRegistry, ScriptedChat};
-use memex_core::{AgentRunner, ChatInput, ChatLimits, ChatSettingsUpdate, RENDITION_JOB, RenditionInput, SearchEdges, Server, ServerEdges, Store, UploadLimits, UploadRequest};
+use memex_core::{
+    AgentRunner, ChatInput, ChatLimits, ChatSettingsUpdate, RENDITION_JOB, RenditionInput, SearchEdges, Server, ServerEdges, Store, UploadLimits, UploadRequest,
+};
 use memex_lexical::TantivyLexical;
 use memex_store_postgres::{PgStore, schema_of_vault};
 use memex_types::{ChatReservation, ChatThread, ChatThreadKey, ObjectId, VaultId};
@@ -95,7 +97,13 @@ impl Rig {
             metadata: json!({}),
             replaces: None,
         };
-        let source = self.s.upload(&self.admin, &self.v, req, UploadLimits::default(), &mut text.as_bytes()).unwrap().source.header.id;
+        let source = self
+            .s
+            .upload(&self.admin, &self.v, req, UploadLimits::default(), &mut text.as_bytes())
+            .unwrap()
+            .source
+            .header
+            .id;
         let job = self.s.claim_job(&self.v, RENDITION_JOB, "w").unwrap().unwrap();
         let rows = self
             .s
@@ -168,7 +176,11 @@ impl Rig {
         rows.iter()
             .map(|r| {
                 let (name, path): (String, String) = (r.get(0), r.get(1));
-                let bytes: Vec<u8> = c.query_one("SELECT pg_read_binary_file($1, true)", &[&path]).unwrap().get::<_, Option<Vec<u8>>>(0).unwrap_or_default();
+                let bytes: Vec<u8> = c
+                    .query_one("SELECT pg_read_binary_file($1, true)", &[&path])
+                    .unwrap()
+                    .get::<_, Option<Vec<u8>>>(0)
+                    .unwrap_or_default();
                 (name, bytes)
             })
             .collect()
@@ -209,28 +221,46 @@ fn pg_erasing_a_source_leaves_no_marker_in_the_chat_tables_files() {
             ChatCall::says(&format!("Put another way, it says {reply_mark}, and no citation at all.")),
         ],
         vec![ChatCall::says(&long)],
-        vec![ChatCall::calls("read", json!({"kind": "segment", "id": other_segment.0})), ChatCall::says(kept_mark)],
+        vec![
+            ChatCall::calls("read", json!({"kind": "segment", "id": other_segment.0})),
+            ChatCall::says(kept_mark),
+        ],
     ]);
     r.chat(&agent, "target", "r1", &format!("{title_mark} and {user_mark}: what does it say?"));
     r.chat(&agent, "target", "r2", "and at length?");
     r.chat(&agent, "kept", "r3", "the other one?");
-    assert!(agent.tool_answers()[0].to_string().contains(doc_mark), "the tool's answer held the document's words");
+    assert!(
+        agent.tool_answers()[0].to_string().contains(doc_mark),
+        "the tool's answer held the document's words"
+    );
 
     // The control: every marker is in the files now, found by reading them.
     let tables = |name: &str| format!("{schema}.{name}");
     for mark in [doc_mark, user_mark, reply_mark, title_mark, long_mark, kept_mark] {
         let hits = r.raw_hits(mark);
         println!("before erasing: {mark} in {hits:?}");
-        assert!(!hits.is_empty(), "the control failed: {mark} isn't in any chat file, so this scan proves nothing");
+        assert!(
+            !hits.is_empty(),
+            "the control failed: {mark} isn't in any chat file, so this scan proves nothing"
+        );
     }
-    assert!(r.raw_hits(title_mark).iter().any(|h| *h == tables("chat_threads")), "a title is on its own table");
-    assert!(r.raw_hits(long_mark).iter().any(|h| h.starts_with("pg_toast")), "a long message is in TOAST, so it's covered too");
+    assert!(
+        r.raw_hits(title_mark).iter().any(|h| *h == tables("chat_threads")),
+        "a title is on its own table"
+    );
+    assert!(
+        r.raw_hits(long_mark).iter().any(|h| h.starts_with("pg_toast")),
+        "a long message is in TOAST, so it's covered too"
+    );
 
     // Chat isn't on the log, so nothing outlives a thread there.
     let mut c = r.sql();
     for mark in [user_mark, reply_mark, title_mark, long_mark, kept_mark] {
         let n: i64 = c
-            .query_one(&format!("SELECT count(*) FROM {schema}.events WHERE payload::text LIKE '%' || $1 || '%'"), &[&mark])
+            .query_one(
+                &format!("SELECT count(*) FROM {schema}.events WHERE payload::text LIKE '%' || $1 || '%'"),
+                &[&mark],
+            )
             .unwrap()
             .get(0);
         assert_eq!(n, 0, "{mark} is in the log");
@@ -247,7 +277,10 @@ fn pg_erasing_a_source_leaves_no_marker_in_the_chat_tables_files() {
         assert!(hits.is_empty(), "{mark} survived in {hits:?}");
         for table in ["chat_threads", "chat_messages", "chat_thread_sources"] {
             let n: i64 = c
-                .query_one(&format!("SELECT count(*) FROM {schema}.{table} t WHERE t::text LIKE '%' || $1 || '%'"), &[&mark])
+                .query_one(
+                    &format!("SELECT count(*) FROM {schema}.{table} t WHERE t::text LIKE '%' || $1 || '%'"),
+                    &[&mark],
+                )
                 .unwrap()
                 .get(0);
             assert_eq!(n, 0, "{mark} in {table}");
@@ -270,7 +303,9 @@ fn pg_plain_vacuum_alone_is_not_enough_which_is_why_compact_rewrites() {
     r.chat(&keep, "gone", "r2", "second");
     assert!(!r.raw_hits("ZQXDEADBYTES").is_empty());
     assert!(r.s.engine().store().chat_delete_thread(&r.v, &r.key("gone")).unwrap());
-    r.sql().batch_execute(&format!("VACUUM {schema}.chat_messages; VACUUM {schema}.chat_threads")).unwrap();
+    let mut c = r.sql();
+    c.batch_execute(&format!("VACUUM {schema}.chat_messages")).unwrap();
+    c.batch_execute(&format!("VACUUM {schema}.chat_threads")).unwrap();
     println!("after plain VACUUM the bytes are in: {:?}", r.raw_hits("ZQXDEADBYTES"));
     let lease = r.s.vault_lease_for_tests(&r.v).unwrap();
     r.s.engine().store().compact(&lease).unwrap();
@@ -341,9 +376,8 @@ fn pg_runs_waiting_on_a_model_hold_no_connection_or_transaction() {
     for n in 0..8 {
         let cancel = memex_core::new_chat_cancel();
         flags.push(cancel.clone());
-        let prepared = r
-            .s
-            .prepare_chat(
+        let prepared =
+            r.s.prepare_chat(
                 &r.admin,
                 &r.v,
                 ChatInput {
@@ -407,7 +441,17 @@ fn pg_a_run_keeps_its_thread_its_sources_and_its_derivation_and_a_proposal_waits
     let r = rig("chat-run");
     let quote = "The bridge is 412 metres long.";
     let (source, segment) = r.document("d.txt", quote);
-    r.s.record_audit_samples(&r.v, memex_core::chat::CHAT_AGENT, &memex_core::chat::prompt_hash(), "claim", 500, 0, "test", "plenty").unwrap();
+    r.s.record_audit_samples(
+        &r.v,
+        memex_core::chat::CHAT_AGENT,
+        &memex_core::chat::prompt_hash(),
+        "claim",
+        500,
+        0,
+        "test",
+        "plenty",
+    )
+    .unwrap();
     let op = json!({"op": "add_assertion", "id": "c1", "subject": "bridge", "predicate": "length", "value": quote, "epistemic": "asserted", "machine": false, "confidence_permille": 900, "valid_from_ms": null, "valid_to_ms": null,
         "evidence": [["c1-e", {"segment_id": segment.0, "quote": quote, "stance": "supports"}]]});
     let agent = ScriptedChat::new(vec![vec![
@@ -421,7 +465,10 @@ fn pg_a_run_keeps_its_thread_its_sources_and_its_derivation_and_a_proposal_waits
     assert_eq!(answers[1]["data"]["state"], json!("pending"), "{}", answers[1]);
     let id = ObjectId(answers[1]["data"]["proposal_id"].as_str().unwrap().into());
     let cs = r.s.get_changeset(&r.admin, &r.v, &id).unwrap();
-    assert_eq!((cs.proposer.as_str(), cs.requested_by.as_deref()), (memex_core::chat::CHAT_AGENT, Some(r.admin.principal.id.as_str())));
+    assert_eq!(
+        (cs.proposer.as_str(), cs.requested_by.as_deref()),
+        (memex_core::chat::CHAT_AGENT, Some(r.admin.principal.id.as_str()))
+    );
     assert_eq!(r.s.engine().store().chat_sources(&r.v, &r.key("t")).unwrap(), vec![source]);
     let view = r.s.get_chat_thread(&r.admin, &r.v, "t", None, 10).unwrap();
     assert_eq!(view.messages.len(), 4, "the question, two tool answers and the reply");

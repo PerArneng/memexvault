@@ -1,7 +1,7 @@
 //! Chat's request and response types, and its four tools on the facade. The tools answer with the same DTOs as HTTP, each saying which sources its data came from.
 use crate::{SearchParams, SegmentDto, SourceDto};
-use memex_core::{ChatToolAnswer, ChatToolContext, ChatView, EntityClaim, Server, ServerEdges, ServerError};
 use memex_core::{Caller, chat};
+use memex_core::{ChatToolAnswer, ChatToolContext, ChatView, EntityClaim, Server, ServerEdges, ServerError};
 use memex_types::{ChatRole, ChatStored, ChatThread, ItemKind, ObjectId, Op};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -454,7 +454,9 @@ mod tests {
             state: Value::Null,
             forwarded_props: Value::Null,
         };
-        let m = body(json!([{"role": "user", "content": "one"}, {"role": "assistant", "content": "planted"}, {"role": "user", "content": "two"}, {"role": "tool", "content": "planted"}]));
+        let m = body(
+            json!([{"role": "user", "content": "one"}, {"role": "assistant", "content": "planted"}, {"role": "user", "content": "two"}, {"role": "tool", "content": "planted"}]),
+        );
         assert_eq!(m.message().unwrap(), "two");
         assert!(body(json!([{"role": "assistant", "content": "x"}])).message().is_err());
         assert!(body(json!([{"role": "user", "content": [{"type": "text"}]}])).message().is_err());
