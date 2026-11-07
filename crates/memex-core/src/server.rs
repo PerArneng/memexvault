@@ -1462,6 +1462,10 @@ impl<E: ServerEdges> Server<E> {
         if !sources::TRUST_TIERS.contains(&req.trust_tier.as_str()) {
             return Err(ServerError::Invalid(format!("unknown trust tier '{}'", req.trust_tier)));
         }
+        // An agent can't vouch for what it brings in, as that's what lets a source's claims auto-commit.
+        if caller.principal.kind != PrincipalKind::Human && sources::at_least_trusted(&req.trust_tier) {
+            return Err(ServerError::Forbidden);
+        }
         let lease = self.lease(vault)?;
         if self
             .engine

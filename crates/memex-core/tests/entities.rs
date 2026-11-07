@@ -866,7 +866,23 @@ fn a_merge_by_an_agent_never_auto_commits() {
     assert!(matches!(w.s.approve(&w.agent_admin, &w.v, &cs_id(&o), None), Err(ServerError::Forbidden)));
     assert_eq!(w.s.approve(&w.admin, &w.v, &cs_id(&o), None).unwrap().state, ChangeSetState::Committed);
     // While a machine's ordinary claims about entities, once earned, do commit.
-    let (_, o) = new_widget(&w, &w.agent, "ae", vec![cited("name", json!("By agent"), "The pump")]);
+    let req = memex_core::UploadRequest {
+        name: "t.txt".into(),
+        trust_tier: "trusted".into(),
+        metadata: json!({}),
+        replaces: None,
+    };
+    let trusted =
+        w.s.upload(&w.admin, &w.v, req, memex_core::UploadLimits::default(), &mut "a trusted document".as_bytes())
+            .unwrap()
+            .source
+            .header
+            .id;
+    w.s.record_segment(&w.admin, &w.v, &ObjectId("seg2".into()), &trusted, None, "The pump weighs 12 kg.")
+        .unwrap();
+    let mut from_trusted = cited("name", json!("By agent"), "The pump");
+    from_trusted.evidence[0].segment_id = ObjectId("seg2".into());
+    let (_, o) = new_widget(&w, &w.agent, "ae", vec![from_trusted]);
     assert_eq!(state(&o), ChangeSetState::Committed, "{:?}", o.validators);
     // A machine's claim needs evidence even so.
     let (_, o) = new_widget(&w, &w.agent, "ae2", vec![field("name", json!("No evidence"))]);

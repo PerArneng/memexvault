@@ -38,6 +38,10 @@ pub fn risk(kinds: &[OpKind], author: Author, machine_earned_auto_commit: bool, 
     if author.machine && kinds.contains(&OpKind::AdditiveSchemaChange) {
         return RiskDecision::Review;
     }
+    // Nor does an agent get to decide which sources its own claims can auto-commit from.
+    if author.machine && kinds.contains(&OpKind::RaiseSourceTrust) {
+        return RiskDecision::Review;
+    }
     if author.machine && !machine_earned_auto_commit {
         return RiskDecision::Review;
     }
@@ -563,6 +567,9 @@ pub fn kinds_of<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Vec<OpKind>, StoreE
                 id: id.clone(),
             })? {
                 Some(Row::Source(s)) if s.trust_tier == crate::UNTRUSTED && trust_tier != crate::UNTRUSTED => OpKind::PromoteUntrustedSource,
+                Some(Row::Source(s)) if !crate::sources::at_least_trusted(&s.trust_tier) && crate::sources::at_least_trusted(trust_tier) => {
+                    OpKind::RaiseSourceTrust
+                }
                 _ => OpKind::EditSource,
             },
             Op::SetSourceMetadata { .. } => OpKind::EditSource,

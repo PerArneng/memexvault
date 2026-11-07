@@ -268,6 +268,24 @@ fn is_untrusted<S: Snapshot>(snap: &S, source_ids: &[ObjectId]) -> Result<bool, 
         .any(|r| matches!(r, Row::Source(s) if s.trust_tier == crate::UNTRUSTED)))
 }
 
+/// Whether any of these sources is below `trusted`, or has no row to say what it is. A source has to be shown to be trusted, so anything else counts as below.
+fn below_trusted<S: Snapshot>(snap: &S, source_ids: &[ObjectId]) -> Result<bool, StoreError> {
+    let keys: Vec<RowKey> = source_ids
+        .iter()
+        .map(|id| RowKey {
+            table: Table::Source,
+            id: id.clone(),
+        })
+        .collect();
+    if keys.is_empty() {
+        return Ok(false);
+    }
+    Ok(snap
+        .get_many(&keys)?
+        .into_iter()
+        .any(|r| !matches!(r, Some(Row::Source(s)) if crate::sources::at_least_trusted(&s.trust_tier))))
+}
+
 /// A claim that wants to be `verified` with nobody to vouch for it: from a machine, or resting on an untrusted source. Only a person can make that so.
 pub fn verified_without_standing<S: Snapshot>(snap: &S, claim: &Op) -> Result<bool, StoreError> {
     let Op::AddAssertion {
@@ -290,11 +308,11 @@ fn has_invisible_text(text: &str) -> bool {
         .any(|c| matches!(c, '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2064}' | '\u{feff}' | '\u{e0000}'..='\u{e007f}'))
 }
 
-/// Why this machine proposal can't auto-commit however much its combination has earned, if there's a reason: it cites an untrusted source, invisible text, or a page flagged for hidden text. These are where a planted instruction would sit, so a person looks, and nothing here tries to judge the text itself.
+/// Why this machine proposal can't auto-commit however much its combination has earned, if there's a reason: it cites a source no person has marked trusted, invisible text, or a page flagged for hidden text. These are where a planted instruction would sit, so a person looks, and nothing here tries to judge the text itself. The user decided the bar is `trusted` rather than only keeping out `untrusted`.
 pub fn auto_commit_block<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Option<String>, StoreError> {
     let places = evidence_places(snap, ops)?;
-    if is_untrusted(snap, &places.source_ids)? {
-        return Ok(Some("it cites an untrusted source".into()));
+    if below_trusted(snap, &places.source_ids)? {
+        return Ok(Some("it cites a source below trusted".into()));
     }
     let hidden_quote = ops.iter().flat_map(evidence_of).any(|(_, e)| has_invisible_text(&e.quote));
     let hidden_segment = places.segments.iter().any(|s| has_invisible_text(&s.text));

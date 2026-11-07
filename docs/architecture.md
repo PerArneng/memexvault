@@ -270,7 +270,8 @@ Spec 025. Everything pending is the queue, in `/vaults/{id}/review`, with filter
 - **Samples** are a person's decisions on a machine's proposal: approved counts as correct, and rejected, edited or a reverted auto-commit as wrong. Audits add theirs through `record_audit_samples`. An agent's decision, a verdict, an always-review change and clearing a stale proposal all count for nothing.
 - **A combination** is the model behind an extraction, or otherwise the proposing principal, with the prompt hash and the item type (`claim`, `entity:<type>`, `page`, `link`, `source`). A ChangeSet needs every type it touches earned. The prompt hash covers the type registry, so a new entity type is a new prompt, and every combination earns again from nothing.
 - **On or off** is worked out from the counts and the threshold on each read, so it can't drift from them. Falling below turns it off, and good samples can bring it back. A manual disable starts the counts again, keeping totals for the record, and there's no way to turn one on by hand.
-- **Never auto-commits, however much is earned:** a claim citing an untrusted source, invisible characters, or a page flagged for hidden text. This limits where a planted instruction can act, and nothing judges the text itself. **The limit:** a planted sentence in plain view, in a source someone marked `unverified` or better, looks like any other claim once its combination has earned it. It commits as `asserted`, can touch nothing else, and it's the audit's to find.
+- **Never auto-commits, however much is earned:** a machine's claim citing any source below `trusted`, so both `untrusted` and `unverified`, or one with no source row to show its tier, invisible characters, or a page flagged for hidden text. The user decided the bar is `trusted`. So auto-commit only ever applies to sources a person has marked `trusted` or `verified`, and everything else waits for a person however good its combination's record. An agent can't get a source there itself: it can't upload at those tiers, and its request to raise a source needs a person's approval. This limits where a planted instruction can act, and nothing judges the text itself.
+- **The remaining limit:** a planted sentence in plain view, in a source a person marked `trusted`, looks like any other claim once its combination has earned it. It commits as `asserted`, can touch nothing else, and it's the audit's to find.
 - **Decisions.** Every one has who, when and why: a person, `auto-commit` with its counts and bound, `validators`, or `pipeline`. Asking for the same decision again changes nothing, while someone else's decision on the same item is a conflict that names them. An edit keeps what was proposed on the row, and only a person can make one.
 - **A replaced rendition.** Evidence must cite a document's current rendition, so a proposal on an old one can't be approved. The new rendition's extraction run retires extraction's pending proposals on old ones, without counting against the extractor, and proposes what's still there. Other proposals stay, for a person to clear.
 
@@ -289,7 +290,7 @@ instead of trying to detect bad text:
 - Extraction runs with no tools and schema-only output.
 - Reviewers see only the claim and its quote.
 - Agents can't fetch URLs.
-- Untrusted sources can't reach `verified` automatically.
+- Untrusted sources can't reach `verified` automatically, and a machine's claims from any source below `trusted` can't auto-commit.
 - Invisible Unicode and text-layer content that OCR can't see gets flagged.
 - Evidence packages expose trust tier and epistemic status.
 - Tool descriptions are never built from vault content.

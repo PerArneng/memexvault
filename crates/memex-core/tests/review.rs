@@ -196,7 +196,7 @@ impl World {
     /// A pending claim from an extractor, from a document of its own.
     fn pending_claim(&self, n: usize) -> ChangeSetRow {
         let sentence = format!("Fartyget nummer {n} byggdes i Stockholm år 16{:02}.", n % 100);
-        self.ingest(&format!("d{n}.txt"), "unverified", &long_text(&sentence));
+        self.ingest(&format!("d{n}.txt"), "trusted", &long_text(&sentence));
         let agent = ScriptedAgent::new(vec![claim_reply(&sentence, &format!("Fartyget {n}"), "byggdes i", "Stockholm")]);
         self.extract(&agent);
         let last = self.changesets().pop().unwrap();
@@ -428,22 +428,175 @@ fn hidden_text_stays_out_with_auto_commit_earned_whatever_the_source_s_tier() {
     }
 }
 
-/// The stated limit, so nobody reads more into the above: visible text in a source someone called trusted looks like any other claim. With auto-commit earned it commits as `asserted`, and an audit is what catches it. It still can't reach anything else, and it can't be `verified`.
+/// The user's decision: only a source someone marked trusted can auto-commit. Every fixture, including the sentences in plain view that a trusted source would let through below.
 #[test]
-fn the_limit_a_planted_sentence_in_a_trusted_source_commits_as_a_plain_claim_once_earned() {
-    let f = fixtures().into_iter().find(|f| f.class == "text").unwrap();
+fn injection_fixtures_in_an_unverified_source_stay_out_even_with_auto_commit_earned() {
+    for f in fixtures() {
+        let w = world();
+        baseline(&w);
+        w.samples("scripted", &prompt_hash(), "claim", 10_000, 0);
+        let before = others(&w);
+        let already = w.changesets().len();
+        run_fixture(&w, &f, "unverified");
+        let new = w.changesets().split_off(already);
+        assert_eq!(new.len(), 1, "{}", f.id);
+        assert_eq!(new[0].state, ChangeSetState::Pending, "{}", f.id);
+        assert_eq!(others(&w), before, "{}", f.id);
+        let detail = w.s.review_item(&w.admin, &w.v, &new[0].header.id).unwrap();
+        assert!(detail.auto_commit_block.is_some(), "{}", f.id);
+    }
+}
+
+/// The remaining limit, so nobody reads more into the above: a sentence in plain view, in a source a person marked trusted, looks like any other claim. With auto-commit earned it commits as `asserted`, and an audit is what catches it. It still can't reach anything else, and it can't be `verified`.
+#[test]
+fn the_remaining_limit_a_planted_sentence_in_plain_view_in_a_source_a_person_marked_trusted_commits_as_asserted() {
+    let visible: Vec<Fixture> = fixtures().into_iter().filter(|f| f.class == "text" || f.class == "tool_output").collect();
+    assert_eq!(visible.len(), 16);
+    for f in visible {
+        for tier in ["trusted", "verified"] {
+            let w = world();
+            baseline(&w);
+            w.samples("scripted", &prompt_hash(), "claim", 10_000, 0);
+            let pages = w.table(Table::Page);
+            let (extractor, _) = run_fixture(&w, &f, tier);
+            let row = w.changesets().pop().unwrap();
+            assert_eq!(row.state, ChangeSetState::Committed, "{} {tier}", f.id);
+            assert_eq!(row.decided_by.as_deref(), Some("auto-commit"), "{} {tier}", f.id);
+            assert_eq!(extractor.requests().len(), 2, "{}: tools are still refused", f.id);
+            assert_eq!(w.table(Table::Page), pages, "{} {tier}", f.id);
+            let claims = w.table(Table::Assertion);
+            assert_eq!(claims.len(), 1, "{} {tier}", f.id);
+            let Row::Assertion(a) = &claims[0] else { panic!() };
+            assert_eq!(a.epistemic, Epistemic::Asserted, "{} {tier}", f.id);
+        }
+    }
+}
+
+fn agent_claim(id: &str, segments: &[&ObjectId], quote: &str) -> Proposal {
+    Proposal {
+        ops: vec![Op::AddAssertion {
+            id: ObjectId(id.into()),
+            subject: format!("subject {id}"),
+            predicate: "p".into(),
+            value: json!(1),
+            epistemic: Epistemic::Asserted,
+            machine: true,
+            confidence_permille: 1000,
+            valid_from_ms: None,
+            valid_to_ms: None,
+            evidence: segments
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    (
+                        ObjectId(format!("e{id}{i}")),
+                        EvidenceInput {
+                            segment_id: (*s).clone(),
+                            quote: quote.into(),
+                            stance: Stance::Supports,
+                        },
+                    )
+                })
+                .collect(),
+        }],
+        rationale: "r".into(),
+        idempotency_key: id.into(),
+    }
+}
+
+#[test]
+fn one_source_below_trusted_or_with_no_row_is_enough_to_keep_a_claim_from_auto_committing() {
     let w = world();
-    baseline(&w);
-    w.samples("scripted", &prompt_hash(), "claim", 10_000, 0);
-    let before_pages = w.table(Table::Page);
-    run_fixture(&w, &f, "trusted");
-    let row = w.changesets().pop().unwrap();
-    assert_eq!(row.state, ChangeSetState::Committed);
-    assert_eq!(w.table(Table::Page), before_pages);
-    let claims = w.table(Table::Assertion);
-    assert_eq!(claims.len(), 1);
-    let Row::Assertion(a) = &claims[0] else { panic!() };
-    assert_eq!(a.epistemic, Epistemic::Asserted);
+    w.samples(&w.agent.principal.id, "", "claim", 10_000, 0);
+    let text = "The pump weighs 12 kg.";
+    let segment = |name: &str, tier: &str| {
+        let source = w.upload(&format!("{name}.txt"), tier, json!({"n": name}), &format!("{name}: the document"));
+        let id = ObjectId(format!("seg-{name}"));
+        w.s.record_segment(&w.admin, &w.v, &id, &source, None, text).unwrap();
+        id
+    };
+    let (trusted, also, unverified) = (segment("a", "trusted"), segment("b", "verified"), segment("c", "unverified"));
+    let propose = |p| w.s.propose(&w.agent, &w.v, p, false).unwrap().risk;
+    assert_eq!(propose(agent_claim("1", &[&trusted, &also], text)), RiskDecision::AutoCommit);
+    assert_eq!(propose(agent_claim("2", &[&trusted, &unverified], text)), RiskDecision::Review, "one is enough");
+    // A segment whose source has no row can't show it's trusted.
+    w.s.record_segment(&w.admin, &w.v, &ObjectId("seg-none".into()), &ObjectId("no such source".into()), None, text)
+        .unwrap();
+    assert_eq!(propose(agent_claim("3", &[&ObjectId("seg-none".into())], text)), RiskDecision::Review);
+    // A machine's change with no claim isn't about a source at all, and still earns as before.
+    w.samples(&w.agent.principal.id, "", "page", 10_000, 0);
+    let page = Proposal {
+        ops: vec![Op::CreatePage {
+            id: ObjectId("pg".into()),
+            title: "T".into(),
+            body: "b".into(),
+            slug: None,
+            redirects: vec![],
+        }],
+        rationale: "r".into(),
+        idempotency_key: "pg".into(),
+    };
+    assert_eq!(propose(page), RiskDecision::AutoCommit);
+}
+
+#[test]
+fn an_agent_can_not_make_a_source_trusted_by_itself() {
+    let w = world();
+    let req = |name: &str, tier: &str| UploadRequest {
+        name: name.into(),
+        trust_tier: tier.into(),
+        metadata: json!({}),
+        replaces: None,
+    };
+    // Not by uploading it that way.
+    for tier in ["trusted", "verified"] {
+        let refused =
+            w.s.upload(&w.agent, &w.v, req("a.txt", tier), UploadLimits::default(), &mut "agent document".as_bytes());
+        assert!(matches!(refused, Err(ServerError::Forbidden)), "{tier}");
+    }
+    let source =
+        w.s.upload(
+            &w.agent,
+            &w.v,
+            req("a.txt", "unverified"),
+            UploadLimits::default(),
+            &mut "agent document".as_bytes(),
+        )
+        .unwrap()
+        .source;
+
+    // Nor by raising it, with everything earned, and nor can an agent with admin scope approve that.
+    w.samples(&w.agent.principal.id, "", "source", 10_000, 0);
+    let raise = |tier: &str, key: &str| Proposal {
+        ops: vec![Op::SetSourceTrust {
+            id: source.header.id.clone(),
+            base_version: 1,
+            trust_tier: tier.into(),
+        }],
+        rationale: "r".into(),
+        idempotency_key: key.into(),
+    };
+    let out = w.s.propose(&w.agent, &w.v, raise("trusted", "raise"), false).unwrap();
+    assert_eq!(out.risk, RiskDecision::Review);
+    let cs = out.changeset.unwrap();
+    assert!(matches!(w.s.approve(&w.agent_admin, &w.v, &cs.header.id, None), Err(ServerError::Forbidden)));
+    assert!(w.s.review_item(&w.admin, &w.v, &cs.header.id).unwrap().needs_a_person);
+
+    // A person can, and that's what opens the source. Doing it directly is a person's own decision.
+    assert_eq!(w.s.approve(&w.admin, &w.v, &cs.header.id, None).unwrap().state, ChangeSetState::Committed);
+    let person = w.upload("b.txt", "unverified", json!({}), "a person's document");
+    let direct = Proposal {
+        ops: vec![Op::SetSourceTrust {
+            id: person,
+            base_version: 1,
+            trust_tier: "trusted".into(),
+        }],
+        rationale: "r".into(),
+        idempotency_key: "direct".into(),
+    };
+    assert_eq!(w.s.propose(&w.admin, &w.v, direct, false).unwrap().risk, RiskDecision::AutoCommit);
+    // A person's upload can say it too.
+    w.upload("c.txt", "trusted", json!({}), "another of a person's documents");
 }
 
 #[test]
@@ -553,7 +706,7 @@ fn crossing_the_threshold_turns_auto_commit_on_and_falling_below_turns_it_off() 
     assert_eq!(row.history[0].kind, AutoCommitChangeKind::Earned);
 
     let sentence = "Fartyget nummer 2 byggdes i Stockholm år 1602.";
-    w.ingest("d2.txt", "unverified", &long_text(sentence));
+    w.ingest("d2.txt", "trusted", &long_text(sentence));
     w.extract(&ScriptedAgent::new(vec![claim_reply(sentence, "Fartyget 2", "byggdes i", "Stockholm")]));
     let auto = w.changesets().pop().unwrap();
     assert_eq!(auto.state, ChangeSetState::Committed);
@@ -633,7 +786,8 @@ fn every_type_in_a_change_set_must_have_earned_it() {
         valid_to_ms: None,
         evidence: vec![],
     };
-    w.s.record_segment(&w.admin, &w.v, &ObjectId("seg".into()), &ObjectId("src".into()), None, "The pump weighs 12 kg.")
+    let trusted = w.upload("t.txt", "trusted", json!({}), "the pump document");
+    w.s.record_segment(&w.admin, &w.v, &ObjectId("seg".into()), &trusted, None, "The pump weighs 12 kg.")
         .unwrap();
     let cited = |op: Op| match op {
         Op::AddAssertion {
@@ -709,7 +863,7 @@ fn a_person_undoing_an_auto_commit_counts_against_it_and_the_counts_do_not_block
     let prompt = prompt_hash();
     w.samples("scripted", &prompt, "claim", 73, 0);
     let sentence = "Fartyget nummer 0 byggdes i Stockholm år 1600.";
-    w.ingest("d.txt", "unverified", &long_text(sentence));
+    w.ingest("d.txt", "trusted", &long_text(sentence));
     w.extract(&ScriptedAgent::new(vec![claim_reply(sentence, "Fartyget", "byggdes i", "Stockholm")]));
     let auto = w.changesets().pop().unwrap();
     assert_eq!(auto.state, ChangeSetState::Committed);
@@ -788,7 +942,7 @@ fn every_decision_says_who_when_and_why() {
     assert_eq!(when(page.changeset.as_ref().unwrap()).0, w.admin.principal.id);
     w.samples("scripted", &prompt_hash(), "claim", 1000, 0);
     let sentence = "Fartyget nummer 3 byggdes i Stockholm år 1603.";
-    w.ingest("d3.txt", "unverified", &long_text(sentence));
+    w.ingest("d3.txt", "trusted", &long_text(sentence));
     w.extract(&ScriptedAgent::new(vec![claim_reply(sentence, "Fartyget 3", "byggdes i", "Stockholm")]));
     let auto = w.changesets().pop().unwrap();
     assert_eq!(when(&auto).0, "auto-commit");
@@ -1037,7 +1191,7 @@ fn a_manual_disable_stops_auto_commit_at_once_and_only_re_earning_turns_it_on() 
     let row = w.samples("scripted", &prompt, "claim", 500, 0);
     assert!(row.on);
     let sentence = "Fartyget nummer 7 byggdes i Stockholm år 1607.";
-    w.ingest("d7.txt", "unverified", &long_text(sentence));
+    w.ingest("d7.txt", "trusted", &long_text(sentence));
     w.extract(&ScriptedAgent::new(vec![claim_reply(sentence, "Fartyget 7", "byggdes i", "Stockholm")]));
     assert_eq!(w.changesets().pop().unwrap().state, ChangeSetState::Committed, "on, to begin with");
 

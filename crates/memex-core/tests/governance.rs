@@ -207,11 +207,25 @@ fn machine_proposals_wait_for_review_until_auto_commit_is_earned_whatever_they_c
     drop(snap);
     w.s.record_audit_samples(&w.v, &w.agent.principal.id, "", "claim", 100, 0, "test", "earned for this test")
         .unwrap();
+    let req = memex_core::UploadRequest {
+        name: "t.txt".into(),
+        trust_tier: "trusted".into(),
+        metadata: json!({}),
+        replaces: None,
+    };
+    let trusted =
+        w.s.upload(&w.admin, &w.v, req, memex_core::UploadLimits::default(), &mut "a trusted document".as_bytes())
+            .unwrap()
+            .source
+            .header
+            .id;
+    w.s.record_segment(&w.admin, &w.v, &id("seg2"), &trusted, None, "Staden ligger vid Göta älv.")
+        .unwrap();
     let out =
         w.s.propose(
             &w.agent,
             &w.v,
-            proposal("b", vec![claim("a3", "other", json!(1), vec![("seg1", "Göta älv")])]),
+            proposal("b", vec![claim("a3", "other", json!(1), vec![("seg2", "Göta älv")])]),
             false,
         )
         .unwrap();
