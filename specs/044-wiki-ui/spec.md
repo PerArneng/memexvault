@@ -51,7 +51,7 @@ A user can read and edit pages with `[[links]]` that autocomplete, see backlinks
 
 **Modals: 0 new, so 0 new CSP errors.** The conflict view and the rename, revert and delete confirmations are in the page, and every flow test asserts no console error. `packages/ui`'s modals are unchanged, and `e2e:shell` still measures 3 errors for 3 palette openings. The user's decision from spec 40 is still open, and nothing here depends on it.
 
-**Bundle.** `pnpm budget`: the sign-in route's initial JavaScript is 117,709 bytes gzip (364,980 raw, 103,690 brotli), against the limit of 200,000. That's 8,080 more than spec 40's 109,629, from how the bundler split shared code: no wiki code is in it, and a test confirms that in the browser. The cause of the rise wasn't looked into further. The wiki's chunks, by gzip: `wiki-screen` 66.5 kB (218.7 raw), and `markdown-editor`, which is CodeMirror, 184.4 kB (531.8 raw). A test shows the list doesn't load CodeMirror, and the editor does.
+**Bundle.** `pnpm budget`: the sign-in route's initial JavaScript is 117,702 bytes gzip (364,980 raw), against the limit of 200,000. That's 8,073 more than spec 40's 109,629, from how the bundler split shared code: no wiki code is in it, and a test confirms that in the browser. The cause of the rise wasn't looked into further. The wiki's chunks, by gzip: `wiki-screen` 66.5 kB (218.7 raw), and `markdown-editor`, which is CodeMirror, 184.4 kB (531.8 raw). A test shows the list doesn't load CodeMirror, and the editor does.
 
 **Verification**
 1. Passed. Create, edit, a link chosen from autocomplete by keyboard, rename and revert, in one test on the real server. After a rename, a link through the old slug still reads as resolved and leads to the page, and `by-slug` with the old slug lands there too. The backlink shows on the target, and a revert gave revision 4 with exactly the first text.
@@ -92,6 +92,8 @@ Also passed in `e2e:wiki`: claims with status, trust tier and evidence; claim au
 **Findings**
 - **Occasional stalls on this machine.** In 3 of about 8 full or partial runs, one fresh page load sat for over 45 s with the offline banner or `Loading` showing, and the test failed, in a different test each time: items 3, 4 and 5. It's not reproduced in isolation, and the same tests pass on rerun. Postgres connections were sampled at 65 to 67 in a later run, at the shared limit of 64, so a 503 from `whoami` and `/health` during saturation fits what the page showed. **That cause isn't proven,** as no run captured both the stall and its responses. The wait in `e2e:wiki` is 45 s. `e2e:shell`'s default of 5 s also failed twice in one run at this load, on screens this spec didn't touch, and those two tests then passed 6 of 6.
 - **The page route doesn't report `restored_from` for the current revision,** as `view_of_page` always gives none. The reader takes it from the revision's row, so no backend change was needed. An ask for `crates/` if anyone wants it fixed there.
+
+**On the final code,** in one pass with exit 0 for each: `e2e:wiki` 17 of 17, `e2e:shell` 17 of 17, `e2e:session` 7 of 7, `pnpm e2e` 6 of 6, `pnpm test` 191 of 191, and `typecheck`, `lint`, `licenses`, `contrast` (53 pairs, 0 failed) and `budget`.
 
 **Not run.** `cargo test`, clippy and the `pg_*` tests, as no crate changed. `cargo build -p memexvault`, `cargo fmt --check` and `cargo deny check licenses` ran and pass. No LLM was called. Approving a delete through the console: the review screen is spec 046, so a delete was shown going to review, and not its approval.
 
