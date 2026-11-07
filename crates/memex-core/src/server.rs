@@ -955,8 +955,8 @@ impl<E: ServerEdges> Server<E> {
         if self.registry.vault(vault)?.is_none() {
             return Err(ServerError::NotFound);
         }
-        // This writes with no proposal, and an agent's scope only reaches proposals, so its findings can't become direct changes.
-        if caller.principal.kind == PrincipalKind::Agent {
+        // This writes with no proposal, and the audit agent's findings must only ever reach a vault as proposals.
+        if caller.principal.id == crate::audit::AUDITOR {
             return Err(ServerError::Forbidden);
         }
         let lease = self.lease(vault)?;
