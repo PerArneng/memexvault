@@ -37,6 +37,8 @@ Check the `rmcp` 3.9 protocol version and transports when starting. All tools sh
 MCP prompts unless a need appears, sampling, tools for vault administration and a client SDK.
 
 ## Result
+**Landed with item 5 not run, by the user's decision.** No model has used these tools yet, and spec 81 holds the live run. At landing, merged with spec 40: workspace checks, the Postgres suite, `pg_bad_cases` on a throwaway server and the 8 TLS tests passed, `cargo tree -p memex-api` lists no edge or runtime crate, and the console's API types were regenerated from the merged server.
+
 
 **Built.** `memex-mcp` on `rmcp` =3.9.0: the eight tools, resources at `memex://vaults`, `memex://vaults/{vault}/pages/{id}` and `.../sources/{id}`, Streamable HTTP at `/api/v1/mcp` from `serve`, and stdio from `memexvault mcp` with `MEMEX_MCP_TOKEN`. The design is in `docs/architecture.md`, section MCP. It holds no rules: tools parse, call the `Server` facade and answer with the DTOs HTTP uses.
 
