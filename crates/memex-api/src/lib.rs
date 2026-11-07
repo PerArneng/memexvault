@@ -1,7 +1,9 @@
 //! Pure: request and response types for the HTTP API, and their translation from domain data. No web framework.
 mod entities;
+mod extraction;
 mod pages;
 pub use entities::*;
+pub use extraction::*;
 use memex_types::{
     AsOf, AssertionRow, ChangeSetRow, Citation, Conflict, DocKind, Event, EvidenceItem, EvidencePackage, EvidenceRow, FacetCount, Facets, Grant, JobRow,
     LexicalFilter, LexicalResults, ObjectId, Op, Principal, PrincipalKind, RenditionRow, Scope, SearchDebug, SearchMode, SearchRequest, SegmentRow,
@@ -386,6 +388,8 @@ pub struct JobDto {
     pub attempts: Vec<serde_json::Value>,
     pub created_at_ms: i64,
     pub finished_at_ms: Option<i64>,
+    /// Set while the job waits for something that's away, such as the LLM.
+    pub waiting_since_ms: Option<i64>,
 }
 
 impl From<JobRow> for JobDto {
@@ -400,6 +404,7 @@ impl From<JobRow> for JobDto {
             attempts: json_list(&j.attempts),
             created_at_ms: j.created_at_ms,
             finished_at_ms: j.finished_at_ms,
+            waiting_since_ms: j.wait.map(|w| w.since_ms),
         }
     }
 }

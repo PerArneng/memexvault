@@ -254,6 +254,19 @@ pub const VAULT_MIGRATIONS: &[&str] = &[
         UNIQUE (page_id, revision)
     );
 ",
+    // Spec 024: what each extraction call was given and returned, and each rendition's latest run.
+    "
+    CREATE TABLE {s}.derivations (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL,
+        rendition_id text COLLATE \"C\" NOT NULL
+    );
+    CREATE INDEX ON {s}.derivations (rendition_id, id);
+    CREATE TABLE {s}.extractions (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL
+    );
+",
 ];
 
 pub const LATEST_SERVER_VERSION: i32 = SERVER_MIGRATIONS.len() as i32;

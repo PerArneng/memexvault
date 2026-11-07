@@ -1,8 +1,10 @@
 mod entities;
+mod extraction;
 mod pages;
 pub use entities::{
     ClaimEvidence, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, FieldInput, NewEntity, Redirect, SplitRequest, TypeDecision,
 };
+pub use extraction::{ExtractJobError, ExtractionReport};
 pub use pages::{
     BacklinkView, ClaimRefStatus, ClaimReference, ImportedPage, NewPage, OutgoingLink, PageChange, PageDiff, PageRedirect, PageRevisionView, PageView,
     UnresolvedLink,
@@ -309,6 +311,8 @@ pub struct Server<E: ServerEdges> {
     write_locks: Mutex<HashMap<VaultId, Arc<Mutex<()>>>>,
     machine_auto_commit: AtomicBool,
     id_counter: AtomicU64,
+    /// None until the composition root has an LLM to send documents to.
+    extraction: Mutex<Option<crate::extraction::ExtractionLimits>>,
 }
 
 fn sha256_hex(text: &str) -> String {
@@ -353,6 +357,7 @@ impl<E: ServerEdges> Server<E> {
             write_locks: Mutex::new(HashMap::new()),
             machine_auto_commit: AtomicBool::new(false),
             id_counter: AtomicU64::new(0),
+            extraction: Mutex::new(None),
         }
     }
 
@@ -951,6 +956,12 @@ impl<E: ServerEdges> Server<E> {
     /// The one write path for knowledge. A dry run does everything up to deciding, and writes nothing.
     pub fn propose(&self, caller: &Caller, vault: &VaultId, p: Proposal, dry_run: bool) -> Result<ProposalOutcome, ServerError> {
         self.allow(caller, Operation::VaultContentPropose(vault))?;
+        // Whether a claim is a machine's comes from who holds the token, never from the request.
+        self.propose_as(&caller.principal.id, caller.principal.kind == PrincipalKind::Agent, vault, p, dry_run)
+    }
+
+    /// `propose` for someone already allowed to: a caller, or a job of the server's own.
+    fn propose_as(&self, actor: &str, machine: bool, vault: &VaultId, p: Proposal, dry_run: bool) -> Result<ProposalOutcome, ServerError> {
         self.vault_exists(vault)?;
         crate::page::check_sizes(&p.ops).map_err(ServerError::Invalid)?;
         let lease = self.lease(vault)?;
@@ -967,8 +978,6 @@ impl<E: ServerEdges> Server<E> {
                 changeset: Some(prior),
             });
         }
-        // Whether a claim is a machine's comes from who holds the token, never from the request.
-        let machine = caller.principal.kind == PrincipalKind::Agent;
         let mut p = p;
         for op in &mut p.ops {
             mark_machine(op, machine);
@@ -977,7 +986,7 @@ impl<E: ServerEdges> Server<E> {
         let passed = validators.iter().all(|v| v.passed);
         let kinds = governance::kinds_of(&snap, &p.ops)?;
         let decision = governance::risk(&kinds, Author { machine }, self.machine_auto_commit.load(Ordering::SeqCst), passed);
-        let actor = caller.principal.id.clone();
+        let actor = actor.to_string();
         let id = ObjectId(self.new_id());
         let now = self.now();
         let mut row = ChangeSetRow {
@@ -1020,6 +1029,7 @@ impl<E: ServerEdges> Server<E> {
             let seed = &self.seed;
             let mut edge_id = || ObjectId(format!("{:012x}{:020x}", now.max(0), u128::from(seed.next_u64())));
             mutations = governance::plan(&snap, &row.ops, &actor, &id, now, &contradictions, &mut edge_id).map_err(Self::plan_errors)?;
+            self.anchor_new_evidence(vault, &snap, &mut mutations)?;
             row.inverse = governance::inverse_of(&snap, &mutations)?;
             row.applied = mutations.clone();
             row.commit_seq = snap.head()?.map(|h| h + 1).or(Some(0));
@@ -1119,7 +1129,8 @@ impl<E: ServerEdges> Server<E> {
         }
         let seed = &self.seed;
         let mut edge_id = || ObjectId(format!("{:012x}{:020x}", now.max(0), u128::from(seed.next_u64())));
-        let mutations = governance::plan(&snap, &row.ops, &row.proposer, id, now, &contradictions, &mut edge_id).map_err(Self::plan_errors)?;
+        let mut mutations = governance::plan(&snap, &row.ops, &row.proposer, id, now, &contradictions, &mut edge_id).map_err(Self::plan_errors)?;
+        self.anchor_new_evidence(vault, &snap, &mut mutations)?;
         row.inverse = governance::inverse_of(&snap, &mutations)?;
         row.applied = mutations.clone();
         row.state = ChangeSetState::Committed;
@@ -1351,7 +1362,7 @@ impl<E: ServerEdges> Server<E> {
             return Err(ServerError::Invalid(format!("unknown trust tier '{}'", req.trust_tier)));
         }
         let lease = self.lease(vault)?;
-        if self.engine.store().snapshot(vault)?.open_job_count()? >= limits.max_open_jobs {
+        if self.engine.store().snapshot(vault)?.open_job_count(&[crate::extraction::EXTRACT_JOB])? >= limits.max_open_jobs {
             return Err(ServerError::Busy);
         }
         let mut reader = LimitedSniffer {
@@ -1672,6 +1683,9 @@ impl<E: ServerEdges> Server<E> {
         }
         let segment_count = rows.len() as u32;
         out.extend(rows.into_iter().map(|r| Mutation::Put(Row::Segment(r))));
+        if segment_count > 0 {
+            out.extend(self.extraction_rows(source_id, &id));
+        }
         out.push(Mutation::Put(Row::Rendition(RenditionRow {
             header: header(id, 1),
             source_id: source_id.clone(),
@@ -1820,7 +1834,7 @@ impl<E: ServerEdges> Server<E> {
         Ok(job)
     }
 
-    fn canonical_of(&self, vault: &VaultId, r: &RenditionRow) -> Result<(rendition::Canonical, Vec<memex_types::Word>), ServerError> {
+    pub(super) fn canonical_of(&self, vault: &VaultId, r: &RenditionRow) -> Result<(rendition::Canonical, Vec<memex_types::Word>), ServerError> {
         let read = |blob: &str| -> Result<Vec<u8>, ServerError> {
             let hash = memex_types::BlobHash::parse(blob).map_err(|e| ServerError::Invalid(e.to_string()))?;
             let mut out = vec![];

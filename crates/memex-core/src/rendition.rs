@@ -318,13 +318,23 @@ pub fn text_in_rects(words: &[Word], rects: &[(u32, Rect)]) -> String {
 /// Resolves a quote to a full anchor. None when the quote isn't in this rendition.
 pub fn locate(canon: &Canonical, words: &[Word], source_sha256: &str, rendition_id: &ObjectId, quote: &str, prefix: &str, suffix: &str) -> Option<Anchor> {
     let (start, end) = find_quote(&canon.text, quote, prefix, suffix)?;
+    Some(anchor_at(canon, words, source_sha256, rendition_id, start, end))
+}
+
+/// Resolves a quote to a full anchor within one segment's span, so the same words elsewhere in the document can't be taken for it.
+pub fn locate_within(canon: &Canonical, words: &[Word], source_sha256: &str, rendition_id: &ObjectId, quote: &str, from: usize, to: usize) -> Option<Anchor> {
+    let (start, end) = find_quote(canon.text.get(from..to)?, quote, "", "")?;
+    Some(anchor_at(canon, words, source_sha256, rendition_id, from + start, from + end))
+}
+
+fn anchor_at(canon: &Canonical, words: &[Word], source_sha256: &str, rendition_id: &ObjectId, start: usize, end: usize) -> Anchor {
     let text = &canon.text;
     let before: String = {
         let chars: Vec<char> = text[..start].chars().rev().take(CONTEXT_CHARS).collect();
         chars.into_iter().rev().collect()
     };
     let after: String = text[end..].chars().take(CONTEXT_CHARS).collect();
-    Some(Anchor {
+    Anchor {
         source_sha256: source_sha256.into(),
         rendition_id: rendition_id.clone(),
         start: start as u64,
@@ -333,7 +343,7 @@ pub fn locate(canon: &Canonical, words: &[Word], source_sha256: &str, rendition_
         prefix: before,
         suffix: after,
         rects: rects_for(canon, words, start, end),
-    })
+    }
 }
 
 /// A word table's stored form. Field order and number formats are fixed, so the same parse gives the same bytes.

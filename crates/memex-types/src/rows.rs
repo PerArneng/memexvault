@@ -1,5 +1,6 @@
 use crate::ObjectId;
 use crate::entity::{EntityRow, EntityTypeRow};
+use crate::extraction::{DerivationRow, ExtractionRow};
 use crate::governance::{ChangeSetState, Epistemic, Op, RiskDecision, Stance, ValidatorResult};
 use crate::jobs::JobRow;
 use crate::page::{BlockRow, RevisionRow, SlugRow};
@@ -24,10 +25,12 @@ pub enum Table {
     Block,
     Slug,
     Revision,
+    Derivation,
+    Extraction,
 }
 
 impl Table {
-    pub const ALL: [Table; 14] = [
+    pub const ALL: [Table; 16] = [
         Table::Source,
         Table::Page,
         Table::Edge,
@@ -42,6 +45,8 @@ impl Table {
         Table::Block,
         Table::Slug,
         Table::Revision,
+        Table::Derivation,
+        Table::Extraction,
     ];
 }
 
@@ -208,6 +213,8 @@ pub enum Row {
     Block(BlockRow),
     Slug(SlugRow),
     Revision(RevisionRow),
+    Derivation(DerivationRow),
+    Extraction(ExtractionRow),
 }
 
 impl Row {
@@ -227,6 +234,8 @@ impl Row {
             Row::Block(r) => &r.header,
             Row::Slug(r) => &r.header,
             Row::Revision(r) => &r.header,
+            Row::Derivation(r) => &r.header,
+            Row::Extraction(r) => &r.header,
         }
     }
 
@@ -246,6 +255,8 @@ impl Row {
             Row::Block(_) => Table::Block,
             Row::Slug(_) => Table::Slug,
             Row::Revision(_) => Table::Revision,
+            Row::Derivation(_) => Table::Derivation,
+            Row::Extraction(_) => Table::Extraction,
         };
         RowKey {
             table,

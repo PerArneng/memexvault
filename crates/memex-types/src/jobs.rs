@@ -20,6 +20,14 @@ pub struct JobAttempt {
     pub error: Option<String>,
 }
 
+/// A job held back because something it needs is away. Waiting uses up no attempts, however long it lasts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JobWait {
+    pub since_ms: i64,
+    pub tries: u32,
+    pub last_error: String,
+}
+
 /// A durable unit of background work.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobRow {
@@ -36,6 +44,9 @@ pub struct JobRow {
     pub attempts: Vec<JobAttempt>,
     pub created_at_ms: i64,
     pub finished_at_ms: Option<i64>,
+    /// Set while the job is waiting, and cleared when it gets anywhere.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wait: Option<JobWait>,
 }
 
 impl JobRow {

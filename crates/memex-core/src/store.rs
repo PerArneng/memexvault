@@ -1,6 +1,6 @@
 use memex_types::{
-    AssertionRow, BlockRow, ChangeSetRow, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, JobRow, JobState, Mutation,
-    ObjectId, PageRow, RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
+    AssertionRow, BlockRow, ChangeSetRow, DerivationRow, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, JobRow, JobState,
+    Mutation, ObjectId, PageRow, RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
 };
 use std::fmt;
 
@@ -84,6 +84,8 @@ pub trait Snapshot {
     fn renditions_of(&self, source_id: &ObjectId) -> Result<Vec<RenditionRow>, StoreError>;
     /// A rendition's segments in id order, after the given id, at most `limit`.
     fn segments_of(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<SegmentRow>, StoreError>;
+    /// A rendition's Derivations in id order, after the given id, at most `limit`.
+    fn derivations_of(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<DerivationRow>, StoreError>;
     /// Evidence supporting any of these assertions, in id order. One store call.
     fn evidence_of(&self, assertion_ids: &[ObjectId]) -> Result<Vec<EvidenceRow>, StoreError>;
     /// Evidence citing any of these segments. One store call.
@@ -102,8 +104,8 @@ pub trait Snapshot {
     fn job_by_dedupe(&self, key: &str) -> Result<Option<JobRow>, StoreError>;
     /// Jobs of a kind that can run now: queued and due, or running with an expired lease. Oldest first.
     fn claimable_jobs(&self, kind: &str, now_ms: i64, limit: usize) -> Result<Vec<JobRow>, StoreError>;
-    /// Queued or running jobs, for backpressure.
-    fn open_job_count(&self) -> Result<u64, StoreError>;
+    /// Queued or running jobs, except of these kinds, for backpressure.
+    fn open_job_count(&self, except_kinds: &[&str]) -> Result<u64, StoreError>;
     /// In id order, optionally of one kind and state, after the given id.
     fn jobs(&self, kind: Option<&str>, state: Option<JobState>, after: Option<&ObjectId>, limit: usize) -> Result<Vec<JobRow>, StoreError>;
     /// The ChangeSet holding this idempotency key, if any.

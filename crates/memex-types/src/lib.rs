@@ -1,7 +1,9 @@
 //! Pure: ids, events and rows, shared by core and edges. No IO.
+mod agent;
 mod blob;
 mod entity;
 mod event;
+mod extraction;
 mod governance;
 mod ids;
 mod jobs;
@@ -13,15 +15,17 @@ mod rows;
 mod search;
 mod vector;
 
+pub use agent::{AgentBudget, AgentError, AgentReply, AgentRequest, AgentUsage};
 pub use blob::{BlobHash, BlobHashError};
 pub use entity::{
     ALIAS_FIELD, ClaimedValue, ENTITY_SUBJECT_PREFIX, EntityField, EntityRow, EntityTypeRow, FieldFilter, FieldLookup, FieldOp, FieldValueRow, FilterValue,
     SharedValue, ValueMatch, entity_of_subject, entity_subject, entity_type_row_id, type_of_row_id,
 };
 pub use event::{Event, EventDraft};
+pub use extraction::{DerivationOutcome, DerivationRow, ExtractedItem, ExtractionRow, ExtractionStop, IdentityCandidate, RejectedItem};
 pub use governance::{ChangeSetState, Epistemic, EvidenceInput, MovedClaim, Op, OpKind, RiskDecision, Stance, ValidatorResult};
 pub use ids::{ObjectId, VaultId};
-pub use jobs::{JobAttempt, JobRow, JobState};
+pub use jobs::{JobAttempt, JobRow, JobState, JobWait};
 pub use lexical::{
     AttrScope, AttrValue, DocKind, Generation, IndexDoc, IndexHealth, IndexOp, LexicalError, LexicalFilter, LexicalHit, LexicalQuery, LexicalResults, QueryTerm,
 };

@@ -1,9 +1,11 @@
 //! The job queue's rules, as pure functions on plain data.
-use memex_types::{Header, JobAttempt, JobRow, JobState, ObjectId, Status};
+use memex_types::{Header, JobAttempt, JobRow, JobState, JobWait, ObjectId, Status};
 use serde_json::Value;
 
 /// How long a worker may hold a job before it counts as dead.
 pub const LEASE_MS: i64 = 60_000;
+/// How long a waiting job sleeps at most, so it picks up soon after whatever it waits for comes back.
+pub const WAIT_CAP_MS: i64 = 300_000;
 
 /// Exponential, capped at an hour, with jitter from `jitter`, so failures don't retry in step.
 pub fn backoff_ms(attempt: u32, jitter: u64) -> i64 {
@@ -32,6 +34,7 @@ pub fn new_job(id: ObjectId, creator: &str, kind: &str, input: Value, dedupe_key
         attempts: vec![],
         created_at_ms: now_ms,
         finished_at_ms: None,
+        wait: None,
     }
 }
 
@@ -68,6 +71,7 @@ pub fn succeeded(mut job: JobRow, now_ms: i64) -> JobRow {
         last.finished_at_ms = Some(now_ms);
     }
     job.state = JobState::Done;
+    job.wait = None;
     job.lease_owner = None;
     job.lease_until_ms = None;
     job.finished_at_ms = Some(now_ms);
@@ -81,6 +85,7 @@ pub fn failed(mut job: JobRow, error: &str, retryable: bool, now_ms: i64, jitter
         last.finished_at_ms = Some(now_ms);
         last.error = Some(error.into());
     }
+    job.wait = None;
     job.lease_owner = None;
     job.lease_until_ms = None;
     job.header.version += 1;
@@ -92,6 +97,30 @@ pub fn failed(mut job: JobRow, error: &str, retryable: bool, now_ms: i64, jitter
         job.state = JobState::Queued;
         job.next_run_at_ms = now_ms + backoff_ms(attempts, jitter);
     }
+    job
+}
+
+/// Back to the queue because something it needs is away. The attempt is taken back, so an outage of any length can't kill the job or grow its row.
+pub fn waiting(mut job: JobRow, error: &str, now_ms: i64, jitter: u64) -> JobRow {
+    job.attempts.pop();
+    let (since_ms, tries) = job.wait.as_ref().map_or((now_ms, 1), |w| (w.since_ms, w.tries.saturating_add(1)));
+    job.wait = Some(JobWait {
+        since_ms,
+        tries,
+        last_error: error.into(),
+    });
+    job.state = JobState::Queued;
+    job.lease_owner = None;
+    job.lease_until_ms = None;
+    job.next_run_at_ms = now_ms + backoff_ms(tries, jitter).min(WAIT_CAP_MS);
+    job.header.version += 1;
+    job
+}
+
+/// Gives the holder longer, for work that takes longer than the usual lease.
+pub fn lease_extended(mut job: JobRow, until_ms: i64) -> JobRow {
+    job.lease_until_ms = Some(until_ms);
+    job.header.version += 1;
     job
 }
 
@@ -194,6 +223,39 @@ mod tests {
         let again = retried(dead, 10).unwrap();
         assert_eq!((again.state, again.max_attempts, again.next_run_at_ms), (JobState::Queued, 2, 10));
         assert!(retried(again, 11).is_none());
+    }
+
+    #[test]
+    fn waiting_uses_no_attempts_and_its_delay_is_capped() {
+        let mut j = job(1);
+        for i in 0..40 {
+            j = waiting(claimed(j, "w", 1000 + i), "down", 2000, 0);
+            assert_eq!(j.state, JobState::Queued, "{i}");
+            assert!(j.attempts.is_empty());
+            assert!(j.next_run_at_ms <= 2000 + WAIT_CAP_MS);
+        }
+        let w = j.wait.as_ref().unwrap();
+        assert_eq!((w.since_ms, w.tries, w.last_error.as_str()), (2000, 40, "down"));
+        assert_eq!(j.next_run_at_ms, 2000 + WAIT_CAP_MS);
+    }
+
+    #[test]
+    fn a_waiting_job_keeps_the_earlier_attempts_and_is_fenced_from_its_old_worker() {
+        let failed_once = failed(claimed(job(3), "w", 1), "boom", true, 2, 0);
+        let held = claimed(failed_once, "w", 10_000);
+        let waited = waiting(held.clone(), "down", 10_001, 0);
+        assert_eq!(waited.attempts.len(), 1);
+        assert_eq!(waited.attempts[0].error.as_deref(), Some("boom"));
+        assert_ne!(waited.state, JobState::Running);
+    }
+
+    #[test]
+    fn extending_a_lease_moves_only_the_lease() {
+        let j = claimed(job(1), "w", 1000);
+        let e = lease_extended(j.clone(), 500_000);
+        assert_eq!(e.lease_until_ms, Some(500_000));
+        assert!(!e.claimable(499_999));
+        assert_eq!((e.state, e.lease_owner, e.attempts.len()), (j.state, j.lease_owner, j.attempts.len()));
     }
 
     #[test]

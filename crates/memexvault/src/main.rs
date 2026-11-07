@@ -7,11 +7,11 @@ use memex_inference::{OnnxEmbedder, OnnxReranker};
 use memex_lexical::TantivyLexical;
 use memex_store_postgres::PgStore;
 use memex_vector::PgVectors;
-use memexvault::edges::{FsBlobStore, PgVectorIndex, SystemClock, SystemSeed, TantivyIndex};
+use memexvault::edges::{AdkAgentRunner, FsBlobStore, PgVectorIndex, SystemClock, SystemSeed, TantivyIndex, llm_endpoint};
 use memexvault::pg_edge::PostgresStore;
 use memexvault::registry_edge::PostgresRegistry;
 use memexvault::rendition_job::{ChildRasterizer, EXIT_UNPARSEABLE, RenditionHandler, WorkerCommand};
-use memexvault::workers::{self, EmbedHandler, Pool};
+use memexvault::workers::{self, EmbedHandler, ExtractHandler, Pool};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -269,7 +269,7 @@ fn main() -> ExitCode {
             };
             let stop = Arc::new(AtomicBool::new(false));
             // One embedding worker: its CPU use is capped by the session's threads, and identical text can't be embedded twice at once.
-            let pools = vec![
+            let mut pools = vec![
                 Pool {
                     kind: memex_core::RENDITION_JOB.into(),
                     workers: 2,
@@ -281,6 +281,21 @@ fn main() -> ExitCode {
                     handler: Arc::new(EmbedHandler { server: server.clone() }),
                 },
             ];
+            // Only with an LLM set up does anything leave this server.
+            if let Some(llm) = &settings.llm {
+                let agent = match llm_endpoint(llm).and_then(memex_agent_adk::AdkAgent::new) {
+                    Ok(a) => AdkAgentRunner(a),
+                    Err(e) => return fail(e),
+                };
+                server.set_extraction(Some(settings.extraction));
+                tracing::info!(provider = %llm.provider, model = %llm.model, "extraction is on");
+                // One at a time per server, so a document's budget and the provider's rate limit are easy to reason about.
+                pools.push(Pool {
+                    kind: memex_core::EXTRACT_JOB.into(),
+                    workers: 1,
+                    handler: Arc::new(ExtractHandler { server: server.clone(), agent }),
+                });
+            }
             let mut threads = workers::start(server.clone(), pools, stop.clone());
             threads.push(workers::start_projector(server.clone(), stop.clone()));
             threads.push(workers::start_vector_projector(server.clone(), stop.clone()));

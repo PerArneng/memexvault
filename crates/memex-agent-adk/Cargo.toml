@@ -6,6 +6,15 @@ license.workspace = true
 publish = false
 
 [dependencies]
+adk-agent = "=2.3.0"
+adk-core = "=2.3.0"
+adk-model = { version = "=2.3.0", features = ["gemini", "openai"] }
+adk-runner = "=2.3.0"
+adk-session = "=2.3.0"
+futures = "0.3"
+memex-types.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["time"] }
 
 [lints]
 workspace = true

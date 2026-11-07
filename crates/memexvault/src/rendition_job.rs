@@ -28,6 +28,7 @@ fn permanent(message: impl Into<String>) -> JobFailure {
     JobFailure {
         message: message.into(),
         retryable: false,
+        waiting: false,
     }
 }
 
@@ -56,6 +57,7 @@ fn run_child_raw(command: &WorkerCommand, bytes: Vec<u8>) -> Result<Vec<u8>, Job
         .map_err(|e| JobFailure {
             message: format!("can't start the parser: {e}"),
             retryable: true,
+            waiting: false,
         })?;
     let mut stdin = child.stdin.take().expect("piped");
     let mut stdout = child.stdout.take().expect("piped");
@@ -88,6 +90,7 @@ fn run_child_raw(command: &WorkerCommand, bytes: Vec<u8>) -> Result<Vec<u8>, Job
                 return Err(JobFailure {
                     message: format!("can't wait for the parser: {e}"),
                     retryable: true,
+                    waiting: false,
                 });
             }
         }
@@ -127,6 +130,7 @@ pub fn add_ocr(doc: &mut ParsedDocument, pdf: &[u8], ocr: Option<&WorkerCommand>
             (true, None) if *route == PageRoute::Ocr => Some(Err(JobFailure {
                 message: "OCR isn't set up, so run: memexvault models fetch".into(),
                 retryable: false,
+                waiting: false,
             })),
             (true, None) => None,
             (false, _) => None,
@@ -197,6 +201,7 @@ fn from_server(e: ServerError) -> JobFailure {
     JobFailure {
         message: e.to_string(),
         retryable,
+        waiting: false,
     }
 }
 

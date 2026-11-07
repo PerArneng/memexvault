@@ -14,6 +14,8 @@ use std::time::Duration;
 pub struct JobFailure {
     pub message: String,
     pub retryable: bool,
+    /// Something it needs is away, so it goes back to wait and uses up no attempts.
+    pub waiting: bool,
 }
 
 /// Does one job's work. Results come back as mutations, committed with the job's completion.
@@ -51,10 +53,12 @@ pub fn run_one<E: ServerEdges>(server: &Server<E>, handler: &dyn JobHandler, kin
             Err(JobFailure {
                 message: "the handler panicked".into(),
                 retryable: true,
+                waiting: false,
             })
         });
         let recorded = match outcome {
             Ok(results) => server.complete_job(&vault, &job, results),
+            Err(f) if f.waiting => server.wait_job(&vault, &job, &f.message),
             Err(f) => server.fail_job(&vault, &job, &f.message, f.retryable),
         };
         match recorded {
@@ -105,6 +109,46 @@ where
         self.server.run_embed_job(vault, job).map(|_| vec![]).map_err(|e| JobFailure {
             message: e.message,
             retryable: e.retryable,
+            waiting: false,
+        })
+    }
+}
+
+/// Runs extraction with whichever agent the composition root built.
+pub struct ExtractHandler<E: ServerEdges, A> {
+    pub server: Arc<Server<E>>,
+    pub agent: A,
+}
+
+impl<E, A> JobHandler for ExtractHandler<E, A>
+where
+    E: ServerEdges,
+    Server<E>: Send + Sync,
+    A: memex_core::AgentRunner + Send + Sync,
+{
+    fn run(&self, vault: &VaultId, job: &JobRow) -> Result<Vec<Mutation>, JobFailure> {
+        self.server.run_extraction_job(vault, job, &self.agent).map_err(|e| match e {
+            memex_core::ExtractJobError::Wait(message) => JobFailure {
+                message,
+                retryable: true,
+                waiting: true,
+            },
+            memex_core::ExtractJobError::Retry(message) => JobFailure {
+                message,
+                retryable: true,
+                waiting: false,
+            },
+            memex_core::ExtractJobError::Fatal(message) => JobFailure {
+                message,
+                retryable: false,
+                waiting: false,
+            },
+            // Recording the result finds out the job has gone, and writes nothing.
+            memex_core::ExtractJobError::Lost => JobFailure {
+                message: "this worker no longer holds the job".into(),
+                retryable: true,
+                waiting: false,
+            },
         })
     }
 }
@@ -191,6 +235,11 @@ mod tests {
     }
 
     fn setup(n: u32) -> (Arc<Server<Fakes>>, memex_types::VaultId) {
+        let (s, v, _) = setup_with_caller(n);
+        (s, v)
+    }
+
+    fn setup_with_caller(n: u32) -> (Arc<Server<Fakes>>, memex_types::VaultId, memex_core::Caller) {
         let s = Arc::new(Server::<Fakes>::new(
             MemRegistry::new(),
             MemStore::new(),
@@ -210,7 +259,7 @@ mod tests {
             };
             s.upload(&c, &v, req, UploadLimits::default(), &mut format!("%PDF-1.7 {i}").as_bytes()).unwrap();
         }
-        (s, v)
+        (s, v, c)
     }
 
     fn count(s: &Server<Fakes>, v: &memex_types::VaultId, state: JobState) -> usize {
@@ -255,6 +304,7 @@ mod tests {
             Err(JobFailure {
                 message: "not parseable".into(),
                 retryable: false,
+                waiting: false,
             })
         }
     }
@@ -301,6 +351,55 @@ mod tests {
         let (s, v) = setup(1);
         assert!(run_one(s.as_ref(), &Refuses, "rendition", "w"));
         assert_eq!(count(&s, &v, JobState::Dead), 1);
+    }
+
+    fn text_upload(s: &Server<Fakes>, c: &memex_core::Caller, v: &VaultId) -> memex_types::ObjectId {
+        let text = "Fartyget byggdes i Stockholm. Det är en mening om fartyget.";
+        let req = UploadRequest {
+            name: "a.txt".into(),
+            trust_tier: "unverified".into(),
+            metadata: json!({}),
+            replaces: None,
+        };
+        let source = s.upload(c, v, req, UploadLimits::default(), &mut text.as_bytes()).unwrap().source.header.id;
+        let job = s.claim_job(v, memex_core::RENDITION_JOB, "p").unwrap().unwrap();
+        let rows = s
+            .build_rendition(
+                v,
+                &source,
+                memex_core::RenditionInput::Plain {
+                    text: text.into(),
+                    parser: "plain-1".into(),
+                },
+            )
+            .unwrap();
+        assert!(s.complete_job(v, &job, rows).unwrap());
+        source
+    }
+
+    #[test]
+    fn an_outage_through_the_pool_waits_and_the_next_reply_finishes_the_job() {
+        let (s, v, c) = setup_with_caller(0);
+        s.set_extraction(Some(memex_core::ExtractionLimits::default()));
+        let source = text_upload(&s, &c, &v);
+        let script = vec![
+            Err(memex_types::AgentError::Unavailable("down".into())),
+            Ok(memex_types::AgentReply {
+                json: json!({"claims": [{"segment_id": "s1", "quote": "Fartyget byggdes i Stockholm.", "subject": "Fartyget", "predicate": "byggdes i", "value": "Stockholm"}], "entities": {}}).to_string(),
+                usage: memex_types::AgentUsage::default(),
+                tool_calls: 0,
+            }),
+        ];
+        let handler = ExtractHandler {
+            server: s.clone(),
+            agent: memex_core::testing::ScriptedAgent::new(script),
+        };
+        assert!(run_one(s.as_ref(), &handler, memex_core::EXTRACT_JOB, "w"));
+        assert_eq!(s.extraction_status(&c, &v, &source).unwrap().state, memex_core::ExtractionState::Waiting);
+        assert!(!run_one(s.as_ref(), &handler, memex_core::EXTRACT_JOB, "w"), "it holds back until due");
+        s.engine().clock().advance(Duration::from_secs(600));
+        assert!(run_one(s.as_ref(), &handler, memex_core::EXTRACT_JOB, "w"));
+        assert_eq!(s.extraction_status(&c, &v, &source).unwrap().state, memex_core::ExtractionState::Done);
     }
 
     #[test]

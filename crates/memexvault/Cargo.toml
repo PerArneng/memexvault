@@ -6,6 +6,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+memex-agent-adk = { path = "../memex-agent-adk" }
 memex-blob-fs = { path = "../memex-blob-fs" }
 getrandom.workspace = true
 sha2.workspace = true
