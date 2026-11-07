@@ -1,8 +1,20 @@
 import type {
   ApiFailure,
+  ChangeOrigin,
+  CitingClaim,
+  ClaimLineage,
+  Derivation,
+  DocumentSource,
+  FlaggedPage,
   Identity,
+  MediaFacts,
   ObjectSummary,
   Page,
+  PageList,
+  PageWord,
+  Rendition,
+  Segment,
+  Transcript,
   Vault,
   VaultId,
   WikiAttribution,
@@ -53,6 +65,20 @@ export interface WikiImport {
   readonly idempotencyKey: string;
 }
 
+/** Which stretch of a transcript to read. */
+export interface TranscriptRequest {
+  readonly fromMs: number | null;
+  readonly cursor: string | null;
+  readonly words: boolean;
+}
+
+export interface TrustChange {
+  readonly baseVersion: number;
+  readonly tier: string;
+  readonly rationale: string;
+  readonly idempotencyKey: string;
+}
+
 export interface Api {
   whoami(): Promise<ApiResult<Identity>>;
   signIn(token: string): Promise<ApiResult<Identity>>;
@@ -84,6 +110,27 @@ export interface Api {
   searchClaimIds(vault: VaultId, query: string, limit: number): Promise<ApiResult<readonly string[]>>;
   /** One claim as it stands in its own right, and what replaced it if anything did. */
   readClaim(vault: VaultId, id: string): Promise<ApiResult<{ readonly claim: WikiClaim; readonly supersededBy: string | null }>>;
+
+  listSources(vault: VaultId, cursor: string | null): Promise<ApiResult<Page<DocumentSource>>>;
+  getSource(vault: VaultId, id: string): Promise<ApiResult<DocumentSource>>;
+  listSourceVersions(vault: VaultId, id: string): Promise<ApiResult<readonly DocumentSource[]>>;
+  listRenditions(vault: VaultId, source: string): Promise<ApiResult<readonly Rendition[]>>;
+  /** The whole word table, so it's large on a long document and read only when someone asks to select text. */
+  listPageWords(vault: VaultId, rendition: string): Promise<ApiResult<readonly PageWord[]>>;
+  listSegments(vault: VaultId, rendition: string, cursor: string | null): Promise<ApiResult<Page<Segment>>>;
+  getSegment(vault: VaultId, id: string): Promise<ApiResult<Segment>>;
+  listFlaggedPages(vault: VaultId, cursor: string | null): Promise<ApiResult<Page<FlaggedPage>>>;
+  listPages(vault: VaultId, source: string): Promise<ApiResult<PageList>>;
+  /** Asks for a page image only to learn why the browser couldn't show it, since an image's own error says nothing. */
+  checkPageImage(vault: VaultId, source: string, page: number, dpi: number): Promise<ApiResult<null>>;
+  listSourceClaims(vault: VaultId, source: string, cursor: string | null): Promise<ApiResult<Page<CitingClaim>>>;
+  getLineage(vault: VaultId, claim: string): Promise<ApiResult<ClaimLineage>>;
+  getChangeOrigin(vault: VaultId, changesetId: string): Promise<ApiResult<ChangeOrigin>>;
+  listDerivations(vault: VaultId, rendition: string, cursor: string | null): Promise<ApiResult<Page<Derivation>>>;
+  getMedia(vault: VaultId, source: string): Promise<ApiResult<MediaFacts>>;
+  getTranscript(vault: VaultId, source: string, request: TranscriptRequest): Promise<ApiResult<Transcript>>;
+  reprocessSource(vault: VaultId, source: string): Promise<ApiResult<null>>;
+  setSourceTrust(vault: VaultId, source: string, change: TrustChange): Promise<ApiResult<WikiWrite>>;
 
   /** A failure includes no answer within `timeoutMs`. */
   health(timeoutMs: number): Promise<ApiResult<null>>;

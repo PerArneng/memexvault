@@ -12,6 +12,8 @@ import type { Preferences } from "./preferences";
 import { INITIAL_SESSION, sessionReducer } from "./session";
 import type { SessionEvent, SessionState } from "./session";
 import type { Settings } from "./settings";
+import { createDocumentCases } from "./document-cases";
+import type { DocumentCases } from "./document-cases";
 import { createWikiCases } from "./wiki-cases";
 import type { IdSource, WikiCases } from "./wiki-cases";
 import type { DraftStorage } from "./draft";
@@ -29,7 +31,7 @@ export interface Edges {
 const MAX_VAULT_PAGES = 50;
 
 /** The single entry point for views. Later specs add a method per use case. */
-export interface Engine extends WikiCases {
+export interface Engine extends WikiCases, DocumentCases {
   startedAt(): EpochMs;
   uptimeMs(): number;
   settings(): Settings;
@@ -113,6 +115,7 @@ export const createEngine = (edges: Edges): Engine => {
 
   return {
     ...createWikiCases({ edges, watched, principal: () => (session.status === "signed_in" ? session.identity.principal.id : "unknown") }),
+    ...createDocumentCases({ edges, watched }),
     startedAt: () => started,
     uptimeMs: () => clock.now() - started,
     settings: () => edges.settings,

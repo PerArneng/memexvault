@@ -20,4 +20,21 @@ export {
   wikiUnresolvedPageFromWire,
   wikiWriteFromWire,
 } from "./translate";
+export {
+  changeOriginFromWire,
+  citingClaimsFromWire,
+  claimLineageFromWire,
+  derivationPageFromWire,
+  flaggedPagesFromWire,
+  mediaFromWire,
+  pageListFromWire,
+  pageWordsFromWire,
+  proposalOfTrust,
+  renditionFromWire,
+  segmentFromWire,
+  segmentPageFromWire,
+  sourceFromWire,
+  sourcePageFromWire,
+  transcriptFromWire,
+} from "./translate-documents";
 export type { LineageStep, ObjectPages, WireHeaders } from "./translate";
