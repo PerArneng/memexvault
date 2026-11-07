@@ -164,3 +164,86 @@ impl Sse {
 pub fn seq_of(frame: &Frame) -> i64 {
     frame.id.as_deref().expect("an id").parse().expect("a number")
 }
+
+/// A plain keep-alive HTTP/1.1 connection, for requests that should cost nothing but themselves.
+pub struct Http {
+    socket: TcpStream,
+    addr: SocketAddr,
+    token: String,
+}
+
+impl Http {
+    pub fn new(addr: SocketAddr, token: &str) -> Self {
+        let socket = TcpStream::connect(addr).expect("connect");
+        socket.set_nodelay(true).ok();
+        socket.set_read_timeout(Some(Duration::from_secs(60))).ok();
+        Self {
+            socket,
+            addr,
+            token: token.into(),
+        }
+    }
+
+    /// Sends a request and reads its answer, which must have a length or be chunked.
+    pub fn call(&mut self, method: &str, path: &str, content_type: &str, body: &[u8]) -> (u16, Vec<u8>) {
+        let head = format!(
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n\r\n",
+            self.token,
+            body.len()
+        );
+        self.socket.write_all(head.as_bytes()).expect("send");
+        self.socket.write_all(body).expect("send");
+        let mut got = vec![];
+        let mut chunk = [0u8; 65536];
+        let end = loop {
+            if let Some(end) = got.windows(4).position(|w: &[u8]| w == b"\r\n\r\n") {
+                break end;
+            }
+            let n = self.socket.read(&mut chunk).expect("read");
+            assert!(n > 0, "closed in the headers from {:?}", self.addr);
+            got.extend_from_slice(&chunk[..n]);
+        };
+        let headers = String::from_utf8_lossy(&got[..end]).to_ascii_lowercase();
+        let status = headers.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let mut rest = got[end + 4..].to_vec();
+        if let Some(length) = headers
+            .lines()
+            .find_map(|l| l.strip_prefix("content-length: "))
+            .and_then(|v| v.trim().parse::<usize>().ok())
+        {
+            while rest.len() < length {
+                let n = self.socket.read(&mut chunk).expect("read");
+                assert!(n > 0, "closed in the body");
+                rest.extend_from_slice(&chunk[..n]);
+            }
+            return (status, rest);
+        }
+        // Chunked.
+        let mut body = vec![];
+        loop {
+            let Some(line_end) = rest.windows(2).position(|w| w == b"\r\n") else {
+                let n = self.socket.read(&mut chunk).expect("read");
+                assert!(n > 0, "closed in a chunk");
+                rest.extend_from_slice(&chunk[..n]);
+                continue;
+            };
+            let size = usize::from_str_radix(String::from_utf8_lossy(&rest[..line_end]).trim(), 16).expect("a chunk size");
+            while rest.len() < line_end + 2 + size + 2 {
+                let n = self.socket.read(&mut chunk).expect("read");
+                assert!(n > 0, "closed in a chunk");
+                rest.extend_from_slice(&chunk[..n]);
+            }
+            body.extend_from_slice(&rest[line_end + 2..line_end + 2 + size]);
+            rest.drain(..line_end + 2 + size + 2);
+            if size == 0 {
+                return (status, body);
+            }
+        }
+    }
+
+    pub fn json(&mut self, method: &str, path: &str, body: Option<serde_json::Value>) -> (u16, serde_json::Value) {
+        let text = body.map_or(String::new(), |b| b.to_string());
+        let (status, bytes) = self.call(method, path, "application/json", text.as_bytes());
+        (status, serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null))
+    }
+}

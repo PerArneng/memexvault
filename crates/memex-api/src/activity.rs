@@ -624,3 +624,212 @@ pub fn activity_page(snapshot: ActivitySnapshot, limit: usize) -> ActivityDocume
         next_cursor: full_cursor.or(scan_cursor),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use memex_types::{AgentUsage, DerivationOutcome, Header, JobAttempt, JobWait, Status, VaultId};
+    use serde_json::json;
+
+    const MARKER: &str = "ZQXMARKERZQX";
+
+    fn event(kind: &str, version: u32, payload: Value) -> Event {
+        Event {
+            seq: 7,
+            vault: VaultId("v".into()),
+            actor: MARKER.into(),
+            time_ms: 123,
+            kind: kind.into(),
+            schema_version: version,
+            payload,
+        }
+    }
+
+    fn text_of(frame: &DurableFrame) -> String {
+        serde_json::to_string(frame).unwrap()
+    }
+
+    fn header(id: &str) -> Header {
+        Header {
+            id: ObjectId(id.into()),
+            creator: MARKER.into(),
+            status: Status::Active,
+            version: 1,
+            acl_id: Some(MARKER.into()),
+        }
+    }
+
+    fn job(id: &str) -> JobRow {
+        JobRow {
+            header: header(id),
+            kind: "extract".into(),
+            state: JobState::Queued,
+            input: json!({"source_id": "s1", "rendition_id": "r1", "note": MARKER, "docs": [{"id": MARKER}]}),
+            dedupe_key: MARKER.into(),
+            max_attempts: 5,
+            next_run_at_ms: 9,
+            lease_owner: Some(MARKER.into()),
+            lease_until_ms: Some(1),
+            attempts: vec![JobAttempt {
+                started_at_ms: 1,
+                finished_at_ms: Some(2),
+                error: Some(format!("line 3: {MARKER}")),
+            }],
+            created_at_ms: 1,
+            finished_at_ms: None,
+            wait: Some(JobWait {
+                since_ms: 5,
+                tries: 1,
+                last_error: MARKER.into(),
+            }),
+        }
+    }
+
+    fn state(rows: Vec<Row>) -> Event {
+        let mutations: Vec<Mutation> = rows.into_iter().map(Mutation::Put).collect();
+        event("state.recorded", 1, serde_json::to_value(StateRecorded { mutations }).unwrap())
+    }
+
+    #[test]
+    fn a_kind_added_later_says_only_that_something_happened() {
+        let f = frame_of(&event(
+            "future.kind",
+            1,
+            json!({"text": MARKER, "id": "abc", "sources": [{"id": MARKER}], "mutations": [{"put": {"job": MARKER}}]}),
+        ));
+        assert_eq!(f.kind, "other");
+        assert_eq!((f.seq, f.time_ms), (7, 123));
+        assert!(f.counts.is_empty() && f.jobs.is_empty() && f.sources.is_empty());
+        assert!(!text_of(&f).contains(MARKER));
+    }
+
+    #[test]
+    fn a_job_gives_ids_counts_and_state_and_not_its_errors_input_or_holder() {
+        let f = frame_of(&state(vec![Row::Job(job("j1"))]));
+        let j = &f.jobs[0];
+        assert_eq!(j.status, "waiting");
+        assert_eq!(j.stage.as_deref(), Some("extraction"));
+        assert_eq!((j.attempts, j.waiting_since_ms, j.docs), (1, Some(5), Some(1)));
+        assert_eq!((j.source_id.as_deref(), j.rendition_id.as_deref()), (Some("s1"), Some("r1")));
+        assert!(!text_of(&f).contains(MARKER), "{}", text_of(&f));
+    }
+
+    #[test]
+    fn a_job_kind_nobody_listed_is_other_and_no_id_carries_text() {
+        let mut j = job("j1");
+        j.kind = MARKER.into();
+        j.input = json!({"source_id": format!("a sentence with {MARKER} in it"), "rendition_id": "slug:x"});
+        let f = frame_of(&state(vec![Row::Job(j)]));
+        assert_eq!(f.jobs[0].kind, "other");
+        assert_eq!(f.jobs[0].source_id, None);
+        assert_eq!(f.jobs[0].rendition_id, None);
+        assert!(!text_of(&f).contains(MARKER));
+    }
+
+    #[test]
+    fn a_derivation_gives_counts_and_not_its_items_refusals_or_detail() {
+        let d = DerivationRow {
+            header: header("d1"),
+            kind: MARKER.into(),
+            job_id: ObjectId("j1".into()),
+            source_id: ObjectId("s1".into()),
+            rendition_id: ObjectId("r1".into()),
+            segment_ids: vec![ObjectId("seg".into())],
+            model: MARKER.into(),
+            prompt_hash: MARKER.into(),
+            usage: AgentUsage {
+                input_tokens: 3,
+                output_tokens: 4,
+                thinking_tokens: 0,
+            },
+            attempts: 1,
+            outcome: DerivationOutcome::Failed,
+            detail: Some(MARKER.into()),
+            items: vec![],
+            rejected: vec![memex_types::RejectedItem {
+                segment: MARKER.into(),
+                quote: MARKER.into(),
+                reason: MARKER.into(),
+            }],
+            created_at_ms: 1,
+        };
+        let f = frame_of(&state(vec![Row::Derivation(d)]));
+        assert_eq!((f.derivations[0].refused, f.derivations[0].tokens), (1, 7));
+        assert_eq!(f.derivations[0].outcome, "failed");
+        assert!(!text_of(&f).contains(MARKER));
+    }
+
+    #[test]
+    fn rows_with_no_listed_fields_are_only_counted() {
+        let page = Row::Page(memex_types::PageRow {
+            header: header("p1"),
+            title: MARKER.into(),
+            body: MARKER.into(),
+            updated_at_ms: 0,
+            slug: MARKER.into(),
+            redirects: vec![MARKER.into()],
+        });
+        let edge = Row::Edge(memex_types::EdgeRow {
+            header: header("e1"),
+            from: ObjectId("p1".into()),
+            to: ObjectId(format!("slug:{MARKER}")),
+            kind: MARKER.into(),
+            block_id: None,
+        });
+        let f = frame_of(&state(vec![page, edge]));
+        assert_eq!(f.counts.get("page"), Some(&1));
+        assert_eq!(f.counts.get("edge"), Some(&1));
+        assert!(!text_of(&f).contains(MARKER));
+    }
+
+    #[test]
+    fn a_source_gives_no_name_type_or_metadata() {
+        let f = frame_of(&event(
+            "source.recorded",
+            3,
+            json!({"id": "s1", "logical_id": "s1", "version_no": 2, "name": MARKER, "size": 5, "metadata": {"x": MARKER}, "sha256": MARKER, "media_type": MARKER, "trust_tier": MARKER}),
+        ));
+        assert_eq!(f.sources[0].id, "s1");
+        assert_eq!((f.sources[0].version_no, f.sources[0].size), (2, 5));
+        assert!(!text_of(&f).contains(MARKER));
+    }
+
+    #[test]
+    fn an_emptied_or_unreadable_payload_leaves_the_envelope() {
+        for payload in [json!({}), json!(null), json!({"mutations": "gone"}), json!({"changeset": 1})] {
+            for kind in ["state.recorded", "changeset.recorded", "source.recorded"] {
+                let version = if kind == "source.recorded" { 3 } else { 1 };
+                let f = frame_of(&event(kind, version, payload.clone()));
+                assert_eq!((f.seq, f.kind.as_str()), (7, kind));
+                assert!(f.sources.is_empty() && f.jobs.is_empty() && f.counts.is_empty());
+            }
+        }
+        // A version no one knows reads as nothing rather than as a guess.
+        assert!(frame_of(&event("state.recorded", 99, json!({"mutations": []}))).counts.is_empty());
+    }
+
+    #[test]
+    fn a_large_commit_gives_a_bounded_frame_and_says_how_much_was_left_out() {
+        let rows = (0..500).map(|n| Row::Job(job(&format!("j{n}")))).collect();
+        let f = frame_of(&state(rows));
+        assert_eq!(f.jobs.len(), FRAME_LIST_LIMIT);
+        assert_eq!(f.omitted, 500 - FRAME_LIST_LIMIT as u32);
+        assert_eq!(f.counts.get("job"), Some(&500));
+    }
+
+    #[test]
+    fn a_progress_frame_needs_a_job_id_that_is_one() {
+        let entry = |id: &str| ProgressEntry {
+            update: memex_types::ProgressUpdate {
+                job_id: ObjectId(id.into()),
+                source_id: None,
+                stage: memex_types::Stage::Ocr,
+                done: 12,
+                total: Some(400),
+            },
+            time_ms: 9,
+        };
+        assert_eq!(ProgressFrame::of(&entry("job1")).unwrap().done, 12);
+        assert!(ProgressFrame::of(&entry("a sentence")).is_none());
+    }
+}
