@@ -11,14 +11,14 @@ use memex_inference::{OnnxEmbedder, OnnxReranker};
 use memex_lexical::TantivyLexical;
 use memex_store_postgres::PgStore;
 use memex_types::{
-    AsOf, AssertionRow, Epistemic, EventDraft, EvidencePackage, EvidenceRow, Generation, Header, ItemKind, LexicalFilter, Mutation, ObjectId, RenditionRow,
-    Row, RowKey, SearchMode, SearchRequest, SegmentRow, SourceRow, Stance, Status, Table, VaultId,
+    AsOf, AssertionRow, EmbedPurpose, Epistemic, EventDraft, EvidencePackage, EvidenceRow, Expand, Generation, Header, IndexOp, ItemKind, LexicalFilter,
+    Mutation, ObjectId, Op, RenditionRow, Row, RowKey, SearchMode, SearchRequest, SegmentRow, SourceRow, Stance, Status, Table, VaultId,
 };
 use memex_vector::PgVectors;
 use memexvault::edges::{PgVectorIndex, SystemClock, TantivyIndex};
 use memexvault::pg_edge::PostgresStore;
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -328,6 +328,240 @@ impl Score {
             self.mrr / n
         )
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct Relational {
+    id: String,
+    question: String,
+    from_line: usize,
+    from_sha256: String,
+    line: usize,
+    sha256: String,
+}
+
+fn relational() -> Vec<Relational> {
+    include_str!("fixtures/golden/golden_relational.jsonl")
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("a relational line"))
+        .collect()
+}
+
+const OTHER_PAGES: usize = 2000;
+const DISTRACTORS: usize = 5;
+
+fn page_title(line: usize) -> String {
+    format!("Passage {line}")
+}
+
+/// Pages for each fixture passage and for others drawn with a fixed seed, on top of the same 200k segments. Each page holds its passage and a block of links: A to its B, and all of them to distractors. These links are built for the test, so a gain here shows the mechanism works, not that it helps on real wiki content. Returns each block holding a passage, by id.
+fn ensure_pages(r: &Rig, fixture: &[Relational]) -> HashMap<String, usize> {
+    let texts = passages();
+    let vectors = passage_vectors();
+    let mut lines: BTreeSet<usize> = fixture.iter().flat_map(|q| [q.from_line, q.line]).collect();
+    let mut state = 22u64;
+    let mut next = move |n: usize| {
+        state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+        ((state >> 33) as usize) % n
+    };
+    while lines.len() < fixture.len() * 2 + OTHER_PAGES {
+        lines.insert(next(texts.len()));
+    }
+    let all: Vec<usize> = lines.iter().copied().collect();
+    let by_line = |line: usize| ObjectId(format!("pg-{line:07}"));
+    let snap = r.store.snapshot(&r.v).expect("snap");
+    let have = !snap.page_summaries(None, 1).expect("pages").is_empty();
+    let mut blocks = HashMap::new();
+    if have {
+        for chunk in all.chunks(200) {
+            let ids: Vec<ObjectId> = chunk.iter().map(|l| by_line(*l)).collect();
+            for b in snap.blocks_of(&ids, 10_000).expect("blocks") {
+                if b.position == 0
+                    && let Some(line) = b.page_id.0.strip_prefix("pg-").and_then(|n| n.parse().ok())
+                {
+                    blocks.insert(b.header.id.0, line);
+                }
+            }
+        }
+        println!("{}: pages already loaded", r.v);
+        return blocks;
+    }
+    drop(snap);
+    let t = Instant::now();
+    let lease = r.store.open_vault(&r.v).expect("open");
+    let engine = Engine::new(PostgresStore(r.pg.clone()), SystemClock::default());
+    let mut made = 0u64;
+    for chunk in all.chunks(100) {
+        let ops: Vec<Op> = chunk
+            .iter()
+            .map(|line| {
+                let mut targets: Vec<usize> = fixture.iter().filter(|q| q.from_line == *line).map(|q| q.line).collect();
+                for _ in 0..DISTRACTORS {
+                    targets.push(all[next(all.len())]);
+                }
+                let links: Vec<String> = targets.into_iter().filter(|x| x != line).map(|x| format!("[[{}]]", page_title(x))).collect();
+                Op::CreatePage {
+                    id: by_line(*line),
+                    title: page_title(*line),
+                    // One paragraph whatever the passage holds, so its block is exactly the passage.
+                    body: format!("{}\n\nSee also {}", texts[*line].replace('\n', " "), links.join(", ")),
+                    slug: None,
+                    redirects: vec![],
+                }
+            })
+            .collect();
+        let snap = r.store.snapshot(&r.v).expect("snap");
+        let mut new_id = || {
+            made += 1;
+            ObjectId(format!("blk-{made:08}"))
+        };
+        let mutations = memex_core::page::plan_pages(&snap, &ops, "harness", &ObjectId("harness".into()), 0, &mut new_id).expect("plan");
+        drop(snap);
+        record(&engine, &lease, mutations);
+    }
+    println!("{}: {} pages stored in {:.0} s", r.v, all.len(), t.elapsed().as_secs_f64());
+    // Passages use spec 004's vectors, and titles and link blocks are embedded here, so nothing waits on a job.
+    let snap = r.store.snapshot(&r.v).expect("snap");
+    let mut rows: Vec<(String, Vec<f32>)> = vec![];
+    let mut to_embed: BTreeMap<String, String> = BTreeMap::new();
+    for chunk in all.chunks(200) {
+        let ids: Vec<ObjectId> = chunk.iter().map(|l| by_line(*l)).collect();
+        let found = snap.blocks_of(&ids, 10_000).expect("blocks");
+        let block_ids: Vec<ObjectId> = found.iter().map(|b| b.header.id.clone()).collect();
+        let mut ops = memex_core::page::block_ops(&snap, &block_ids).expect("docs");
+        ops.extend(memex_core::page::page_ops(&snap, &ids).expect("docs"));
+        for b in &found {
+            if b.position == 0
+                && let Some(line) = b.page_id.0.strip_prefix("pg-").and_then(|n| n.parse::<usize>().ok())
+            {
+                blocks.insert(b.header.id.0.clone(), line);
+            }
+        }
+        for op in ops {
+            let IndexOp::Upsert(doc) = op else { continue };
+            let hash = content_hash(&doc.text);
+            match blocks.get(&doc.id.0).copied() {
+                Some(line) if doc.text == texts[line] => rows.push((hash, vectors[line * DIM..(line + 1) * DIM].to_vec())),
+                _ => {
+                    to_embed.insert(hash, doc.text);
+                }
+            }
+        }
+    }
+    r.vector.store_embeddings(&r.v, MODEL, &rows).expect("store");
+    println!(
+        "{}: {} passages reuse stored vectors, embedding {} other texts",
+        r.v,
+        rows.len(),
+        to_embed.len()
+    );
+    let items: Vec<(String, String)> = to_embed.into_iter().collect();
+    for chunk in items.chunks(32) {
+        let input: Vec<String> = chunk.iter().map(|x| x.1.clone()).collect();
+        let embedded = r.embedder.embed(MODEL, EmbedPurpose::Passage, &input).expect("embed");
+        let rows: Vec<(String, Vec<f32>)> = chunk.iter().map(|x| x.0.clone()).zip(embedded).collect();
+        r.vector.store_embeddings(&r.v, MODEL, &rows).expect("store");
+    }
+    drop(snap);
+    println!("{}: embedded {:.0} s after the start", r.v, t.elapsed().as_secs_f64());
+    project(r);
+    r.store.close_vault(&lease).expect("close");
+    println!("{}: pages indexed {:.0} s after the start", r.v, t.elapsed().as_secs_f64());
+    blocks
+}
+
+/// As `rank_of`, counting a passage's page block as the passage too.
+fn rank_with_blocks(p: &EvidencePackage, line: usize, blocks: &HashMap<String, usize>) -> Option<usize> {
+    let debug = p.debug.as_ref().expect("debug");
+    debug
+        .signals
+        .iter()
+        .take(20)
+        .position(|s| line_of(&s.id.0) == Some(line) || blocks.get(&s.id.0) == Some(&line))
+        .map(|i| i + 1)
+}
+
+/// Spec 022's decision on k-hop: both arms measured in one run, on one vault, over the pass rule fixed in the spec before any of this ran. Not asserted, since a miss is an answer and not a failure: it prints what to record.
+#[test]
+#[ignore = "needs Postgres, spec 004's data and the models"]
+fn relational_khop() {
+    let total = 200_000;
+    let r = rig("t-golden-rel");
+    ensure_loaded(&r, total);
+    let fixture = relational();
+    let texts = passages();
+    for q in &fixture {
+        assert_eq!(content_hash(&texts[q.from_line]), q.from_sha256, "{}: from_line", q.id);
+        assert_eq!(content_hash(&texts[q.line]), q.sha256, "{}: line", q.id);
+    }
+    let blocks = ensure_pages(&r, &fixture);
+    wait_for_ready(&r);
+    let plain: Vec<Golden> = golden().into_iter().filter(|g| g.line.is_some()).collect();
+    let arm = |text: &str, expand: Expand| {
+        let mut q = request(text, SearchMode::Hybrid, false);
+        q.expand = expand;
+        q
+    };
+    let arms = [("off", Expand::Off), ("on", Expand::On), ("rule", Expand::Auto)];
+    let rule_fires = |text: &str| memex_core::search::plan::is_relational(text);
+    println!(
+        "\nthe rule fires on {}/{} relational and {}/{} other answerable questions",
+        fixture.iter().filter(|q| rule_fires(&q.question)).count(),
+        fixture.len(),
+        plain.iter().filter(|g| rule_fires(&g.question)).count(),
+        plain.len()
+    );
+    // `rule` here means on where the rule fires: `Auto` follows the shipped constant, which this test mustn't depend on.
+    let resolved = |text: &str, e: Expand| match e {
+        Expand::Auto if rule_fires(text) => Expand::On,
+        Expand::Auto => Expand::Off,
+        other => other,
+    };
+    for (name, e) in arms {
+        let (mut rel, mut other) = (Score::default(), Score::default());
+        for q in &fixture {
+            let p = run(&r, &arm(&q.question, resolved(&q.question, e))).expect("relational");
+            let rank = rank_with_blocks(&p, q.line, &blocks);
+            rel.add(rank);
+            println!("{name} {} rank {rank:?} expanded {}", q.id, p.debug.as_ref().map_or(0, |d| d.expanded));
+        }
+        for g in &plain {
+            let p = run(&r, &arm(&g.question, resolved(&g.question, e))).expect("golden");
+            other.add(g.line.and_then(|l| rank_with_blocks(&p, l, &blocks)));
+        }
+        println!("== k-hop {name}\nrelational {}\ngolden     {}", rel.row(), other.row());
+    }
+    // Latency in one sequence, alternating which arm goes first, so load falls on both alike. Debug off, as an ordinary search has it.
+    let mut times: BTreeMap<&str, Vec<f64>> = BTreeMap::new();
+    let questions: Vec<&str> = plain
+        .iter()
+        .map(|g| g.question.as_str())
+        .chain(fixture.iter().map(|q| q.question.as_str()))
+        .collect();
+    for round in 0..number("MEMEX_KHOP_ROUNDS", 5) {
+        for (i, text) in questions.iter().enumerate() {
+            let mut order = arms.to_vec();
+            order.rotate_left((i + round) % arms.len());
+            for (name, e) in order {
+                let mut q = arm(text, resolved(text, e));
+                q.debug = false;
+                let t = Instant::now();
+                run(&r, &q).expect("latency");
+                times.entry(name).or_default().push(t.elapsed().as_secs_f64() * 1000.0);
+            }
+        }
+    }
+    let mut p95 = BTreeMap::new();
+    for (name, mut ms) in times {
+        let value = pct(&mut ms, 0.95);
+        println!(
+            "hybrid k-hop {name}: p50 {:.1} ms, p95 {value:.1} ms, n={} (busy machine)",
+            pct(&mut ms, 0.5),
+            ms.len()
+        );
+        p95.insert(name, value);
+    }
+    println!("p95 on / off = {:.3}, rule / off = {:.3}", p95["on"] / p95["off"], p95["rule"] / p95["off"]);
 }
 
 /// A stable half of the set, for calibrating on one part and checking on the other.
