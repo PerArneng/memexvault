@@ -7,18 +7,29 @@
     "build": "pnpm --filter @memex/console build",
     "dev": "pnpm --filter @memex/console dev",
     "test": "vitest run",
-    "typecheck": "for p in packages/* apps/*; do tsc --noEmit -p $p/tsconfig.json || exit 1; if [ -f $p/tsconfig.test.json ]; then tsc --noEmit -p $p/tsconfig.test.json || exit 1; fi; done",
+    "typecheck": "node tools/api-types.mjs check --offline && for p in packages/* apps/*; do tsc --noEmit -p $p/tsconfig.json || exit 1; if [ -f $p/tsconfig.test.json ]; then tsc --noEmit -p $p/tsconfig.test.json || exit 1; fi; done",
     "lint": "eslint . && depcruise packages apps --config .dependency-cruiser.cjs",
     "licenses": "node tools/check-licenses.mjs",
     "e2e": "pnpm build && pnpm --filter @memex/console e2e",
-    "contrast": "node tools/check-contrast.mjs"
+    "contrast": "node tools/check-contrast.mjs",
+    "api:gen": "node tools/api-types.mjs gen",
+    "api:check": "node tools/api-types.mjs check",
+    "budget": "node tools/check-bundle.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "dependency-cruiser": "18.7.2",
     "eslint": "10.14.0",
+    "openapi-typescript": "7.13.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1",
     "vitest": "5.1.0"
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "openapi-typescript>typescript": "6"
+      }
+    }
   }
 }

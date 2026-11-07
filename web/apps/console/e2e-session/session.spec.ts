@@ -163,7 +163,11 @@ test("verification 6: the binary serves the console alone, under its CSP, with d
   const problems: string[] = [];
   page.on("request", (r) => { if (!r.url().startsWith(origin) && !r.url().startsWith("data:")) remote.push(r.url()); });
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error") problems.push(`console: ${m.text()}`); });
+  page.on("console", (m) => {
+    // Spec 040: the console asks who it's signed in as when it starts, and a browser logs the 401 that means "nobody".
+    const expectedSignedOut = m.text().includes("401") && new URL(m.location().url || origin).pathname === "/api/v1/whoami";
+    if (m.type() === "error" && !expectedSignedOut) problems.push(`console: ${m.text()}`);
+  });
   const main = await page.goto("/");
   expect(main?.headers()["cache-control"]).toBe("no-store");
   expect(main?.headers()["content-security-policy"]).toContain("default-src 'self'");
