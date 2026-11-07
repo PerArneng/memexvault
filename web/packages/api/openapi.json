@@ -383,6 +383,83 @@
         ],
         "type": "object"
       },
+      "CacheStatsDto": {
+        "properties": {
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/CacheTierDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tiers"
+        ],
+        "type": "object"
+      },
+      "CacheTierDto": {
+        "description": "One cache tier's counters since the server started.",
+        "properties": {
+          "cap_bytes": {
+            "description": "The tier's limit. 0 means it's off.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "corrupt": {
+            "description": "Disk files that couldn't be trusted, each also counted as a miss.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "entries": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "evictions": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hits": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "misses": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rejected": {
+            "description": "Entries too big for the tier to keep.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size_bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tier": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tier",
+          "cap_bytes",
+          "size_bytes",
+          "entries",
+          "hits",
+          "misses",
+          "evictions",
+          "rejected",
+          "corrupt"
+        ],
+        "type": "object"
+      },
       "CandidateDto": {
         "properties": {
           "entity": {
@@ -4515,6 +4592,43 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/caches": {
+      "get": {
+        "operationId": "cache_stats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CacheStatsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "server"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health",

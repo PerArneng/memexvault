@@ -1,5 +1,55 @@
 // Generated from packages/api/openapi.json by `pnpm api:gen`. Don't edit it.
 export interface paths {
+    "/api/v1/caches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["CacheStatsDto"];
+                    };
+                };
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -5133,6 +5183,38 @@ export interface components {
             smallest_item_needs?: number | null;
             truncated: boolean;
             used: number;
+        };
+        CacheStatsDto: {
+            tiers: components["schemas"]["CacheTierDto"][];
+        };
+        /** @description One cache tier's counters since the server started. */
+        CacheTierDto: {
+            /**
+             * Format: int64
+             * @description The tier's limit. 0 means it's off.
+             */
+            cap_bytes: number;
+            /**
+             * Format: int64
+             * @description Disk files that couldn't be trusted, each also counted as a miss.
+             */
+            corrupt: number;
+            /** Format: int64 */
+            entries: number;
+            /** Format: int64 */
+            evictions: number;
+            /** Format: int64 */
+            hits: number;
+            /** Format: int64 */
+            misses: number;
+            /**
+             * Format: int64
+             * @description Entries too big for the tier to keep.
+             */
+            rejected: number;
+            /** Format: int64 */
+            size_bytes: number;
+            tier: string;
         };
         CandidateDto: {
             entity: components["schemas"]["EntityDto"];

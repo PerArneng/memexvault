@@ -22,6 +22,7 @@ Have the user decide how to treat hybrid search's p95 of 81 ms with 8 concurrent
 - **Int8 query embedding isn't adopted.** It reached 52.1 ms at 8 clients, which is still over target, and it wrongly flagged 20 of 200 answerable questions against 15. The file is our own quantization, with no pinned source. The user turned it down when closing spec 020.
 - **Other targets missed at 8 clients, same run:** exact lookup p95 13.1 ms against ≤2 ms, and 4.8 ms with 1 client. Keyword-only search p95 21.3 ms against ≤15 ms.
 - **Entity exact filters (spec 023) miss the same ≤2 ms target:** p95 2.28 to 4.02 ms at 200k values on a shared machine, with a primary-key read alone at 2.36 ms. Spec 023 landed with this unmet, by the user's decision.
+- **Cached queries (spec 021) miss their ≤1 ms target at 8 clients:** p95 1.905 ms at 200k in the last run, and 1.626 to 1.807 ms in four earlier runs. With 1 client it was 0.685 ms in the last run, and over the target in 3 of the 4 earlier ones, at 0.772 to 1.361 ms. All ran on a shared machine, and most of a hit is one Postgres round trip through Docker Desktop. Spec 021 landed with this unmet, by the user's decision.
 - **The rerank miss is in spec 055:** 1,030 ms against ≤300 ms at 8 clients.
 
 **Assumption in force:** spec 020 is closed with this target unmet at 8 clients. `docs/architecture.md` keeps ≤50 ms as the target, and the search stays as built. Spec 021's cache of query embeddings helps repeated questions only.

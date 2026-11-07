@@ -33,7 +33,7 @@ erased content is never served.
 Distributed caches, the tantivy page cache (left to the OS) and `foyer` unless measurement justifies it.
 
 ## Result
-Built, with one target missed. Item 2's cached p95 is over 1 ms at 200k on this busy machine, in 3 of 4 runs with 1 client and every run with 8. The target hasn't moved, so the user decides what follows.
+Built and landed with one target missed, by the user's decision. Item 2's cached p95 is over 1 ms at 200k on this busy machine, in 3 of 4 runs with 1 client and in all 5 runs with 8, including the rerun below. The target hasn't moved, and spec 062 lists the miss for review.
 
 **Built:**
 - `memex-cache`: `RamTier` on moka 0.12 and `DiskTier`, an LRU of files. moka and tagptr bring no new licenses.
@@ -72,6 +72,8 @@ Item 2, in ms, with the rule set before measuring (p95 ≤1 at 200k):
 | 50k | 1 | 0.382 | 0.492 | 0.587 |
 | 50k | 8 | 0.691 | **1.416** | 1.878 |
 
+**Rerun on this branch, before it was merged with main.** It wasn't repeated after the merge. The rule, set beforehand, was p95 ≤1 ms at 200k for every client count in one run. It failed. With a load average of 8 to 10, p95 was 0.685 ms with 1 client and **1.905 ms** with 8, and p50 0.430 and 0.766 ms. The marks read alone had a p95 of 0.942 ms. Hit rate was 100% on the replay and 97.83% over the whole run.
+
 - **Almost all of a hit is one Postgres round trip through Docker Desktop.** The marks read alone took p50 0.330 to 0.397 ms and p95 0.580 to 1.338 ms in runs 2 to 4, close to the whole hit in each. A hit's lookup and clone are small beside it.
 - **An earlier build missed for a fixable reason.** With a second round trip for the vector watermark, 50k measured p50 0.874 and p95 1.105 ms with 1 client, and p95 3.175 ms with 8. That watermark now comes from memory.
 - **Corpus size shouldn't change this.** A hit reads `max(seq)` by primary key and doesn't touch the indexes, so the 50k to 200k gap is more likely load than growth, and 1M should cost the same. That's a projection. The load wasn't held equal, so this data can't separate the two.
@@ -81,8 +83,16 @@ A miss costs slightly more with the objects tier on. At 200k with 1 client, p95 
 
 Definition of done, on the code of the final commit: `cargo build --workspace`, `cargo test --workspace` (591 passed, 0 failed, 63 ignored), clippy, `cargo fmt --check` and `cargo deny check licenses` all pass. The Postgres command passes 22 of 22 on a fresh database. `web/` didn't change.
 
+**Landing checks,** on the merge with main at 31c7d07, plus the regenerated API types:
+- `cargo build --workspace`, `cargo test --workspace` (686 passed, 0 failed, 71 ignored), clippy, `cargo fmt --check` and `cargo deny check licenses` all pass.
+- The Postgres command passes 27 of 27 on a fresh database.
+- `pg_bad_cases` passes on a throwaway container, and so do the 8 TLS tests on their own server.
+- `pg_kill_postgres_100_times`, on a throwaway container: 100 cycles, highest acknowledged 5213, lost 0, partial 0, gaps 0, reopen failures 0, recovery p95 0.6 s.
+- API types regenerated from the server. `pnpm api:check`, `pnpm typecheck` and `pnpm test` pass.
+
 **Not run:**
-- `pg_bad_cases` and `pg_kill_postgres`, which disturb the shared server, and `pg_child`, `pg_job_child` and `pg_full_disk`. A Postgres failure during a hit should go through the marks read, which falls back to the uncached search and its 503. That's tested only with a deleted vault, not a killed server, so `pg_kill_postgres` is worth running at landing. A full disk fails a cache write as a logged miss, with no test on a really full disk.
+- A cache hit while Postgres is killed. `pg_kill_postgres` works on the store alone and never calls `cached_search`, so it doesn't test this branch's new failure path. A Postgres failure during a hit should go through the marks read, which falls back to the uncached search and its 503. That's tested only with a deleted vault, not a killed server.
+- `pg_child`, `pg_job_child` and `pg_full_disk`. A full disk fails a cache write as a logged miss, with no test on a really full disk.
 - `memexvault serve` with the real tiers, end to end, as it needs installed models. Only the startup refusal ran through the binary.
 
 **Decisions:**
@@ -97,6 +107,7 @@ Definition of done, on the code of the final commit: `cargo build --workspace`, 
 **What the tiers bring so far.** On the golden replay the query tier answers nearly everything. The inference tier got 0 hits there, as the query tier answers first, and the objects tier about 2.8% at 200k, as questions rarely share rows. Neither has shown its value on this workload, and real traffic with overlapping hits may differ.
 
 **Follow-ups:**
-- The user decides on item 2: re-measure on a quiet machine or native Postgres, or review the target as spec 062 does for search. Spec 031's acceptance run is a natural place for the first.
+- Item 2 is reviewed in spec 062, alongside the other missed targets. Re-measuring on a quiet machine or native Postgres fits spec 031's acceptance run.
+- A test that kills Postgres during cache hits, through a real server with real tiers, is still owed.
 - Spec 030 must call `bump_cache_generation` after removing data. A search running across a bump can store an entry under the old generation after the purge. It can't be reached, but it stays in RAM or on disk until evicted, so spec 030 should decide whether that's acceptable for erasure.
 - Any branch adding an `impl ServerEdges` needs `type Caches = memex_core::NoCaches;`, and any `Reranker` or `Rasterizer` needs its new method.
