@@ -8,6 +8,10 @@ use std::time::Duration;
 pub struct FakeRasterizer;
 
 impl crate::Rasterizer for FakeRasterizer {
+    fn renderer(&self) -> String {
+        "fake-renderer".into()
+    }
+
     fn render(&self, _: &[u8], page: u32, dpi: u32, highlights: &[memex_types::Rect]) -> Result<crate::PageImage, crate::RasterError> {
         Ok(crate::PageImage {
             png: format!("fake page {page} at {dpi} with {} highlights", highlights.len()).into_bytes(),
@@ -40,6 +44,10 @@ impl FakeReranker {
 }
 
 impl crate::Reranker for FakeReranker {
+    fn model(&self) -> String {
+        "fake-reranker".into()
+    }
+
     fn rerank(&self, query: &str, passages: &[&str]) -> Result<Vec<f32>, memex_types::RerankError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.passages.fetch_add(passages.len() as u64, Ordering::SeqCst);

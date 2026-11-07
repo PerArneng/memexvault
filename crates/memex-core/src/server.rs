@@ -84,6 +84,8 @@ pub trait ServerEdges {
     type Vector: VectorIndex + Sync;
     type Embedder: Embedder + Sync;
     type Reranker: crate::Reranker;
+    /// All tiers off by default, until the composition root sets real ones with `with_caches`.
+    type Caches: crate::Caches + Default + Sync;
 }
 
 /// The edges that answer searches, which travel together.
@@ -311,6 +313,7 @@ pub struct Server<E: ServerEdges> {
     vector: E::Vector,
     embedder: E::Embedder,
     reranker: E::Reranker,
+    caches: E::Caches,
     /// How many `as_of` searches are running. Each one holds the vault's past in memory.
     as_of_running: AtomicU64,
     /// Lives in memory: a restart forgets it, and one server serves each database.
@@ -363,6 +366,7 @@ impl<E: ServerEdges> Server<E> {
             vector: search.vector,
             embedder: search.embedder,
             reranker: search.reranker,
+            caches: E::Caches::default(),
             as_of_running: AtomicU64::new(0),
             login_limiter: Mutex::new(LoginLimiter::default()),
             vector_projector: Mutex::new(VectorProjector::default()),
@@ -373,6 +377,39 @@ impl<E: ServerEdges> Server<E> {
             id_counter: AtomicU64::new(0),
             extraction: Mutex::new(None),
         }
+    }
+
+    /// The caches this server reads through. Only the composition root sets them.
+    #[must_use]
+    pub fn with_caches(mut self, caches: E::Caches) -> Self {
+        self.caches = caches;
+        self
+    }
+
+    pub fn caches(&self) -> &E::Caches {
+        &self.caches
+    }
+
+    /// Hit, miss, eviction and size counts per tier. They say nothing about a vault's content, but they're about the whole server.
+    pub fn cache_stats(&self, caller: &Caller) -> Result<Vec<memex_types::CacheTierStats>, ServerError> {
+        self.allow(caller, Operation::CacheStats)?;
+        Ok(crate::Caches::stats(&self.caches))
+    }
+
+    /// Makes everything cached for this vault unreachable and drops it. The new generation is durable before anything is dropped, so a restart can't bring an old key back. Erasure calls this once it has removed the data.
+    pub fn bump_cache_generation(&self, vault: &VaultId) -> Result<u64, ServerError> {
+        let lease = self.lease(vault)?;
+        let generation = self.engine.store().bump_cache_generation(&lease)?;
+        crate::Caches::purge_vault(&self.caches, vault);
+        Ok(generation)
+    }
+
+    /// The vault's cache generation, if a tier needing it is on and it can be read.
+    fn cache_generation(&self, vault: &VaultId, on: bool) -> Option<u64> {
+        if !on {
+            return None;
+        }
+        self.engine.store().cache_marks(vault).ok().map(|m| m.generation)
     }
 
     pub fn blobs(&self) -> &E::Blobs {
@@ -647,6 +684,7 @@ impl<E: ServerEdges> Server<E> {
         self.lexical.delete_vault(id)?;
         self.vector_projector.lock().expect("lock").forget(id);
         self.vector.delete_vault(id)?;
+        crate::Caches::purge_vault(&self.caches, id);
         Ok(())
     }
 
@@ -682,7 +720,19 @@ impl<E: ServerEdges> Server<E> {
         self.allow(caller, Operation::VaultContentRead(vault))?;
         self.vault_exists(vault)?;
         check_query_text(text).map_err(|e| ServerError::Invalid(e.to_string()))?;
-        let results = crate::search::vector_candidates(&self.vector, &self.embedder, vault, text, &filter, limit)?;
+        let generation = self.cache_generation(vault, crate::Caches::inference_on(&self.caches));
+        let results = crate::search::vector_candidates(
+            &self.vector,
+            &self.embedder,
+            crate::search::Tiers {
+                caches: &self.caches,
+                generation,
+            },
+            vault,
+            text,
+            &filter,
+            limit,
+        )?;
         let snap = self.engine.store().snapshot(vault)?;
         Ok(crate::lexical::fence_hits(&snap, results)?)
     }
@@ -690,12 +740,7 @@ impl<E: ServerEdges> Server<E> {
     /// The search: an evidence package of what's current, or of a past state, ranked from every signal asked for.
     pub fn search(&self, caller: &Caller, vault: &VaultId, request: &memex_types::SearchRequest) -> Result<memex_types::EvidencePackage, ServerError> {
         self.allow(caller, Operation::VaultContentRead(vault))?;
-        self.vault_exists(vault)?;
-        let _slot = match request.as_of {
-            Some(_) => Some(AsOfSlot::take(&self.as_of_running)?),
-            None => None,
-        };
-        crate::search::run_search(
+        crate::search::cached_search(
             &crate::search::SearchEdgesRef {
                 store: self.engine.store(),
                 lexical: &self.lexical,
@@ -703,9 +748,18 @@ impl<E: ServerEdges> Server<E> {
                 embedder: &self.embedder,
                 reranker: &self.reranker,
                 clock: self.engine.clock(),
+                caches: &self.caches,
             },
             vault,
             request,
+            // A hit has already answered, from marks that only a vault that still exists has.
+            || {
+                self.vault_exists(vault)?;
+                match request.as_of {
+                    Some(_) => AsOfSlot::take(&self.as_of_running).map(Some),
+                    None => Ok(None),
+                }
+            },
         )
     }
 
@@ -799,6 +853,10 @@ impl<E: ServerEdges> Server<E> {
     }
 
     /// The writer lease this server holds on a vault, for tests that write directly.
+    pub fn reranker_for_tests(&self) -> &E::Reranker {
+        &self.reranker
+    }
+
     pub fn vault_lease_for_tests(&self, vault: &VaultId) -> Result<WriterLease, ServerError> {
         self.lease(vault)
     }
@@ -1814,7 +1872,7 @@ impl<E: ServerEdges> Server<E> {
     }
 
     /// The source a rendition job works on, and its bytes up to a limit.
-    pub fn read_source_bytes(&self, vault: &VaultId, source_id: &ObjectId, limit: u64) -> Result<(SourceRow, Vec<u8>), ServerError> {
+    fn source_row(&self, vault: &VaultId, source_id: &ObjectId) -> Result<SourceRow, ServerError> {
         let snap = self.engine.store().snapshot(vault)?;
         let Some(Row::Source(source)) = snap.get(&RowKey {
             table: Table::Source,
@@ -1823,7 +1881,11 @@ impl<E: ServerEdges> Server<E> {
         else {
             return Err(ServerError::NotFound);
         };
-        drop(snap);
+        Ok(source)
+    }
+
+    pub fn read_source_bytes(&self, vault: &VaultId, source_id: &ObjectId, limit: u64) -> Result<(SourceRow, Vec<u8>), ServerError> {
+        let source = self.source_row(vault, source_id)?;
         let hash = memex_types::BlobHash::parse(&source.sha256).map_err(|e| ServerError::Invalid(e.to_string()))?;
         let mut reader = self.blobs.read(vault, &hash, 0, Some(limit))?;
         let mut bytes = vec![];
@@ -1852,10 +1914,33 @@ impl<E: ServerEdges> Server<E> {
         self.rendition(vault, id)
     }
 
+    /// A word table's bytes, through the disk tier. The blob's hash names its content, so only erasure can make this stale.
+    fn word_table_bytes(&self, vault: &VaultId, blob: &str) -> Result<Vec<u8>, ServerError> {
+        let key = self
+            .cache_generation(vault, crate::Caches::disk_on(&self.caches))
+            .map(|g| crate::cache::word_table_key(vault, g, blob));
+        if let Some(found) = key.as_deref().and_then(|k| crate::Caches::get_file(&self.caches, vault, k)) {
+            return Ok(found);
+        }
+        let hash = memex_types::BlobHash::parse(blob).map_err(|e| ServerError::Invalid(e.to_string()))?;
+        let mut out = vec![];
+        self.blobs
+            .read(vault, &hash, 0, None)?
+            .read_to_end(&mut out)
+            .map_err(|e| ServerError::Unavailable(e.to_string()))?;
+        if let Some(key) = key {
+            crate::Caches::put_file(&self.caches, vault, &key, &out);
+        }
+        Ok(out)
+    }
+
     /// A rendition's stored blob, either its canonical text or its word table.
     pub fn rendition_blob(&self, caller: &Caller, vault: &VaultId, id: &ObjectId, words: bool) -> Result<Vec<u8>, ServerError> {
         let r = self.get_rendition(caller, vault, id)?;
-        let hash = memex_types::BlobHash::parse(if words { &r.words_blob } else { &r.text_blob }).map_err(|e| ServerError::Invalid(e.to_string()))?;
+        if words {
+            return self.word_table_bytes(vault, &r.words_blob);
+        }
+        let hash = memex_types::BlobHash::parse(&r.text_blob).map_err(|e| ServerError::Invalid(e.to_string()))?;
         let mut out = vec![];
         self.blobs
             .read(vault, &hash, 0, None)?
@@ -1955,7 +2040,7 @@ impl<E: ServerEdges> Server<E> {
                 .map_err(|e| ServerError::Unavailable(e.to_string()))?;
             Ok(out)
         };
-        let table = read(&r.words_blob)?;
+        let table = self.word_table_bytes(vault, &r.words_blob)?;
         let words = serde_json::from_slice::<memex_types::ParsedDocument>(&table)
             .map(|d| d.words)
             .unwrap_or_default();
@@ -2119,10 +2204,39 @@ impl<E: ServerEdges> Server<E> {
                 pages.pages.len()
             )));
         }
+        // Access and the page are already checked above, so a hit shows nothing a miss wouldn't.
+        let key = match self.cache_generation(vault, crate::Caches::disk_on(&self.caches)) {
+            Some(generation) => {
+                let source = self.source_row(vault, source_id)?;
+                let rects = format!("{highlights:?}");
+                Some(crate::cache::page_image_key(
+                    vault,
+                    generation,
+                    &source.sha256,
+                    page,
+                    dpi,
+                    &self.rasterizer.renderer(),
+                    &rects,
+                ))
+            }
+            None => None,
+        };
+        if let Some(found) = key
+            .as_deref()
+            .and_then(|k| crate::Caches::get_file(&self.caches, vault, k))
+            .and_then(|bytes| crate::cache::decode_page_image(&bytes))
+        {
+            return Ok(found);
+        }
         let (_, bytes) = self.read_source_bytes(vault, source_id, u64::MAX)?;
-        self.rasterizer
+        let image = self
+            .rasterizer
             .render(&bytes, page, dpi, highlights)
-            .map_err(|e| ServerError::Invalid(e.to_string()))
+            .map_err(|e| ServerError::Invalid(e.to_string()))?;
+        if let Some(key) = key {
+            crate::Caches::put_file(&self.caches, vault, &key, &crate::cache::encode_page_image(&image));
+        }
+        Ok(image)
     }
 
     pub fn thumbnail(&self, caller: &Caller, vault: &VaultId, source_id: &ObjectId, page: u32) -> Result<PageImage, ServerError> {

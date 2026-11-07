@@ -16,6 +16,7 @@ use std::time::Duration;
 struct Fakes;
 
 impl ServerEdges for Fakes {
+    type Caches = memex_core::NoCaches;
     type Registry = MemRegistry;
     type Store = MemStore;
     type Blobs = MemBlobStore<ManualClock>;

@@ -1,5 +1,5 @@
 //! One search, from request to evidence package.
-use super::assemble::{Fenced, facets, fence, parent_sections, rerank_text};
+use super::assemble::{Fenced, RowReader, facets, fence_with, parent_sections, rerank_text};
 use super::budget::{decode_cursor, encode_cursor, fit};
 use super::expand::{HOPS, expand};
 use super::fusion::{Fused, RRF_K, fuse};
@@ -7,10 +7,11 @@ use super::history::{HistoryError, keyword_scan, past_docs, past_state};
 use super::plan::{CANDIDATES_PER_SIGNAL, QueryPlan, is_relational, plan_query};
 use super::relevance::{Signals, THRESHOLDS, is_low_relevance, term_coverage};
 use super::{RERANK_TOP, Reranker};
+use crate::cache::{IndexMarks, embedding_key, is_cacheable, keeps_package, past_query_key, query_key, rerank_key};
 use crate::lexical::MAX_SEARCH_LIMIT;
-use crate::{Clock, Embedder, LexicalIndex, ServerError, Snapshot, Store, Touched, VectorIndex};
+use crate::{Caches, Clock, Embedder, LexicalIndex, ServerError, Snapshot, Store, Touched, VectorIndex};
 use memex_types::{
-    BudgetReport, DocKind, EmbedPurpose, EvidenceItem, EvidencePackage, Expand, Generation, ItemKind, LexicalError, LexicalFilter, LexicalQuery,
+    AsOf, BudgetReport, DocKind, EmbedPurpose, EvidenceItem, EvidencePackage, Expand, Generation, ItemKind, LexicalError, LexicalFilter, LexicalQuery,
     LexicalResults, ObjectId, QueryPath, SearchDebug, SearchMode, SearchRequest, SignalScores, VaultId, VectorError, VectorHealth, VectorQuery,
 };
 use std::time::Duration;
@@ -33,27 +34,33 @@ fn fence_window(req: &SearchRequest, offset: usize) -> usize {
 }
 
 /// Fences the best candidates. If too many of them turn out gone to fill the page, it fences the rest as well, which costs one more set of reads. Returns the items, and whether there are candidates it didn't read.
-fn fence_page<S: Snapshot>(snap: &S, mut fused: Vec<Fused>, req: &SearchRequest, offset: usize) -> Result<(Vec<Fenced>, bool), ServerError> {
+fn fence_page<S: Snapshot, Ca: Caches>(
+    rows: &RowReader<'_, S, Ca>,
+    mut fused: Vec<Fused>,
+    req: &SearchRequest,
+    offset: usize,
+) -> Result<(Vec<Fenced>, bool), ServerError> {
     let window = fence_window(req, offset);
     if fused.len() <= window {
-        return Ok((fence(snap, fused, &req.filter)?, false));
+        return Ok((fence_with(rows, fused, &req.filter)?, false));
     }
     let rest = fused.split_off(window);
-    let mut fenced = fence(snap, fused, &req.filter)?;
+    let mut fenced = fence_with(rows, fused, &req.filter)?;
     if fenced.len() >= offset.saturating_add(req.limit) {
         return Ok((fenced, true));
     }
-    fenced.extend(fence(snap, rest, &req.filter)?);
+    fenced.extend(fence_with(rows, rest, &req.filter)?);
     Ok((fenced, false))
 }
 
-pub struct SearchEdgesRef<'a, St, L, V, Em, R, C> {
+pub struct SearchEdgesRef<'a, St, L, V, Em, R, C, Ca> {
     pub store: &'a St,
     pub lexical: &'a L,
     pub vector: &'a V,
     pub embedder: &'a Em,
     pub reranker: &'a R,
     pub clock: &'a C,
+    pub caches: &'a Ca,
 }
 
 /// Records how long each stage took, only when asked, so an ordinary search doesn't pay for it.
@@ -81,10 +88,48 @@ impl<'c, C: Clock> Stages<'c, C> {
     }
 }
 
+/// The caches a read may use. `generation` is none if it couldn't be read, and then none is used.
+pub(crate) struct Tiers<'a, Ca> {
+    pub caches: &'a Ca,
+    pub generation: Option<u64>,
+}
+
+// By hand, as the derives would ask the same of `Ca` when only a reference is copied.
+impl<Ca> Clone for Tiers<'_, Ca> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<Ca> Copy for Tiers<'_, Ca> {}
+
+impl<'a, Ca: Caches> Tiers<'a, Ca> {
+    fn inference(self) -> Option<(&'a Ca, u64)> {
+        self.generation.filter(|_| self.caches.inference_on()).map(|g| (self.caches, g))
+    }
+}
+
+/// A query's embedding, through the inference tier when there is one.
+fn embed_query<Em: Embedder, Ca: Caches>(embedder: &Em, tiers: Tiers<'_, Ca>, vault: &VaultId, model: &str, text: &str) -> Result<Vec<f32>, ServerError> {
+    let tier = tiers.inference().map(|(caches, g)| (caches, embedding_key(vault, g, model, text)));
+    if let Some(found) = tier.as_ref().and_then(|(caches, key)| caches.get_floats(key)) {
+        return Ok(found);
+    }
+    let embedded = embedder
+        .embed(model, EmbedPurpose::Query, &[text.to_string()])?
+        .pop()
+        .ok_or_else(|| ServerError::Unavailable("the embedder returned nothing".into()))?;
+    if let Some((caches, key)) = tier {
+        caches.put_floats(key, &embedded);
+    }
+    Ok(embedded)
+}
+
 /// The vector signal: embeds the query with the live generation's model, then searches. A model flip between the two costs one more try.
-pub(crate) fn vector_candidates<V: VectorIndex, Em: Embedder>(
+pub(crate) fn vector_candidates<V: VectorIndex, Em: Embedder, Ca: Caches>(
     vector: &V,
     embedder: &Em,
+    tiers: Tiers<'_, Ca>,
     vault: &VaultId,
     text: &str,
     filter: &LexicalFilter,
@@ -96,10 +141,7 @@ pub(crate) fn vector_candidates<V: VectorIndex, Em: Embedder>(
             VectorHealth::Ready { model, .. } => model,
             VectorHealth::Missing => return Err(ServerError::Unavailable("the vector index is still being built".into())),
         };
-        let embedded = embedder
-            .embed(&model.name, EmbedPurpose::Query, &[text.to_string()])?
-            .pop()
-            .ok_or_else(|| ServerError::Unavailable("the embedder returned nothing".into()))?;
+        let embedded = embed_query(embedder, tiers, vault, &model.name, text)?;
         let query = VectorQuery {
             model: model.name,
             vector: embedded,
@@ -136,10 +178,9 @@ struct Gathered {
     degraded: Vec<String>,
 }
 
-fn gather<L, V, Em>(
-    lexical: &L,
-    vector: &V,
-    embedder: &Em,
+fn gather<St, L, V, Em, R, C, Ca>(
+    e: &SearchEdgesRef<'_, St, L, V, Em, R, C, Ca>,
+    tiers: Tiers<'_, Ca>,
     vault: &VaultId,
     text: &str,
     plan: &QueryPlan,
@@ -149,9 +190,10 @@ where
     L: LexicalIndex + Sync,
     V: VectorIndex + Sync,
     Em: Embedder + Sync,
+    Ca: Caches + Sync,
 {
-    let run_lexical = || lexical_candidates(lexical, vault, plan, filter);
-    let run_vector = || vector_candidates(vector, embedder, vault, text, filter, CANDIDATES_PER_SIGNAL);
+    let run_lexical = || lexical_candidates(e.lexical, vault, plan, filter);
+    let run_vector = || vector_candidates(e.vector, e.embedder, tiers, vault, text, filter, CANDIDATES_PER_SIGNAL);
     let (from_lexical, from_vector) = match (plan.use_lexical, plan.use_vector) {
         (true, true) => std::thread::scope(|scope| {
             let other = scope.spawn(run_vector);
@@ -273,13 +315,36 @@ fn signals_of(plan: &QueryPlan, candidates: &[Fenced]) -> Signals {
     Signals { best_vector, coverage }
 }
 
-fn rerank<R: Reranker>(reranker: &R, text: &str, candidates: &mut [Fenced], degraded: &mut Vec<String>) {
+/// One whole batch's scores, through the inference tier when there is one.
+fn rerank_scores<R: Reranker, Ca: Caches>(
+    reranker: &R,
+    tiers: Tiers<'_, Ca>,
+    vault: &VaultId,
+    text: &str,
+    passages: &[&str],
+) -> Result<Vec<f32>, memex_types::RerankError> {
+    let tier = tiers
+        .inference()
+        .map(|(caches, g)| (caches, rerank_key(vault, g, &reranker.model(), text, passages)));
+    if let Some(found) = tier.as_ref().and_then(|(caches, key)| caches.get_floats(key)) {
+        return Ok(found);
+    }
+    let scores = reranker.rerank(text, passages)?;
+    if let Some((caches, key)) = tier
+        && scores.len() == passages.len()
+    {
+        caches.put_floats(key, &scores);
+    }
+    Ok(scores)
+}
+
+fn rerank<R: Reranker, Ca: Caches>(reranker: &R, tiers: Tiers<'_, Ca>, vault: &VaultId, text: &str, candidates: &mut [Fenced], degraded: &mut Vec<String>) {
     let top = candidates.len().min(RERANK_TOP);
     if top == 0 {
         return;
     }
     let passages: Vec<&str> = candidates[..top].iter().map(rerank_text).collect();
-    match reranker.rerank(text, &passages) {
+    match rerank_scores(reranker, tiers, vault, text, &passages) {
         Ok(scores) if scores.len() == top => {
             for (c, score) in candidates.iter_mut().zip(scores) {
                 c.rerank_score = Some(score);
@@ -477,7 +542,8 @@ fn search_past<St: Store, C: Clock>(
     let hits = keyword_scan(&docs, &plan.terms, CANDIDATES_PER_SIGNAL);
     stages.mark("scan");
     let before_fence = hits.len();
-    let (candidates, more_unread) = fence_page(&then, fuse(&hits, &[], 1.0, 1.0, RRF_K), req, offset)?;
+    // The past's rows are this replay's own, so no tier is involved.
+    let (candidates, more_unread) = fence_page(&RowReader::plain(&then), fuse(&hits, &[], 1.0, 1.0, RRF_K), req, offset)?;
     stages.mark("fence");
     let mut notices = vec![];
     if past.seq.is_none() {
@@ -506,8 +572,75 @@ fn search_past<St: Store, C: Clock>(
     package
 }
 
-/// Runs one search. The caller has already checked access.
-pub fn run_search<St, L, V, Em, R, C>(e: &SearchEdgesRef<'_, St, L, V, Em, R, C>, vault: &VaultId, req: &SearchRequest) -> Result<EvidencePackage, ServerError>
+/// What a look at the caches found. `generation` is none if it couldn't be read, and then no tier is used on this search.
+enum Lookup {
+    Hit(Box<EvidencePackage>),
+    Miss { key: Option<String>, generation: Option<u64> },
+}
+
+/// Any failure reading the marks is a miss with no tiers, so the search itself reports it: a cache never answers when the store can't confirm the answer is current.
+fn look_up<St, L, V, Em, R, C, Ca>(e: &SearchEdgesRef<'_, St, L, V, Em, R, C, Ca>, vault: &VaultId, req: &SearchRequest) -> Lookup
+where
+    St: Store,
+    L: LexicalIndex,
+    V: VectorIndex,
+    Ca: Caches,
+{
+    let none = Lookup::Miss { key: None, generation: None };
+    if !e.caches.any_ram_tier() {
+        return none;
+    }
+    let Ok(marks) = e.store.cache_marks(vault) else { return none };
+    let uncached = Lookup::Miss {
+        key: None,
+        generation: Some(marks.generation),
+    };
+    if !e.caches.query_on() || !is_cacheable(req) {
+        return uncached;
+    }
+    let Ok(plan) = plan_query(&req.text, &req.filter, req.mode) else {
+        return uncached;
+    };
+    let key = match req.as_of {
+        Some(AsOf::Seq(seq)) => past_query_key(vault, marks.generation, seq, req),
+        // A time may be ahead of the log, so a later event can change its answer.
+        Some(AsOf::Time(_)) => query_key(vault, marks, IndexMarks::default(), req),
+        None => {
+            let lexical = if plan.use_lexical {
+                match e.lexical.watermark(vault, Generation::Live) {
+                    Ok(w) => Some(w),
+                    Err(_) => return uncached,
+                }
+            } else {
+                None
+            };
+            let vector = if plan.use_vector {
+                match e.vector.live_mark(vault) {
+                    Ok(w) => Some(w),
+                    Err(_) => return uncached,
+                }
+            } else {
+                None
+            };
+            query_key(vault, marks, IndexMarks { lexical, vector }, req)
+        }
+    };
+    match e.caches.get_package(&key) {
+        Some(found) => Lookup::Hit(Box::new(found)),
+        None => Lookup::Miss {
+            key: Some(key),
+            generation: Some(marks.generation),
+        },
+    }
+}
+
+/// One search through the query tier. `on_miss` runs only when the search has to run, and what it returns is held until it ends. The caller has already checked access.
+pub fn cached_search<St, L, V, Em, R, C, Ca, G>(
+    e: &SearchEdgesRef<'_, St, L, V, Em, R, C, Ca>,
+    vault: &VaultId,
+    req: &SearchRequest,
+    on_miss: impl FnOnce() -> Result<G, ServerError>,
+) -> Result<EvidencePackage, ServerError>
 where
     St: Store,
     L: LexicalIndex + Sync,
@@ -515,6 +648,54 @@ where
     Em: Embedder + Sync,
     R: Reranker,
     C: Clock,
+    Ca: Caches + Sync,
+{
+    let (key, generation) = match look_up(e, vault, req) {
+        Lookup::Hit(found) => return Ok(*found),
+        Lookup::Miss { key, generation } => (key, generation),
+    };
+    let _held = on_miss()?;
+    let package = search_with_tiers(e, generation, vault, req)?;
+    if let Some(key) = key
+        && keeps_package(&package)
+    {
+        e.caches.put_package(key, &package);
+    }
+    Ok(package)
+}
+
+/// Runs one search with no query tier and no other tier. The caller has already checked access.
+pub fn run_search<St, L, V, Em, R, C, Ca>(
+    e: &SearchEdgesRef<'_, St, L, V, Em, R, C, Ca>,
+    vault: &VaultId,
+    req: &SearchRequest,
+) -> Result<EvidencePackage, ServerError>
+where
+    St: Store,
+    L: LexicalIndex + Sync,
+    V: VectorIndex + Sync,
+    Em: Embedder + Sync,
+    R: Reranker,
+    C: Clock,
+    Ca: Caches + Sync,
+{
+    search_with_tiers(e, None, vault, req)
+}
+
+fn search_with_tiers<St, L, V, Em, R, C, Ca>(
+    e: &SearchEdgesRef<'_, St, L, V, Em, R, C, Ca>,
+    generation: Option<u64>,
+    vault: &VaultId,
+    req: &SearchRequest,
+) -> Result<EvidencePackage, ServerError>
+where
+    St: Store,
+    L: LexicalIndex + Sync,
+    V: VectorIndex + Sync,
+    Em: Embedder + Sync,
+    R: Reranker,
+    C: Clock,
+    Ca: Caches + Sync,
 {
     let plan = plan_query(&req.text, &req.filter, req.mode).map_err(|e| ServerError::Invalid(e.to_string()))?;
     let offset = match &req.cursor {
@@ -544,7 +725,7 @@ where
     // An id goes straight to the store, and an id nobody has falls through to an ordinary search.
     if let Some(id) = &plan.exact_id {
         let snap = e.store.snapshot(vault)?;
-        let candidates = fence(&snap, exact_candidates(id), &req.filter)?;
+        let candidates = fence_with(&RowReader::new(&snap, e.caches, vault, generation), exact_candidates(id), &req.filter)?;
         if !candidates.is_empty() {
             stages.mark("exact");
             let finish = Finish {
@@ -567,7 +748,8 @@ where
             return finish.package(&snap, candidates);
         }
     }
-    let gathered = gather(e.lexical, e.vector, e.embedder, vault, &req.text, &plan, &req.filter)?;
+    let tiers = Tiers { caches: e.caches, generation };
+    let gathered = gather(e, tiers, vault, &req.text, &plan, &req.filter)?;
     stages.mark("candidates");
     let fused = fuse(&gathered.lexical, &gathered.vector, plan.lexical_weight, plan.vector_weight, RRF_K);
     // The snapshot is taken after the candidates on purpose: anything retracted while they were gathered is gone from it.
@@ -581,13 +763,13 @@ where
     let (fused, expanded) = if expanding { expand(&snap, fused, HOPS)? } else { (fused, 0) };
     stages.mark("expand");
     let before_fence = fused.len().min(fence_window(req, offset));
-    let (mut candidates, more_unread) = fence_page(&snap, fused, req, offset)?;
+    let (mut candidates, more_unread) = fence_page(&RowReader::new(&snap, e.caches, vault, generation), fused, req, offset)?;
     stages.mark("fence");
     // Read before any reranking, so asking for it never changes the verdict.
     let signals = signals_of(&plan, &candidates);
     let mut degraded = gathered.degraded;
     if req.rerank {
-        rerank(e.reranker, &req.text, &mut candidates, &mut degraded);
+        rerank(e.reranker, tiers, vault, &req.text, &mut candidates, &mut degraded);
         stages.mark("rerank");
     }
     let low_relevance = is_low_relevance(signals, THRESHOLDS);

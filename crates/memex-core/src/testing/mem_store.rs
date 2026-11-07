@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Clone, Default)]
 struct VaultState {
     head: Option<u64>,
+    cache_generation: u64,
     rows: BTreeMap<RowKey, Row>,
     events: BTreeMap<u64, Event>,
 }
@@ -763,6 +764,27 @@ impl Store for MemStore {
             state.events.insert(item.event.seq, item.event.clone());
         }
         Ok(Receipt { seq: last })
+    }
+
+    fn cache_marks(&self, vault: &VaultId) -> Result<crate::CacheMarks, StoreError> {
+        self.counts.reads.fetch_add(1, Ordering::Relaxed);
+        let vaults = self.vaults.lock().expect("lock");
+        let state = vaults.get(vault).ok_or_else(|| StoreError::UnknownVault { vault: vault.clone() })?;
+        Ok(crate::CacheMarks {
+            head: state.head,
+            generation: state.cache_generation,
+        })
+    }
+
+    fn bump_cache_generation(&self, lease: &WriterLease) -> Result<u64, StoreError> {
+        self.check_lease(lease)?;
+        let mut vaults = self.vaults.lock().expect("lock");
+        let slot = vaults
+            .get_mut(&lease.vault)
+            .ok_or_else(|| StoreError::UnknownVault { vault: lease.vault.clone() })?;
+        let state = Arc::make_mut(slot);
+        state.cache_generation += 1;
+        Ok(state.cache_generation)
     }
 
     fn delete_vault(&self, lease: &WriterLease) -> Result<(), StoreError> {

@@ -22,6 +22,7 @@ use std::time::{Duration, Instant};
 struct Real;
 
 impl ServerEdges for Real {
+    type Caches = memex_core::NoCaches;
     type Registry = MemRegistry;
     type Store = PostgresStore;
     type Blobs = MemBlobStore<ManualClock>;

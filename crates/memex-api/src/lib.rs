@@ -300,6 +300,44 @@ pub struct HealthDto {
     pub status: String,
 }
 
+/// One cache tier's counters since the server started.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CacheTierDto {
+    pub tier: String,
+    /// The tier's limit. 0 means it's off.
+    pub cap_bytes: u64,
+    pub size_bytes: u64,
+    pub entries: u64,
+    pub hits: u64,
+    pub misses: u64,
+    pub evictions: u64,
+    /// Entries too big for the tier to keep.
+    pub rejected: u64,
+    /// Disk files that couldn't be trusted, each also counted as a miss.
+    pub corrupt: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CacheStatsDto {
+    pub tiers: Vec<CacheTierDto>,
+}
+
+impl From<memex_types::CacheTierStats> for CacheTierDto {
+    fn from(s: memex_types::CacheTierStats) -> Self {
+        Self {
+            tier: s.tier,
+            cap_bytes: s.cap_bytes,
+            size_bytes: s.size_bytes,
+            entries: s.entries,
+            hits: s.hits,
+            misses: s.misses,
+            evictions: s.evictions,
+            rejected: s.rejected,
+            corrupt: s.corrupt,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct VersionDto {
     pub version: String,

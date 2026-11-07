@@ -180,6 +180,10 @@ impl memex_core::LexicalIndex for TantivyIndex {
 pub struct PgVectorIndex(pub memex_vector::PgVectors);
 
 impl memex_core::VectorIndex for PgVectorIndex {
+    fn live_mark(&self, vault: &memex_types::VaultId) -> Result<Option<u64>, memex_types::VectorError> {
+        self.0.live_mark(vault)
+    }
+
     fn health(&self, vault: &memex_types::VaultId) -> Result<memex_types::VectorHealth, memex_types::VectorError> {
         self.0.health(vault)
     }
@@ -228,7 +232,8 @@ impl memex_core::VectorIndex for PgVectorIndex {
     }
 
     /// The vectors live in the vault's schema, which deleting the vault in the store has already dropped.
-    fn delete_vault(&self, _: &memex_types::VaultId) -> Result<(), memex_types::VectorError> {
+    fn delete_vault(&self, vault: &memex_types::VaultId) -> Result<(), memex_types::VectorError> {
+        self.0.forget_mark(vault);
         Ok(())
     }
 }

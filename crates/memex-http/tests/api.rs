@@ -23,6 +23,7 @@ impl ServerEdges for Fakes {
     type Vector = memex_core::testing::MemVector;
     type Embedder = memex_core::testing::FakeEmbedder;
     type Reranker = memex_core::testing::FakeReranker;
+    type Caches = memex_core::NoCaches;
 }
 
 fn server() -> Arc<Server<Fakes>> {
@@ -489,6 +490,19 @@ async fn oversized_and_malformed_bodies_are_refused_in_the_one_format() {
     );
     assert_eq!(call(&w.s, "GET", "/api/v1/nope", None, None).await.1["error"]["code"], "not_found");
     assert_eq!(call(&w.s, "PUT", "/api/v1/whoami", None, None).await.0, StatusCode::METHOD_NOT_ALLOWED);
+}
+
+#[tokio::test]
+async fn cache_counters_are_for_server_admins_only() {
+    let w = world();
+    let (status, body, _) = call(&w.s, "GET", "/api/v1/caches", Some(&w.admin), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["tiers"], json!([]), "these fakes have no tiers");
+    let reader = token_with(&w, "cache-reader", Some(Scope::Admin));
+    assert_eq!(call(&w.s, "GET", "/api/v1/caches", Some(&reader), None).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(call(&w.s, "GET", "/api/v1/caches", None, None).await.0, StatusCode::UNAUTHORIZED);
+    let doc = openapi();
+    assert!(doc.paths.paths.contains_key("/api/v1/caches"));
 }
 
 #[tokio::test]

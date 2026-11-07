@@ -2548,6 +2548,12 @@ dependencies = [
 [[package]]
 name = "memex-cache"
 version = "0.1.0"
+dependencies = [
+ "memex-types",
+ "moka",
+ "sha2 0.10.9",
+ "tracing",
+]
 
 [[package]]
 name = "memex-core"
@@ -2682,6 +2688,7 @@ dependencies = [
  "getrandom 0.3.4",
  "memex-agent-adk",
  "memex-blob-fs",
+ "memex-cache",
  "memex-core",
  "memex-http",
  "memex-inference",
@@ -2770,6 +2777,23 @@ dependencies = [
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "moka"
+version = "0.12.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4293f18e7567a1caf3c584855554377025c65e0aa445344d04171f5ad63d19b9"
+dependencies = [
+ "crossbeam-channel",
+ "crossbeam-epoch",
+ "crossbeam-utils",
+ "equivalent",
+ "parking_lot",
+ "portable-atomic",
+ "smallvec",
+ "tagptr",
+ "uuid",
 ]
 
 [[package]]
@@ -4707,6 +4731,12 @@ dependencies = [
  "quote",
  "syn 3.0.9",
 ]
+
+[[package]]
+name = "tagptr"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 
 [[package]]
 name = "tantivy"

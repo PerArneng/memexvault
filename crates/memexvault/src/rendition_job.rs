@@ -171,6 +171,10 @@ impl Default for ChildRasterizer {
 }
 
 impl memex_core::Rasterizer for ChildRasterizer {
+    fn renderer(&self) -> String {
+        memex_pdf::PARSER.into()
+    }
+
     fn render(&self, pdf: &[u8], page: u32, dpi: u32, highlights: &[memex_types::Rect]) -> Result<memex_core::PageImage, memex_core::RasterError> {
         let rects = serde_json::to_string(highlights).map_err(|e| memex_core::RasterError(e.to_string()))?;
         let command = WorkerCommand {

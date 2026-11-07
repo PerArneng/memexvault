@@ -274,6 +274,7 @@ fn run(r: &Rig, req: &SearchRequest) -> Result<EvidencePackage, memex_core::Serv
             embedder: &r.embedder,
             reranker: &r.reranker,
             clock: &r.clock,
+            caches: &memex_core::NoCaches,
         },
         &r.v,
         req,
@@ -672,6 +673,7 @@ fn golden_recall() {
                     embedder: &r.embedder,
                     reranker: &r.reranker,
                     clock: &r.clock,
+                    caches: &memex_core::NoCaches,
                 },
                 &r.v,
                 &request(&g.question, mode, false),
@@ -737,7 +739,7 @@ fn measure(r: &Arc<Rig>, requests: &Arc<Vec<SearchRequest>>, clients: usize, rou
 
 fn report(label: &str, mut times: Vec<f64>) -> f64 {
     let (p50, p95, p99) = (pct(&mut times, 0.5), pct(&mut times, 0.95), pct(&mut times, 0.99));
-    println!("{label:44} n={:5} p50 {p50:7.1} ms  p95 {p95:7.1} ms  p99 {p99:7.1} ms", times.len());
+    println!("{label:44} n={:5} p50 {p50:8.3} ms  p95 {p95:8.3} ms  p99 {p99:8.3} ms", times.len());
     p95
 }
 
@@ -1112,6 +1114,171 @@ fn latency_breakdown() {
             a.store.snapshot(&a.v).expect("snap").head().expect("head");
         }),
     );
+}
+
+/// Spec 021, items 2 and 4: replays the golden set through the caches, and compares every answer with one that used no cache. Set the target before looking: cached p95 at most 1 ms.
+#[test]
+#[ignore = "needs Postgres, spec 004's data and the models"]
+fn cache_tiers_replay() {
+    use memex_core::search::cached_search;
+    use memex_core::{CacheSettings, Caches};
+    use memexvault::cache_edge::TieredCaches;
+    let total = number("MEMEX_CACHE_SEGMENTS", 200_000);
+    let rounds = number("MEMEX_CACHE_ROUNDS", 5);
+    let vault = format!("t-golden-{total}");
+    let rig = Arc::new(rig(&vault));
+    ensure_loaded(&rig, total);
+    wait_for_ready(&rig);
+    let set = golden();
+    let requests: Vec<SearchRequest> = set.iter().map(|g| SearchRequest::new(g.question.clone())).collect();
+    println!("{} questions on {total} segments", requests.len());
+    let on = 256u64 << 20;
+    let mix = |query_bytes, inference_bytes, object_bytes| CacheSettings {
+        query_bytes,
+        inference_bytes,
+        object_bytes,
+        disk_bytes: 0,
+    };
+    let disk = std::env::temp_dir().join(format!("memex-golden-cache-{}", std::process::id()));
+    let cached = |c: &TieredCaches, r: &SearchRequest| {
+        cached_search(
+            &SearchEdgesRef {
+                store: &rig.store,
+                lexical: &rig.lexical,
+                vector: &rig.vector,
+                embedder: &rig.embedder,
+                reranker: &rig.reranker,
+                clock: &rig.clock,
+                caches: c,
+            },
+            &rig.v,
+            r,
+            || Ok(()),
+        )
+    };
+
+    // Item 4: the same answers with caches on and off, for every mode, with each tier at 0 in turn. A package is compared whole.
+    let with_mode = |q: &SearchRequest, mode: SearchMode, rerank: bool| {
+        let mut q = q.clone();
+        q.mode = mode;
+        q.rerank = rerank;
+        q
+    };
+    let compare = std::env::var("MEMEX_CACHE_REPLAY_ONLY").is_err();
+    for (name, mode, rerank) in [
+        ("hybrid", SearchMode::Hybrid, false),
+        ("lexical", SearchMode::Lexical, false),
+        ("vector", SearchMode::Vector, false),
+        ("hybrid+rerank", SearchMode::Hybrid, true),
+    ]
+    .into_iter()
+    .filter(|_| compare)
+    {
+        let plain: Vec<EvidencePackage> = requests.iter().map(|q| run(&rig, &with_mode(q, mode, rerank)).expect("search")).collect();
+        for (label, settings) in [
+            ("all on", mix(on, on, on)),
+            ("query 0", mix(0, on, on)),
+            ("inference 0", mix(on, 0, on)),
+            ("objects 0", mix(on, on, 0)),
+            ("all 0", mix(0, 0, 0)),
+        ] {
+            // The slowest mode runs only with every tier on and every tier off, to keep the machine free for others.
+            if rerank && !matches!(label, "all on" | "all 0") {
+                continue;
+            }
+            let c = TieredCaches::open(settings, &disk).expect("caches");
+            let (mut differ, mut compared) = (0, 0);
+            for round in 0..2 {
+                for (q, want) in requests.iter().zip(&plain) {
+                    let got = cached(&c, &with_mode(q, mode, rerank)).expect("search");
+                    compared += 1;
+                    if &got != want {
+                        differ += 1;
+                        if differ <= 3 {
+                            println!("DIFFERS {name} {label} round {round}: {:?}", q.text);
+                        }
+                    }
+                }
+            }
+            println!("item 4: {name}, {label}: {differ} of {compared} answers differ");
+            assert_eq!(differ, 0, "{name}, {label}");
+        }
+    }
+
+    // Item 2: a replay. The first pass is cold and the rest should hit. Hits are timed apart from misses by the counters.
+    let c = Arc::new(TieredCaches::open(mix(on, on, on), &disk).expect("caches"));
+    let stats = |c: &TieredCaches| c.stats().into_iter().find(|t| t.tier == "query").expect("query");
+    // No caches at all, right before the same requests with them, as the objects tier adds a store call to a miss.
+    let mut plain: Vec<f64> = vec![];
+    for q in &requests {
+        let t = Instant::now();
+        run(&rig, q).expect("search");
+        plain.push(t.elapsed().as_secs_f64() * 1000.0);
+    }
+    report("no caches, 1 client", plain);
+    let mut cold: Vec<f64> = vec![];
+    for q in &requests {
+        let t = Instant::now();
+        cached(&c, q).expect("search");
+        cold.push(t.elapsed().as_secs_f64() * 1000.0);
+    }
+    report("cold pass, 1 client", cold);
+    let before = stats(&c);
+    let mut warm: Vec<f64> = vec![];
+    for _ in 0..rounds {
+        for q in &requests {
+            let t = Instant::now();
+            cached(&c, q).expect("search");
+            warm.push(t.elapsed().as_secs_f64() * 1000.0);
+        }
+    }
+    let after = stats(&c);
+    let (hits, misses) = (after.hits - before.hits, after.misses - before.misses);
+    println!(
+        "replay, 1 client: {hits} hits, {misses} misses, hit rate {:.2}%",
+        100.0 * hits as f64 / (hits + misses).max(1) as f64
+    );
+    let p95 = report("cached, 1 client", warm);
+    // The one store call a hit makes, on its own: what's left of a hit's time is the machine's round trip to Postgres.
+    let mut marks: Vec<f64> = vec![];
+    for _ in 0..requests.len() {
+        let t = Instant::now();
+        rig.store.cache_marks(&rig.v).expect("marks");
+        marks.push(t.elapsed().as_secs_f64() * 1000.0);
+    }
+    report("marks alone, 1 client", marks);
+    std::thread::scope(|s| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                s.spawn(|| {
+                    let mut times = vec![];
+                    for _ in 0..rounds {
+                        for q in &requests {
+                            let t = Instant::now();
+                            cached(&c, q).expect("search");
+                            times.push(t.elapsed().as_secs_f64() * 1000.0);
+                        }
+                    }
+                    times
+                })
+            })
+            .collect();
+        let all: Vec<f64> = handles.into_iter().flat_map(|h| h.join().expect("client")).collect();
+        report("cached, 8 clients", all);
+    });
+    let end = stats(&c);
+    println!(
+        "whole run: {} hits, {} misses, hit rate {:.2}%",
+        end.hits,
+        end.misses,
+        100.0 * end.hits as f64 / (end.hits + end.misses).max(1) as f64
+    );
+    for t in c.stats() {
+        println!("{t:?}");
+    }
+    println!("RSS {:.0} MB", rss_mb());
+    let _ = std::fs::remove_dir_all(&disk);
+    println!("target: cached p95 <= 1 ms, measured {p95:.3} ms with 1 client, on a machine shared with other workers");
 }
 
 /// Exact-lookup and clock sanity, so a broken rig fails fast before the long runs.

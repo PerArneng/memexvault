@@ -28,6 +28,7 @@ impl ServerEdges for Real {
     type Vector = PgVectorIndex;
     type Embedder = FakeEmbedder;
     type Reranker = FakeReranker;
+    type Caches = memex_core::NoCaches;
 }
 
 struct Rig {

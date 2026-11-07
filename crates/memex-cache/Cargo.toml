@@ -6,6 +6,10 @@ license.workspace = true
 publish = false
 
 [dependencies]
+memex-types.workspace = true
+moka = { version = "0.12", default-features = false, features = ["sync"] }
+sha2.workspace = true
+tracing.workspace = true
 
 [lints]
 workspace = true

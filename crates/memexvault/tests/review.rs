@@ -19,6 +19,7 @@ use std::sync::Arc;
 struct Real;
 
 impl ServerEdges for Real {
+    type Caches = memex_core::NoCaches;
     type Registry = MemRegistry;
     type Store = PostgresStore;
     type Blobs = MemBlobStore<ManualClock>;

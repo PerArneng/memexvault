@@ -27,6 +27,7 @@ impl ServerEdges for Fakes {
     type Vector = memex_core::testing::MemVector;
     type Embedder = memex_core::testing::FakeEmbedder;
     type Reranker = FakeReranker;
+    type Caches = memex_core::NoCaches;
 }
 
 #[derive(Debug, Clone, Deserialize)]

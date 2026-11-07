@@ -20,6 +20,8 @@ pub enum Operation<'a> {
     PrincipalList,
     PrincipalCreate,
     PrincipalDisable,
+    /// Counters and sizes of the caches, which hold nothing from a vault.
+    CacheStats,
     TokenCreate {
         grants: &'a [Grant],
     },
@@ -73,7 +75,9 @@ fn server_admin_only(caller: &Caller) -> Decision {
 /// Pure: a function of the caller and the operation. A disabled principal never reaches here, because authentication refuses it.
 pub fn authorize(caller: &Caller, op: Operation<'_>) -> Decision {
     match op {
-        Operation::VaultCreate | Operation::PrincipalList | Operation::PrincipalCreate | Operation::PrincipalDisable => server_admin_only(caller),
+        Operation::VaultCreate | Operation::PrincipalList | Operation::PrincipalCreate | Operation::PrincipalDisable | Operation::CacheStats => {
+            server_admin_only(caller)
+        }
         Operation::VaultList => Decision::Allow,
         Operation::VaultRead(v) | Operation::VaultContentRead(v) => vault_needs(caller, v, Scope::Read),
         Operation::VaultContentPropose(v) => vault_needs(caller, v, Scope::Propose),

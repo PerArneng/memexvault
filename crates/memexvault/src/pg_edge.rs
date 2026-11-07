@@ -26,6 +26,10 @@ fn translate(vault: &VaultId, e: PgError) -> StoreError {
 }
 
 impl Snapshot for PostgresSnapshot<'_> {
+    fn row_stamps(&self, keys: &[RowKey]) -> Result<Vec<Option<String>>, StoreError> {
+        self.inner.row_stamps(keys).map_err(|e| translate(&self.vault, e))
+    }
+
     fn renditions_of(&self, source_id: &ObjectId) -> Result<Vec<RenditionRow>, StoreError> {
         self.inner.renditions_of(source_id).map_err(|e| translate(&self.vault, e))
     }
@@ -239,6 +243,15 @@ impl Store for PostgresStore {
         let items: Vec<(&Event, &[Mutation])> = batch.iter().map(|i| (i.event, i.mutations)).collect();
         let seq = self.0.commit_batch(&lease_of(lease), &items).map_err(|e| translate(&lease.vault, e))?;
         Ok(Receipt { seq })
+    }
+
+    fn cache_marks(&self, vault: &VaultId) -> Result<memex_core::CacheMarks, StoreError> {
+        let (head, generation) = self.0.cache_marks(vault).map_err(|e| translate(vault, e))?;
+        Ok(memex_core::CacheMarks { head, generation })
+    }
+
+    fn bump_cache_generation(&self, lease: &WriterLease) -> Result<u64, StoreError> {
+        self.0.bump_cache_generation(&lease_of(lease)).map_err(|e| translate(&lease.vault, e))
     }
 
     fn delete_vault(&self, lease: &WriterLease) -> Result<(), StoreError> {

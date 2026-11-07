@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 memex-agent-adk = { path = "../memex-agent-adk" }
 memex-blob-fs = { path = "../memex-blob-fs" }
+memex-cache = { path = "../memex-cache" }
 getrandom.workspace = true
 sha2.workspace = true
 ureq = "3"

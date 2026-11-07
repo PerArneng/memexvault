@@ -1,6 +1,7 @@
 //! Pure: ids, events and rows, shared by core and edges. No IO.
 mod agent;
 mod blob;
+mod cache;
 mod entity;
 mod event;
 mod extraction;
@@ -18,6 +19,7 @@ mod vector;
 
 pub use agent::{AgentBudget, AgentError, AgentReply, AgentRequest, AgentUsage};
 pub use blob::{BlobHash, BlobHashError};
+pub use cache::CacheTierStats;
 pub use entity::{
     ALIAS_FIELD, ClaimedValue, ENTITY_SUBJECT_PREFIX, EntityField, EntityRow, EntityTypeRow, FieldFilter, FieldLookup, FieldOp, FieldValueRow, FilterValue,
     SharedValue, ValueMatch, entity_of_subject, entity_subject, entity_type_row_id, type_of_row_id,
