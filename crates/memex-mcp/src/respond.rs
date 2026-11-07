@@ -124,7 +124,6 @@ pub fn cap_list(data: &mut Value, list: &str, cursor: CursorFrom<'_>, max_bytes:
     items.drain(..skipped);
     let mut used = size_of(data) + ENVELOPE_BYTES + 32;
     let (mut kept, mut cut) = (Vec::with_capacity(items.len()), false);
-    let total = items.len();
     for item in items {
         let bytes = size_of(&item) + 1;
         if used + bytes <= max_bytes {
@@ -139,7 +138,7 @@ pub fn cap_list(data: &mut Value, list: &str, cursor: CursorFrom<'_>, max_bytes:
         }
         break;
     }
-    if cut && kept.len() < total || (cut && total == 1) {
+    if cut {
         let next = match cursor {
             CursorFrom::Field(field) => kept.last().and_then(|i| i.get(field)).map(|v| match v {
                 Value::String(s) => s.clone(),

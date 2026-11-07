@@ -739,6 +739,10 @@ fn a_neighborhood_shows_links_both_ways_through_old_slugs_and_names_broken_ones(
     assert_eq!(back.len(), 1);
     assert_eq!((back[0].direction, &back[0].from), ("in", &citing));
     assert_eq!(back[0].title.as_deref(), Some("Citing"));
+    // A link written to an old slug still arrives after a rename.
+    w.rename(&target, 1, "Moved").unwrap();
+    assert_eq!(at(&target).len(), 1, "through the old slug");
+    assert_eq!(at(&citing).iter().find(|n| n.neighbor.is_some()).unwrap().title.as_deref(), Some("Moved"));
     // Pages come back in id order with a cursor, and a kind not asked for stays out.
     let one = w.s.neighborhood(&w.reader, &w.v, &citing, &kinds, None, 1).unwrap();
     let rest = w.s.neighborhood(&w.reader, &w.v, &citing, &kinds, Some(&one[0].edge_id), 1).unwrap();

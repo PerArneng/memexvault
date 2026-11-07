@@ -1,4 +1,6 @@
 //! MCP end to end through a real client, in memory: real routing and JSON, with fake edges. Spec 029's Verification items 1, 2, 3, 4 and 6.
+// These tests print what they measured.
+#![allow(clippy::disallowed_macros)]
 mod support;
 
 use memex_mcp::{DATA_NOTICE, INSTRUCTIONS, MCP_PATH, McpServer, TOOLS_JSON};
@@ -79,7 +81,7 @@ async fn a_client_connects_over_streamable_http_and_calls_every_tool_and_resourc
     let f = fixture(&w);
     let token = w.token("agent", vec![(w.a.clone(), Scope::Propose)]);
     let base = start_http(&w.s, CAP).await;
-    let client = connect_http(&base, &format!("{token}")).await;
+    let client = connect_http(&base, &token).await;
     exercise(&client, &f, &w.a.0).await;
 }
 
@@ -715,7 +717,7 @@ async fn oversized_answers_are_cut_with_a_cursor_that_reaches_everything_once() 
     assert_eq!(seqs, (0..seqs.len() as u64).collect::<Vec<_>>(), "nothing lost, each once");
     let big_event = items.last().unwrap();
     assert!(big_event["omitted_bytes"].as_u64().unwrap() > big.len() as u64, "{big_event}");
-    assert_eq!(big_event["kind"], "state.recorded", "its short fields stay");
+    assert_eq!(big_event["kind"], "segment.recorded", "its short fields stay");
     assert!(!items.iter().any(|i| i.to_string().contains("yyyy")), "not cut in two");
 
     // One object with no list to cut still fits, with its long text replaced whole.
@@ -851,6 +853,40 @@ async fn min_seq_waits_for_the_indexes_as_http_does() {
     settle.await.unwrap();
     let v: Value = serde_json::from_str(&text_of(&v)).unwrap();
     assert!(v["data"]["items"].as_array().is_some_and(|i| !i.is_empty()), "{v}");
+}
+
+/// What spec 029 records from `rmcp` 3.9.0: the versions it knows, and what its own client and our server settle on.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_protocol_version_is_what_rmcp_negotiates_on_both_transports() {
+    use rmcp::model::ProtocolVersion;
+    let w = world();
+    let base = start_http(&w.s, CAP).await;
+    let pipe = connect_pipe(&w.s, &w.admin, CAP).await;
+    let http = connect_http(&base, &w.admin).await;
+    for (name, client) in [("stdio framing", &pipe), ("streamable http", &http)] {
+        let version = client.peer_info().unwrap().protocol_version.clone();
+        println!("{name}: protocol {version}");
+        assert!(ProtocolVersion::KNOWN_VERSIONS.contains(&version), "{version}");
+    }
+    assert_eq!(ProtocolVersion::LATEST, ProtocolVersion::V_2026_07_28);
+    assert_eq!(ProtocolVersion::LATEST_WITH_INITIALIZE, ProtocolVersion::V_2025_11_25);
+    // An older client still gets in over HTTP, without a session, and is answered in JSON.
+    for version in ["2025-03-26", "2025-11-25"] {
+        let body = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": version, "capabilities": {}, "clientInfo": {"name": "old", "version": "1"}}});
+        let res = reqwest::Client::new()
+            .post(format!("{base}{MCP_PATH}"))
+            .bearer_auth(&w.admin)
+            .header("accept", "application/json, text/event-stream")
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status().as_u16(), 200);
+        assert!(res.headers().get("mcp-session-id").is_none(), "stateless");
+        assert_eq!(res.headers()["content-type"], "application/json");
+        let v: Value = res.json().await.unwrap();
+        assert_eq!(v["result"]["protocolVersion"], version);
+    }
 }
 
 #[test]

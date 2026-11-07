@@ -3,7 +3,7 @@
 use memex_core::testing::{ManualClock, MemBlobStore, MemRegistry, MemStore, SeededRandom};
 use memex_core::{NewToken, Server, ServerEdges, StepOutcome};
 use memex_mcp::{Credential, DEFAULT_MAX_RESPONSE_BYTES, MCP_PATH, McpHttp, McpServer};
-use memex_types::{Grant, ObjectId, PrincipalKind, Scope, VaultId};
+use memex_types::{Grant, PrincipalKind, Scope, VaultId};
 use rmcp::model::{CallToolRequestParams, CallToolResult, JsonObject};
 use rmcp::service::{RoleClient, RunningService};
 use rmcp::transport::StreamableHttpClientTransport;
@@ -287,8 +287,4 @@ pub async fn failed(c: &Client, tool: &str, args: Value) -> Value {
     assert_eq!(r.is_error, Some(true), "{tool} {args}: {text}");
     let v: Value = serde_json::from_str(&text).unwrap();
     v["error"].clone()
-}
-
-pub fn id(o: &ObjectId) -> String {
-    o.0.clone()
 }

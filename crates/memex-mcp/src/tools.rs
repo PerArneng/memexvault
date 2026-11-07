@@ -29,10 +29,12 @@ const SEARCH_DROP: &[&str] = &[
     "valid_to_ms",
     "start",
     "end",
+    "source_sha256",
+    "rendition_id",
 ];
 const NEIGHBOR_DROP: &[&str] = &["block_id", "from", "to"];
 const RESOLVE_DROP: &[&str] = &["type_version", "changeset_id", "version", "updated_at_ms", "score", "creator"];
-const PROVENANCE_DROP: &[&str] = &["parser", "source_sha256", "rendition_id", "rects", "header", "changeset_id"];
+const PROVENANCE_DROP: &[&str] = &["parser", "source_sha256", "rendition_id", "rects", "changeset_id"];
 const CHANGES_DROP: &[&str] = &["payload", "schema_version"];
 const PROPOSE_DROP: &[&str] = &["creator"];
 const INGEST_DROP: &[&str] = &["sha256", "logical_id", "metadata", "recorded_at_ms", "created_by"];
@@ -194,6 +196,7 @@ where
     let detail = a.detail.unwrap_or_default();
     // Text alone at this budget fills the limit, at 4 characters per token.
     let ceiling = max / 4;
+    let asked_over_ceiling = a.budget_tokens.is_some_and(|b| b as usize > ceiling);
     let params = SearchParams {
         q: a.q,
         mode: a.mode,
@@ -223,6 +226,7 @@ where
         Ok((answer(to_value(package), detail, SEARCH_DROP, None, usize::MAX), needs))
     };
     let (mut out, needs) = run(&request)?;
+    out.capped = asked_over_ceiling;
     // No budget a caller may ask for reaches this item, so the core's "too small" would repeat for ever. It's read alone, and judged on its size below.
     if let Some(needs) = needs.filter(|n| *n > ceiling) {
         request.budget_tokens = needs;
@@ -346,7 +350,8 @@ fn page_answer(mut data: Value, vault: &VaultId, detail: Detail, offset: usize, 
     }
     if !paged && !respond::over_limit(&concise, max) {
         return Answer {
-            tiers: vec![],
+            // A page has no tier of its own, but the claims it cites do.
+            tiers: respond::trust_tiers(&data),
             capped: false,
             data: concise,
         };

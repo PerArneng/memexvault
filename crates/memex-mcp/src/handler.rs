@@ -41,10 +41,16 @@ impl<E: ServerEdges> Clone for McpServer<E> {
     }
 }
 
-fn error_text(e: &ServerError, request_id: &str) -> String {
-    let body = ErrorBody {
+/// A stale version's error carries the row as it is now, which can be a whole page. The limit holds for errors too, and `get` still reads that row.
+fn error_text(e: &ServerError, request_id: &str, max: usize) -> String {
+    let mut body = ErrorBody {
         error: memex_api::error_detail(e, request_id),
     };
+    let text = serde_json::to_string(&body).unwrap_or_default();
+    if text.len() <= max {
+        return text;
+    }
+    body.error.current = None;
     serde_json::to_string(&body).unwrap_or_default()
 }
 
@@ -123,7 +129,7 @@ where
                 Err(ServerError::NotCaughtUp { .. }) if tokio::time::Instant::now() + MIN_SEQ_POLL < deadline => tokio::time::sleep(MIN_SEQ_POLL).await,
                 Err(e) => {
                     let request_id = self.server.new_request_id();
-                    return Ok(CallToolResult::error(vec![ContentBlock::text(error_text(&e, &request_id))]).into());
+                    return Ok(CallToolResult::error(vec![ContentBlock::text(error_text(&e, &request_id, max))]).into());
                 }
             }
         }
