@@ -94,3 +94,7 @@ Built the Documents screen and a viewer other screens can reuse. All six items p
 - Re-check the erased state with spec 030's real erasure.
 - Consider a per-page words route, so text selection doesn't load a whole word table. It wasn't sized here.
 - A real browser's autoplay block hasn't been seen, so try the fresh-load link in a normal Chrome.
+
+**Landing checks, on the merge with `main` with spec 049 in it (c2b9de8), at load about 8 to 70.** The merge was clean, and `crates/` on the branch is the same as on `main`, which passed its own checks when spec 049 landed. The console and both server builds were rebuilt from it, and `migrate` brought this spec's database to vault version 13. `pnpm typecheck`, `lint`, `test` (373), `run licenses`, `run contrast`, `e2e` (6) and `budget` passed. On release: `e2e:documents` 11 of 11, `e2e:wiki` 17 of 17 and `e2e:shell` 17 of 17. Rerun numbers: item 5 opened in 815 to 828 ms, median 826 ms, at load about 15 to 19. Item 3 had 0 ms position error in 10 of 10, with medians of 81 ms from a click and 725 ms from a fresh load, at load about 12 to 20. The recording transcribed end to end through `serve` in 46.5 s on release at load about 11 to 20.
+
+**The user's decisions at landing.** 100% zoom means one CSS pixel per PDF point, so item 1 passes as measured. The rendition lease bug is spec 082, in wave #83, and its item 6 runs `e2e:documents` without this spec's SQL keep-alive. A missing blob's 503 is in spec 082 too.
