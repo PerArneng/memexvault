@@ -6,8 +6,10 @@ Fifty short documents and their labels, for verification item 1 of `specs/024-ex
 
 The text in `documents.jsonl` comes from Wikipedia, and each line records its own title, source, license and attribution. It isn't under this repository's Apache-2.0 license:
 
-- `license: CC BY-SA 4.0`: 10 English documents from the Wikipedia API on 2026-11-07. `source_url` names the exact revision.
-- `license: CC BY-SA 3.0`: the rest, from the published dataset `wikimedia/wikipedia`, config `20231101.<language>`, revision `b04c8d1ceb2f5cd4588862100d08de323dccfbaa`, whose card states `cc-by-sa-3.0` and `gfdl`. `source_url` is the article as the dataset gives it, and the text is the 2023-11-01 dump.
+- `license: CC BY-SA 4.0` ([license](https://creativecommons.org/licenses/by-sa/4.0/)): 10 English documents from the Wikipedia API on 2026-11-07. `source_url` names the exact revision.
+- `license: CC BY-SA 3.0` ([license](https://creativecommons.org/licenses/by-sa/3.0/)): the rest, from the published dataset `wikimedia/wikipedia`, config `20231101.<language>`, revision `b04c8d1ceb2f5cd4588862100d08de323dccfbaa`, whose card states `cc-by-sa-3.0` and `gfdl`. `source_url` is the article as the dataset gives it, and the text is the 2023-11-01 dump.
+
+The 3.0 label records what the dataset states, and may not be the whole story: Wikipedia's page on reusing its content now states 4.0, and we found nothing that says which version covers the text in this dump. So the label hasn't been changed.
 
 Each text is cut to its opening, at the last sentence end within 900 characters, or at 900 characters when none falls in that range. Nothing else was changed, so section headings the dump leaves in the text stay.
 

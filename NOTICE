@@ -1,0 +1,10 @@
+memexvault is licensed under the Apache License 2.0, as LICENSE states, except
+for the files below.
+
+Test fixtures with text from Wikipedia, by Wikipedia contributors, under
+CC BY-SA. Each folder's README.md gives the sources and license versions:
+
+  crates/memexvault/tests/fixtures/extraction/documents.jsonl
+  crates/memexvault/tests/fixtures/extraction/labels.jsonl
+  crates/memexvault/tests/fixtures/golden/golden.jsonl
+  crates/memexvault/tests/fixtures/golden/golden_relational.jsonl

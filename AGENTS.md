@@ -109,4 +109,4 @@ message (`spec #63: ...`). Older commits use `spec 063: ...`. Also run `wave-man
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE). Some test fixtures hold Wikipedia text under CC BY-SA and aren't covered by it, as [NOTICE](NOTICE) lists. Keep any new third-party text in its own folder, with a README giving its source and license, and add it to `NOTICE`.
