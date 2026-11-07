@@ -101,6 +101,7 @@ is a startup error.
 | `LexicalIndex` | tantivy | OpenSearch, Postgres full-text |
 | `VectorIndex` | pgvector | `usearch` (measured in spec 004), Qdrant |
 | `Embedder`, `Reranker`, `Ocr`, `Transcriber` | Local | Remote AI services |
+| `AgentRunner` | None: off until `MEMEX_LLM_PROVIDER` names `gemini` or `openai`, through ADK-Rust | Another agent library or provider |
 
 Only the composition root knows the concrete types. A trait with several implementations gets an enum there, with one variant
 per adapter, forwarding every method. Core stays generic and monomorphized, with no `Box<dyn>`. Optional adapters sit behind
@@ -162,6 +163,7 @@ prefix and suffix.
 - **Audio:** integer `t_start_ms` and `t_end_ms` on the original media timeline, with an optional speaker.
 - **LLMs never emit bboxes.** They return a segment id and a quote, and our locator derives the rects.
 - A new Rendition re-anchors by quote. A failure flags the claim for review.
+- **Evidence gets its anchor as it commits,** on approval or auto-commit, from within the segment it cites, so the same words elsewhere in the document can't be taken for it. Evidence on a segment with no rendition has no anchor to get.
 
 ### Dynamic entity types
 
@@ -231,6 +233,21 @@ flowchart LR
   of its audited precision clears a threshold. An LLM's self-reported confidence never counts.
 - **Contradictions are preserved.** Both claims stay, linked and surfaced with their sources.
 - **Reversible:** every ChangeSet has a computed inverse, and a revert is itself a ChangeSet.
+
+### Extraction
+
+Spec 024. A job per Rendition sends batches of segments to the LLM, and what's valid becomes proposals. It's off unless an LLM is configured, since it sends documents to that provider.
+
+- **The prompt comes from the type registry.** Each type is a property of the reply schema, so a new type needs no code. The prompt hash covers the instruction and the schema, so a new type is a new prompt.
+- **What a model returns:** a batch-local segment id, a quote, and a claim's subject, predicate and value or an entity's type and fields. Each field becomes an Assertion, as everywhere else. No confidence is asked for, and no rectangles.
+- **Quotes** must be found in the named segment, or the result is refused, recorded and never proposed. A refused quote isn't a reason to pay for a retry. The stored quote is the segment's own text.
+- **Replies** that don't meet the schema retry once with the reason, and then the batch fails with its tokens on record. The other batches go on, and the document ends `partial`. If every batch fails, the job goes dead, and the document is `failed`.
+- **A Derivation per batch** holds the model, prompt hash, segments, token counts, results and refusals. It commits before its proposals are made, so a crash costs no second call, and no event needs an LLM to replay.
+- **Idempotency.** A proposal's key is the rendition and the fact, not the prompt, model or quote, so the same fact is proposed once however many runs find it. Segments with results for this prompt aren't sent again, so a re-run with nothing new costs nothing.
+- **The budget** is per document, per run, counting input, output and thinking. A call that wouldn't fit by estimate isn't made, and its output limit shrinks to what's left. A document that stops there is `partial`, and a re-run is the decision to spend more.
+- **An LLM outage** sends the job back to wait, taking its attempt back, so no outage can use up its attempts, with a delay of at most 5 minutes. Waiting extractions don't count as upload backlog. A refusal by the provider is an ordinary failure with attempts.
+- **Identity resolution** names existing entities sharing an identity value as candidates, in the Derivation and the proposal's rationale. It never merges.
+- **Long calls.** The holder extends its job lease before each call, by twice the call's time limit plus 30 s, as a call can outlast the usual 60 s lease.
 
 ### Audit agent
 
