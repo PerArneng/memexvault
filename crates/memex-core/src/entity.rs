@@ -484,7 +484,7 @@ pub fn touches_entities(ops: &[Op]) -> bool {
         Op::DefineEntityType { .. } | Op::CreateEntity { .. } | Op::SetEntityAliases { .. } | Op::MergeEntities { .. } | Op::SplitEntity { .. } => true,
         Op::AddAssertion { subject, .. } => entity_of_subject(subject).is_some(),
         // The claim it replaces may be about an entity, which only a read can tell.
-        Op::SupersedeAssertion { .. } => true,
+        Op::SupersedeAssertion { .. } | Op::RetractAssertion { .. } => true,
         _ => false,
     })
 }
@@ -745,6 +745,8 @@ struct Work<'a, S: Snapshot> {
     changed: BTreeSet<ObjectId>,
     /// Rows whose state has to be worked out again from their claims.
     to_materialize: BTreeSet<ObjectId>,
+    /// A claim is being retired, which may leave its entity without a required field. That's the truth of it, and a type's schema mustn't keep a wrong claim in place.
+    retiring: bool,
 }
 
 impl<S: Snapshot> Work<'_, S> {
@@ -1008,7 +1010,9 @@ impl<S: Snapshot> Work<'_, S> {
             row.type_version = type_row.version_no;
             materialize(&mut row, &type_row.schema, &mine);
             let attributes = attributes_of(&row);
-            if let Some(problem) = compile(&type_row.schema).map_err(PlanError::Invalid)?.iter_errors(&attributes).next() {
+            if !self.retiring
+                && let Some(problem) = compile(&type_row.schema).map_err(PlanError::Invalid)?.iter_errors(&attributes).next()
+            {
                 return Err(PlanError::Invalid(format!("entity {id} isn't a valid {}: {problem}", type_row.name)));
             }
             self.store(row);
@@ -1069,6 +1073,7 @@ pub fn plan_entities<S: Snapshot>(
         new_entities: BTreeSet::new(),
         changed: BTreeSet::new(),
         to_materialize: BTreeSet::new(),
+        retiring: ops.iter().any(|op| matches!(op, Op::RetractAssertion { .. })),
     };
     let mut out = vec![];
     for op in ops {

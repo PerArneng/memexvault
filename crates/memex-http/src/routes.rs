@@ -1,6 +1,7 @@
 mod entities;
 mod extraction;
 mod pages;
+mod audit;
 mod review;
 
 use crate::browser::{self, ConsoleLookup};
@@ -156,6 +157,7 @@ struct ApiDoc;
 /// The generated contract. The console's types come from this.
 pub fn openapi() -> utoipa::openapi::OpenApi {
     let mut doc = ApiDoc::openapi();
+    doc.merge(audit::AuditDoc::openapi());
     doc.merge(entities::EntityDoc::openapi());
     doc.merge(extraction::ExtractionDoc::openapi());
     doc.merge(review::ReviewDoc::openapi());
@@ -239,6 +241,7 @@ where
         .route("/principals/{id}/disable", post(disable_principal::<E>))
         .route("/tokens", get(list_tokens::<E>).post(create_token::<E>))
         .route("/tokens/{id}", axum::routing::delete(revoke_token::<E>));
+    let api = audit::add_routes::<E>(api);
     let api = entities::add_routes::<E>(api);
     let api = extraction::add_routes::<E>(api);
     let api = review::add_routes::<E>(api);

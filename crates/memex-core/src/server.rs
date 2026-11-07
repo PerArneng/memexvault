@@ -1,7 +1,9 @@
+mod audit;
 mod entities;
 mod extraction;
 mod pages;
 mod review;
+pub use audit::{AuditBudget, AuditRunDetail, TriggerAudit};
 pub use entities::{
     ClaimEvidence, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, FieldInput, NewEntity, Redirect, SplitRequest, TypeDecision,
 };
@@ -326,6 +328,8 @@ pub struct Server<E: ServerEdges> {
     auto_commit_threshold: Mutex<f64>,
     /// None until the composition root has a reviewer model.
     reviewer: Mutex<Option<crate::review::ReviewLimits>>,
+    /// None until the composition root has an audit model. Audits still run their deterministic checks without one.
+    auditor: Mutex<Option<crate::audit::AuditLimits>>,
     id_counter: AtomicU64,
     /// None until the composition root has an LLM to send documents to.
     extraction: Mutex<Option<crate::extraction::ExtractionLimits>>,
@@ -374,6 +378,7 @@ impl<E: ServerEdges> Server<E> {
             write_locks: Mutex::new(HashMap::new()),
             auto_commit_threshold: Mutex::new(crate::review::DEFAULT_THRESHOLD),
             reviewer: Mutex::new(None),
+            auditor: Mutex::new(None),
             id_counter: AtomicU64::new(0),
             extraction: Mutex::new(None),
         }
@@ -949,6 +954,10 @@ impl<E: ServerEdges> Server<E> {
         self.allow(caller, Operation::VaultContentPropose(vault))?;
         if self.registry.vault(vault)?.is_none() {
             return Err(ServerError::NotFound);
+        }
+        // This writes with no proposal, and an agent's scope only reaches proposals, so its findings can't become direct changes.
+        if caller.principal.kind == PrincipalKind::Agent {
+            return Err(ServerError::Forbidden);
         }
         let lease = self.lease(vault)?;
         let draft = EventDraft {
@@ -1529,7 +1538,7 @@ impl<E: ServerEdges> Server<E> {
             .engine
             .store()
             .snapshot(vault)?
-            .open_job_count(&[crate::extraction::EXTRACT_JOB, crate::review::REVIEW_JOB])?
+            .open_job_count(&[crate::extraction::EXTRACT_JOB, crate::review::REVIEW_JOB, crate::audit::AUDIT_JOB])?
             >= limits.max_open_jobs
         {
             return Err(ServerError::Busy);

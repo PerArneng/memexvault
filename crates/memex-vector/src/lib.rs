@@ -253,6 +253,33 @@ impl PgVectors {
         })
     }
 
+    /// A count and digest of the live generation's documents of this kind, and which of `wanted` it holds. The hash is `memex_core::audit::id_hash`. None with no live generation.
+    pub fn reconcile(&self, vault: &VaultId, kind: &str, wanted: &[ObjectId]) -> Result<Option<(u64, i64, Vec<String>)>, VectorError> {
+        let schema = schema_of_vault(vault);
+        let ids: Vec<&str> = wanted.iter().map(|i| i.0.as_str()).collect();
+        self.with_conn(|c| {
+            let Some(g) = Self::generation(c, &schema, "live")? else {
+                return Ok(None);
+            };
+            let name = table(&schema, g.gen_id);
+            let row = c
+                .client
+                .query_one(
+                    &format!("SELECT count(*), coalesce(bit_xor(('x' || encode(substring(sha256(id::bytea) from 1 for 8), 'hex'))::bit(64)::bigint), 0) FROM {name} WHERE kind = $1"),
+                    &[&kind],
+                )
+                .map_err(backend)?;
+            let present = c
+                .client
+                .query(&format!("SELECT id FROM {name} WHERE id = ANY($1)"), &[&ids])
+                .map_err(backend)?
+                .iter()
+                .map(|r| r.get(0))
+                .collect();
+            Ok(Some((row.get::<_, i64>(0) as u64, row.get(1), present)))
+        })
+    }
+
     /// How many documents the live generation holds.
     pub fn count(&self, vault: &VaultId) -> Result<u64, VectorError> {
         let schema = schema_of_vault(vault);

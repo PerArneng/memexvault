@@ -4,7 +4,7 @@ use super::{Caller, Operation, Proposal, ProposalOutcome, Server, ServerEdges, S
 use crate::page::{self, BlockChange, PageDocument};
 use crate::{EntityClaim, Snapshot, Store};
 use memex_types::{
-    AssertionRow, BlockRow, CLAIM_REF, EdgeDirection, EdgeRow, ObjectId, Op, PageRow, RevisionBlock, RevisionRow, Row, RowKey, Table, VaultId, WIKI_LINK,
+    AssertionRow, BlockRow, CLAIM_REF, EdgeDirection, EdgeRow, ObjectId, Op, PageRow, RevisionBlock, RevisionRow, Row, RowKey, Status, Table, VaultId, WIKI_LINK,
     revision_id, slug_of_target, slug_target,
 };
 use std::collections::{BTreeSet, HashMap};
@@ -242,6 +242,8 @@ fn claim_references<S: Snapshot>(snap: &S, ids: &[ObjectId]) -> Result<Vec<Claim
             match seen.get(at) {
                 None => break None,
                 Some(a) => match &a.superseded_by {
+                    // Retired with nothing in its place, so nothing stands for it now.
+                    None if a.header.status != Status::Active => break None,
                     None => break Some(a.header.id.clone()),
                     Some(next) if steps < MAX_SUPERSEDED => {
                         at = next;

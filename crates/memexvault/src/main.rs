@@ -12,7 +12,7 @@ use memexvault::edges::{AdkAgentRunner, FsBlobStore, PgVectorIndex, SystemClock,
 use memexvault::pg_edge::PostgresStore;
 use memexvault::registry_edge::PostgresRegistry;
 use memexvault::rendition_job::{ChildRasterizer, EXIT_UNPARSEABLE, RenditionHandler, WorkerCommand};
-use memexvault::workers::{self, EmbedHandler, ExtractHandler, Pool, ReviewHandler};
+use memexvault::workers::{self, AuditHandler, EmbedHandler, ExtractHandler, Pool, ReviewHandler};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -301,6 +301,32 @@ fn main() -> ExitCode {
                     handler: Arc::new(EmbedHandler { server: server.clone() }),
                 },
             ];
+            // Audits run with no LLM too, doing what costs no tokens. Their LLM checks are asked for by name, as each sampled claim is two calls.
+            let auditor = match (&settings.llm, &settings.audit_model) {
+                (Some(llm), Some(model)) => {
+                    let audit = memex_core::LlmSettings {
+                        model: model.clone(),
+                        ..llm.clone()
+                    };
+                    match llm_endpoint(&audit).and_then(memex_agent_adk::AdkAgent::new) {
+                        Ok(a) => {
+                            server.set_auditor(Some(settings.audit));
+                            tracing::info!(model = %model, "the audit agent's LLM checks are on");
+                            Some(AdkAgentRunner(a))
+                        }
+                        Err(e) => return fail(e),
+                    }
+                }
+                _ => None,
+            };
+            pools.push(Pool {
+                kind: memex_core::AUDIT_JOB.into(),
+                workers: 1,
+                handler: Arc::new(AuditHandler {
+                    server: server.clone(),
+                    agent: auditor,
+                }),
+            });
             // Only with an LLM set up does anything leave this server.
             if let Some(llm) = &settings.llm {
                 let agent = match llm_endpoint(llm).and_then(memex_agent_adk::AdkAgent::new) {
@@ -335,6 +361,7 @@ fn main() -> ExitCode {
                 }
             }
             let mut threads = workers::start(server.clone(), pools, stop.clone());
+            threads.push(workers::start_audit_scheduler(server.clone(), stop.clone()));
             threads.push(workers::start_projector(server.clone(), stop.clone()));
             threads.push(workers::start_vector_projector(server.clone(), stop.clone()));
             let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {

@@ -65,6 +65,19 @@ impl MemVector {
 }
 
 impl VectorIndex for MemVector {
+    fn reconcile(&self, vault: &VaultId, kind: memex_types::DocKind, wanted: &[memex_types::ObjectId]) -> Result<Option<crate::lexical::IndexContents>, VectorError> {
+        let vaults = self.vaults.lock().expect("lock");
+        let Some(live) = vaults.get(vault).and_then(|v| v.live.as_ref()) else { return Ok(None) };
+        let mut out = crate::lexical::IndexContents::default();
+        for (id, doc) in live.docs.iter().filter(|(_, d)| d.kind == kind) {
+            crate::audit::add_to_digest(&mut out.digest, id);
+            if wanted.contains(&doc.id) {
+                out.present.insert(doc.id.clone());
+            }
+        }
+        Ok(Some(out))
+    }
+
     fn health(&self, vault: &VaultId) -> Result<VectorHealth, VectorError> {
         let vaults = self.vaults.lock().expect("lock");
         Ok(match vaults.get(vault).and_then(|v| v.live.as_ref()) {
