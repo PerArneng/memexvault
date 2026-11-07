@@ -1090,6 +1090,13 @@
           "rationale": {
             "type": "string"
           },
+          "requested_by": {
+            "description": "The person whose chat asked for this, when the proposer is the chat agent acting for them.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "reverted_by": {
             "type": [
               "string",
@@ -1157,6 +1164,237 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "ChatMessageDto": {
+        "properties": {
+          "at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "description": "`user`, `assistant` or `tool`.",
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "seq": {
+            "description": "Its place in the thread, which is also the cursor.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "stop": {
+            "description": "Why this reply ended early, such as `cancelled`, `max_tokens` or `failed`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "description": "What was said, or a tool's answer.",
+            "type": "string"
+          },
+          "tool_call": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ChatToolCallDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "seq",
+          "id",
+          "run_id",
+          "role",
+          "text",
+          "at_ms"
+        ],
+        "type": "object"
+      },
+      "ChatRenameBody": {
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
+      "ChatSettingsBody": {
+        "properties": {
+          "day_token_budget": {
+            "description": "Tokens per UTC day for this vault, above zero. Absent takes the server's default.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "enabled": {
+            "description": "Turning this on sends the vault's content to the configured LLM.",
+            "type": "boolean"
+          },
+          "thread_token_budget": {
+            "description": "Tokens per thread, above zero. Absent takes the server's default.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "ChatSettingsDto": {
+        "properties": {
+          "day_token_budget": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "day_tokens_limit": {
+            "description": "The limit today's spending is held to.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "day_tokens_used": {
+            "description": "What this vault's chat has been charged today, which includes what's reserved for calls still going.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "thread_token_budget": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "day_tokens_used",
+          "day_tokens_limit"
+        ],
+        "type": "object"
+      },
+      "ChatThreadDetail": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessageDto"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread": {
+            "$ref": "#/components/schemas/ChatThreadDto"
+          }
+        },
+        "required": [
+          "thread",
+          "messages"
+        ],
+        "type": "object"
+      },
+      "ChatThreadDto": {
+        "properties": {
+          "created_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "tokens": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "updated_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "created_at_ms",
+          "updated_at_ms",
+          "tokens"
+        ],
+        "type": "object"
+      },
+      "ChatThreadPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChatThreadDto"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ChatToolCallDto": {
+        "properties": {
+          "args": {
+            "description": "As the model wrote them, in JSON.",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "args"
         ],
         "type": "object"
       },
@@ -4901,6 +5139,47 @@
         ],
         "type": "object"
       },
+      "RunAgentBody": {
+        "description": "AG-UI's `RunAgentInput`. Only the newest user message is read: a thread's history is what the server stored, so a client can't put words in the agent's mouth, and `tools`, `context` and `state` are accepted and ignored.",
+        "properties": {
+          "context": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "forwardedProps": {
+            "type": "object"
+          },
+          "messages": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "object"
+          },
+          "threadId": {
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "threadId",
+          "runId",
+          "messages"
+        ],
+        "type": "object"
+      },
       "SameAsDto": {
         "description": "A suggestion, never a decision: these entities share an identity value or alias. Merging them is a proposal, which a person approves.",
         "properties": {
@@ -7759,6 +8038,468 @@
         },
         "tags": [
           "governance"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/chat/runs": {
+      "post": {
+        "operationId": "chat_run_doc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunAgentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "AG-UI events"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Runs the agent on one message, as AG-UI events over server-sent events. Anything that refuses it comes back as an ordinary error before the stream opens. A failure afterwards is a `RUN_ERROR` with a code, and a budget, a cancel or a reply cut at its limit is a `RUN_FINISHED` whose `result.stop` says so. Disconnecting cancels the run, and it can't be resumed. Needs read scope, and the agent can propose only with propose scope. A thread is the caller's own, and its id is theirs to choose, so a new id starts a new thread.",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/chat/settings": {
+      "get": {
+        "operationId": "get_settings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSettingsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Whether chat is on, what it may spend and what it has spent today.",
+        "tags": [
+          "chat"
+        ]
+      },
+      "put": {
+        "operationId": "put_settings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatSettingsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSettingsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Turns chat on or off. It's off until an admin turns it on, because on means this vault's content goes to the configured LLM. Needs admin scope.",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/chat/threads": {
+      "get": {
+        "operationId": "list_threads",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "From `next_cursor` of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 200. The default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`created`, the default.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatThreadPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Your own threads, the most recently updated first, so the only `sort` here is `updated`. Nobody can list another's, whatever their scope.",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/chat/threads/{tid}": {
+      "delete": {
+        "operationId": "delete_thread",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Deletes one of your threads and everything in it, and stops any run in it. Today's spending stays counted.",
+        "tags": [
+          "chat"
+        ]
+      },
+      "get": {
+        "operationId": "get_thread",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "From `next_cursor` of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 200. The default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`created`, the default.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatThreadDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "One of your threads with a page of its messages, oldest first. Anyone else's looks like one that doesn't exist.",
+        "tags": [
+          "chat"
+        ]
+      },
+      "patch": {
+        "operationId": "rename_thread",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRenameBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatThreadDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Renames one of your threads.",
+        "tags": [
+          "chat"
         ]
       }
     },

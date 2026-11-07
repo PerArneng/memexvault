@@ -1,6 +1,8 @@
 //! Edge: the only crate that depends on ADK-Rust. One schema-only call with no tools, in plain types, so no ADK type leaves this file.
 //!
 //! The binary wraps this behind `memex_core::AgentRunner`, so this crate doesn't depend on core.
+mod chat;
+
 use adk_agent::LlmAgentBuilder;
 use adk_core::{Agent, Content, ErrorCategory, FinishReason, Llm, Part, RunConfig, SessionId, StreamingMode, UserId};
 use adk_model::gemini::{GeminiModel, ThinkingConfig, ThinkingLevel};
@@ -29,12 +31,15 @@ pub enum LlmEndpoint {
 }
 
 pub struct AdkAgent {
-    runtime: tokio::runtime::Runtime,
+    /// Taken only when this is dropped.
+    runtime: Option<tokio::runtime::Runtime>,
     llm: Arc<dyn Llm>,
     model: String,
     secret: Option<String>,
     counter: AtomicU64,
     native_schema: bool,
+    /// How often a running chat looks for a cancel.
+    chat_tick: Duration,
 }
 
 /// What Gemini's own `response_schema` takes. It refuses anything else with a 400, so the rest is left out of what's sent, and the full schema is still enforced on the reply by the caller.
@@ -149,7 +154,8 @@ impl AdkAgent {
             .build()
             .map_err(|e| e.to_string())?;
         Ok(Self {
-            runtime,
+            chat_tick: Duration::from_millis(25),
+            runtime: Some(runtime),
             llm,
             model,
             secret,
@@ -160,6 +166,10 @@ impl AdkAgent {
 
     pub fn model(&self) -> &str {
         &self.model
+    }
+
+    fn runtime(&self) -> &tokio::runtime::Runtime {
+        self.runtime.as_ref().expect("the runtime lives until this is dropped")
     }
 
     fn map(&self, e: adk_core::AdkError) -> AgentError {
@@ -250,12 +260,21 @@ impl AdkAgent {
 
     /// Blocks until the reply, or the request's own time limit.
     pub fn run(&self, req: &AgentRequest) -> Result<AgentReply, AgentError> {
-        self.runtime.block_on(async {
+        self.runtime().block_on(async {
             match tokio::time::timeout(Duration::from_millis(req.budget.timeout_ms), self.call(req)).await {
                 Ok(result) => result,
                 Err(_) => Err(AgentError::Timeout),
             }
         })
+    }
+}
+
+impl Drop for AdkAgent {
+    /// The HTTP server's last reference can go inside its own runtime, where dropping a runtime the usual way panics.
+    fn drop(&mut self) {
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_background();
+        }
     }
 }
 

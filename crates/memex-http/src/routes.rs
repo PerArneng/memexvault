@@ -1,9 +1,12 @@
 mod audit;
+mod chat;
 mod entities;
 mod extraction;
 mod meeting;
 mod pages;
 mod review;
+
+pub use chat::chat_routes;
 
 use crate::browser::{self, ConsoleLookup};
 use crate::error::ApiError;
@@ -159,6 +162,7 @@ struct ApiDoc;
 pub fn openapi() -> utoipa::openapi::OpenApi {
     let mut doc = ApiDoc::openapi();
     doc.merge(audit::AuditDoc::openapi());
+    doc.merge(chat::ChatDoc::openapi());
     doc.merge(entities::EntityDoc::openapi());
     doc.merge(extraction::ExtractionDoc::openapi());
     doc.merge(meeting::MeetingDoc::openapi());
@@ -244,6 +248,7 @@ where
         .route("/tokens", get(list_tokens::<E>).post(create_token::<E>))
         .route("/tokens/{id}", axum::routing::delete(revoke_token::<E>));
     let api = audit::add_routes::<E>(api);
+    let api = chat::add_routes::<E>(api);
     let api = entities::add_routes::<E>(api);
     let api = extraction::add_routes::<E>(api);
     let api = meeting::add_routes::<E>(api);
@@ -1578,6 +1583,12 @@ where
 {
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!(addr = %listener.local_addr()?, "listening");
+    // A small event waiting on the last one's ACK would hold a stream back.
+    let listener = axum::serve::ListenerExt::tap_io(listener, |stream| {
+        if let Err(e) = stream.set_nodelay(true) {
+            tracing::warn!(error = %e, "couldn't set TCP_NODELAY");
+        }
+    });
     axum::serve(
         listener,
         router_with(server, browser::embedded_asset, extra).into_make_service_with_connect_info::<std::net::SocketAddr>(),

@@ -273,4 +273,78 @@ impl Store for PostgresStore {
     fn compact(&self, lease: &WriterLease) -> Result<(), StoreError> {
         self.0.compact(&lease_of(lease)).map_err(|e| translate(&lease.vault, e))
     }
+
+    fn chat_create_thread(&self, vault: &VaultId, thread: &memex_types::ChatThread) -> Result<bool, StoreError> {
+        self.0.chat_create_thread(vault, thread).map_err(|e| translate(vault, e))
+    }
+
+    fn chat_thread(&self, vault: &VaultId, key: &memex_types::ChatThreadKey) -> Result<Option<memex_types::ChatThread>, StoreError> {
+        self.0.chat_thread(vault, key).map_err(|e| translate(vault, e))
+    }
+
+    fn chat_threads(&self, vault: &VaultId, owner: &str, after: Option<(i64, &str)>, limit: usize) -> Result<Vec<memex_types::ChatThread>, StoreError> {
+        self.0.chat_threads(vault, owner, after, limit).map_err(|e| translate(vault, e))
+    }
+
+    fn chat_rename_thread(&self, vault: &VaultId, key: &memex_types::ChatThreadKey, title: &str, now_ms: i64) -> Result<bool, StoreError> {
+        self.0.chat_rename_thread(vault, key, title, now_ms).map_err(|e| translate(vault, e))
+    }
+
+    fn chat_delete_thread(&self, vault: &VaultId, key: &memex_types::ChatThreadKey) -> Result<bool, StoreError> {
+        self.0.chat_delete_thread(vault, key).map_err(|e| translate(vault, e))
+    }
+
+    fn chat_append_messages(
+        &self,
+        vault: &VaultId,
+        key: &memex_types::ChatThreadKey,
+        messages: &[memex_types::ChatMessage],
+        now_ms: i64,
+    ) -> Result<bool, StoreError> {
+        self.0.chat_append_messages(vault, key, messages, now_ms).map_err(|e| translate(vault, e))
+    }
+
+    fn chat_messages(
+        &self,
+        vault: &VaultId,
+        key: &memex_types::ChatThreadKey,
+        after: Option<u64>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::ChatStored>, StoreError> {
+        self.0.chat_messages(vault, key, after, limit).map_err(|e| translate(vault, e))
+    }
+
+    fn chat_record_sources(&self, vault: &VaultId, key: &memex_types::ChatThreadKey, sources: &[ObjectId]) -> Result<bool, StoreError> {
+        self.0.chat_record_sources(vault, key, sources).map_err(|e| translate(vault, e))
+    }
+
+    fn chat_sources(&self, vault: &VaultId, key: &memex_types::ChatThreadKey) -> Result<Vec<ObjectId>, StoreError> {
+        self.0.chat_sources(vault, key).map_err(|e| translate(vault, e))
+    }
+
+    fn chat_threads_citing(&self, vault: &VaultId, source: &ObjectId, limit: usize) -> Result<Vec<memex_types::ChatThreadKey>, StoreError> {
+        self.0.chat_threads_citing(vault, source, limit).map_err(|e| translate(vault, e))
+    }
+
+    fn chat_reserve(
+        &self,
+        vault: &VaultId,
+        key: &memex_types::ChatThreadKey,
+        day: i64,
+        tokens: u64,
+        thread_limit: u64,
+        day_limit: u64,
+    ) -> Result<memex_types::ChatReservation, StoreError> {
+        self.0
+            .chat_reserve(vault, key, day, tokens, thread_limit, day_limit)
+            .map_err(|e| translate(vault, e))
+    }
+
+    fn chat_settle(&self, vault: &VaultId, key: &memex_types::ChatThreadKey, day: i64, delta: i64) -> Result<(), StoreError> {
+        self.0.chat_settle(vault, key, day, delta).map_err(|e| translate(vault, e))
+    }
+
+    fn chat_day_tokens(&self, vault: &VaultId, day: i64) -> Result<u64, StoreError> {
+        self.0.chat_day_tokens(vault, day).map_err(|e| translate(vault, e))
+    }
 }

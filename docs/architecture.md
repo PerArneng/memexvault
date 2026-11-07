@@ -404,16 +404,18 @@ One server-sent event stream per vault feeds the console's live views (spec 038)
 
 ## Chat agent
 
-A separate, opt-in surface (spec 049). It's off per vault until an admin enables it, because it sends vault content to the configured LLM. The
-search path stays free of LLMs, and the chat agent calls search like any other client.
+A separate, opt-in surface (spec 049). It's off per vault until an admin enables it, because it sends vault content to the configured LLM, and the server has no agent at all unless `MEMEX_CHAT_MODEL` names a model. The search path stays free of LLMs, and the chat agent calls search like any other client.
 
-- **Protocol.** AG-UI over server-sent events. A pure mapping turns `AgentRunner` streaming events into AG-UI events, and `memex-http` serves
-  them with our own auth. ADK stays confined to `memex-agent-adk`. ADK `=2.3.0` streams text deltas and tool events, and it streams only while the agent has no
-  output guardrails. See spec 034.
-- **Tools.** Search, read, provenance and propose. It holds `propose` scope only and can't fetch URLs.
-- **Changes** go to the normal review queue, and a human approves them. Runs don't pause for approval, and AG-UI interrupts aren't used.
-- **Threads** live in the vault's schema and aren't indexed for search. Erasing a Source deletes the threads that cite it, because a model's reply
-  may paraphrase content in ways a byte scan can't find.
+- **Protocol.** AG-UI over server-sent events, at `POST /vaults/{id}/chat/runs`. `AgentRunner::chat` runs on ADK's `Runner` in `memex-agent-adk`, a `ChatHost` from core decides what each model call may spend and runs the tools, and a pure mapper turns its events into AG-UI's. ADK `=2.3.0` streams text deltas and tool events only while the agent has no output guardrails, so there are none. See spec 034.
+- **Tools.** `search`, `read`, `provenance` and `propose`, compiled in with a pinned hash, and each answer is `{notice, trust_tiers, data}`. They run as the person asking, whose token is read fresh at every model call and tool call, and they can't reach above `propose` however much that person holds. None takes a URL, and a tool that doesn't exist is an error for the model to read.
+- **Changes** go to the normal review queue, attributed to `chat-agent` with the person in `requested_by`, and only a person approves them. Runs don't pause for approval, and AG-UI interrupts aren't used. **A chat proposal never auto-commits, whatever the combination has earned, and neither a decision on one nor an audit of its claim counts as a sample.** A chat answers one person's question, which isn't the kind of output a combination's record is about.
+- **Threads** are `(owner, id)`, so the same id under another principal is another thread and nobody can reach another's, server admins included. They live in the vault's schema, **off the event log**, as a copy in the log would outlive their deletion, so they aren't in an export. They aren't indexed for search, and no index holds their content. A thread's history is what the server stored: a client's `messages` other than the newest user message are ignored.
+- **The log holds only ids and counts.** The vault's setting and each run's Derivation (kind `chat_run`, with the model, prompt hash, tokens and the segments it read) are events. A run's Derivation holds no text, so it can outlive its thread.
+- **Erasure.** `Server::erase_chat_threads_citing` deletes every thread a source's content reached, through any tool, whether or not a reply cited it, because a reply may paraphrase in ways a byte scan can't find. A source is recorded before a tool's answer goes anywhere, and then checked to be still there. `Store::compact` rewrites the chat tables, as plain `VACUUM` leaves a dead row's bytes on its page. Spec 030 still has to call this. Postgres's WAL and backups keep what they kept.
+- **Budgets.** Per thread and per vault per UTC day, set per vault or by server default. Each call reserves its estimated input and its output limit before it's made, in one transaction on the thread and the day, so concurrent runs can't both take what's left, and a call that can't fit isn't made. What the provider reports replaces the reservation. A provider that doesn't report, or a cancelled call, is charged an estimate that errs high and is never zero: input at 3 characters per token, and output from what was seen. A crash leaves the reservation charged. Deleting a thread gives no budget back.
+- **Ending a run.** A client going away cancels it, and it can't be resumed. A budget, a cancel, a call limit or a reply cut at its limit is a `RUN_FINISHED` whose `result.stop` says why. A provider's failure, or a model that finishes having said nothing, is a `RUN_ERROR` with a fixed message and a code, and the provider's text stays in the server's log. What was said before the end is kept, marked with why.
+- **Connections.** A run holds no connection, transaction or lock while the model works, and a run takes a slot of `MEMEX_CHAT_MAX_RUNS`, beyond which it's refused with 429.
+- **Thinking stays off,** as in extraction: `enable_thinking: false` on a local server and the lowest level on Gemini. It multiplied tokens in spec 007, it spends the same budget as the reply, and the first visible text would wait behind it. Thinking parts are never shown or stored.
 
 ## Targets
 
