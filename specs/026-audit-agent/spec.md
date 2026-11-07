@@ -38,6 +38,8 @@ checks" requirement.
    and a missed schedule.
 8. A run triggered through the route with a given seed gives the same sample as a scheduled run with that seed.
 
+**Pass rule for item 6, set before measuring.** At spec 004's 200k-segment corpus with one claim per 20 segments, 4 search clients run hybrid searches with caches off, in six pairs of 30-second rounds, each pair one idle round followed straight away by one round with audits running end to end in a loop (a sample of 200, on deterministic checks and a reconciliation, with no LLM, as a real model's calls wait on the network and cost this machine nothing). The result passes if the median across pairs of audit p95 divided by idle p95 is at most 1.5. Each pair's two p95s, the ratio and the load average are recorded. A miss stays a miss. If the corpus can't be loaded in reasonable time on the busy machine, the same rule runs at 50k and the result says it's not the 200k number.
+
 ## Out of scope
 Auto-fixing findings, and agent reputation.
 
