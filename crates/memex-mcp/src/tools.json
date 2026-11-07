@@ -1,0 +1,156 @@
+[
+  {
+    "name": "search",
+    "description": "Hybrid keyword and vector search. Answers with claims first, then segments and pages, each with citations and trust tiers. Cite what you use.",
+    "annotations": {"readOnlyHint": true},
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["q"],
+      "properties": {
+        "vault": {"type": "string", "description": "Vault id. Needed only if the token sees several."},
+        "q": {"type": "string", "description": "Words and double-quoted phrases."},
+        "mode": {"enum": ["hybrid", "lexical", "vector"]},
+        "limit": {"type": "integer", "description": "Items per page, 1 to 100. Default 20."},
+        "budget_tokens": {"type": "integer", "description": "Most estimated tokens per page. Default 4000."},
+        "cursor": {"type": "string"},
+        "kind": {"type": "string", "description": "Comma-separated: segment, claim, entity, page, block."},
+        "type": {"type": "string", "description": "Media type, predicate or entity type."},
+        "source_id": {"type": "string"},
+        "trust_tier": {"type": "string", "description": "verified, trusted, unverified or untrusted."},
+        "epistemic": {"type": "string"},
+        "valid_at_ms": {"type": "integer"},
+        "as_of": {"type": "integer", "description": "The vault as of this event. Slow."},
+        "as_of_ms": {"type": "integer"},
+        "min_seq": {"type": "integer", "description": "Wait until indexes reach this event, to read your writes."},
+        "min_seq_wait_ms": {"type": "integer"},
+        "rerank": {"type": "boolean"},
+        "expand": {"enum": ["auto", "on", "off"], "description": "Follow links from the best hits."},
+        "attr": {"type": "string", "description": "<type>.<field>: search one entity field."},
+        "facets": {"type": "boolean"},
+        "debug": {"type": "boolean"},
+        "detail": {"enum": ["concise", "detailed"]}
+      }
+    }
+  },
+  {
+    "name": "get",
+    "description": "Reads one object by kind and id.",
+    "annotations": {"readOnlyHint": true},
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "vault": {"type": "string"},
+        "kind": {"enum": ["page", "entity", "source", "segment", "claim", "changeset", "job"]},
+        "id": {"type": "string"},
+        "revision": {"type": "integer", "description": "A page's past revision."},
+        "cursor": {"type": "string"},
+        "detail": {"enum": ["concise", "detailed"]}
+      }
+    }
+  },
+  {
+    "name": "neighborhood",
+    "description": "Links at one object, both ways, one hop: wiki links, claim references and contradictions.",
+    "annotations": {"readOnlyHint": true},
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "vault": {"type": "string"},
+        "id": {"type": "string"},
+        "kinds": {"type": "string", "description": "Comma-separated edge kinds, to replace the default three."},
+        "limit": {"type": "integer", "description": "1 to 200. Default 50."},
+        "cursor": {"type": "string"},
+        "detail": {"enum": ["concise", "detailed"]}
+      }
+    }
+  },
+  {
+    "name": "resolve",
+    "description": "Finds entities a name may refer to, exact matches first. It never merges: choosing is up to you.",
+    "annotations": {"readOnlyHint": true},
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mention"],
+      "properties": {
+        "vault": {"type": "string"},
+        "mention": {"type": "string"},
+        "type": {"type": "string", "description": "Only entities of this type."},
+        "limit": {"type": "integer", "description": "1 to 50. Default 10."},
+        "cursor": {"type": "string"},
+        "detail": {"enum": ["concise", "detailed"]}
+      }
+    }
+  },
+  {
+    "name": "propose",
+    "description": "Proposes changes as one atomic changeset. It's validated, then committed or queued for review. Needs propose scope.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ops", "rationale", "idempotency_key"],
+      "properties": {
+        "vault": {"type": "string"},
+        "ops": {"type": "array", "items": {"type": "object"}, "description": "Each has `op`, such as add_assertion, supersede_assertion, create_page, edit_page or add_edge. New ids are yours to choose. Changes to existing rows give base_version."},
+        "rationale": {"type": "string"},
+        "idempotency_key": {"type": "string", "description": "The same key returns the first result instead of repeating it."},
+        "dry_run": {"type": "boolean", "description": "Validate and decide, but write nothing."},
+        "detail": {"enum": ["concise", "detailed"]}
+      }
+    }
+  },
+  {
+    "name": "ingest",
+    "description": "Stores a PDF, text or Markdown document and queues its processing. Follow the job with `get`. Needs propose scope.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "vault": {"type": "string"},
+        "name": {"type": "string", "description": "File name, with extension."},
+        "text": {"type": "string", "description": "The content, for text. Give this or content_base64."},
+        "content_base64": {"type": "string", "description": "The content, up to 8 MiB."},
+        "trust_tier": {"type": "string", "description": "Default unverified."},
+        "replaces": {"type": "string", "description": "The source this is a new version of."},
+        "detail": {"enum": ["concise", "detailed"]}
+      }
+    }
+  },
+  {
+    "name": "changes",
+    "description": "The vault's event log in order, after a cursor.",
+    "annotations": {"readOnlyHint": true},
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vault": {"type": "string"},
+        "cursor": {"type": "string", "description": "A next_cursor, which is an event number."},
+        "limit": {"type": "integer", "description": "1 to 200. Default 50."},
+        "detail": {"enum": ["concise", "detailed"], "description": "detailed adds each event's payload."}
+      }
+    }
+  },
+  {
+    "name": "provenance",
+    "description": "Where a claim comes from: who proposed it, and each piece of evidence with its quote, source, trust tier and page rectangles.",
+    "annotations": {"readOnlyHint": true},
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "vault": {"type": "string"},
+        "id": {"type": "string", "description": "The claim's id."},
+        "cursor": {"type": "string"},
+        "detail": {"enum": ["concise", "detailed"]}
+      }
+    }
+  }
+]

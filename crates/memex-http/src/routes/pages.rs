@@ -1,5 +1,5 @@
 //! Routes for wiki pages. Writes are proposals, so they answer as `/proposals` does.
-use super::entities::{invalid, result_of, text_of};
+use super::entities::{invalid, result_of};
 use super::{App, RequestId, authed, body};
 use crate::error::ApiError;
 use axum::extract::rejection::JsonRejection;
@@ -9,7 +9,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use memex_api::{ErrorBody, ListParams, ProposalQuery, ProposalResult, page_of};
-use memex_core::{ClaimRefStatus, ClaimReference, EntityClaim, NewPage, Server, ServerEdges};
+use memex_core::{NewPage, Server, ServerEdges};
 use memex_types::{ObjectId, VaultId};
 use utoipa::OpenApi;
 
@@ -30,7 +30,8 @@ use utoipa::OpenApi;
         revisions,
         diff,
         backlinks,
-        links
+        links,
+        neighborhood
     ),
     components(schemas(
         memex_api::PageSummaryDto,
@@ -56,7 +57,9 @@ use utoipa::OpenApi;
         memex_api::OutgoingLinkPage,
         memex_api::UnresolvedLinkDto,
         memex_api::UnresolvedLinkPage,
-        memex_api::PageRedirectDto
+        memex_api::PageRedirectDto,
+        memex_api::NeighborDto,
+        memex_api::NeighborPage
     ))
 )]
 pub(super) struct PageDoc;
@@ -80,36 +83,7 @@ where
         .route("/vaults/{id}/pages/{pid}/diff", get(diff::<E>))
         .route("/vaults/{id}/pages/{pid}/backlinks", get(backlinks::<E>))
         .route("/vaults/{id}/pages/{pid}/links", get(links::<E>))
-}
-
-fn claim_ref_dto(c: ClaimReference) -> memex_api::PageClaimDto {
-    let status = match c.status {
-        ClaimRefStatus::Current => "current",
-        ClaimRefStatus::Superseded => "superseded",
-        ClaimRefStatus::Missing => "missing",
-    };
-    let mut dto = memex_api::PageClaimDto {
-        claim_id: c.claim_id.0,
-        status: status.into(),
-        current_claim_id: None,
-        subject: None,
-        predicate: None,
-        value: None,
-        epistemic: None,
-        citations: vec![],
-    };
-    if let Some(EntityClaim { assertion, evidence }) = c.current {
-        dto.current_claim_id = Some(assertion.header.id.0);
-        dto.epistemic = Some(text_of(&assertion.epistemic));
-        dto.subject = Some(assertion.subject);
-        dto.predicate = Some(assertion.predicate);
-        dto.value = Some(assertion.value);
-        dto.citations = evidence
-            .into_iter()
-            .map(|x| memex_api::FieldEvidenceDto::new(x.evidence, x.segment, x.source))
-            .collect();
-    }
-    dto
+        .route("/vaults/{id}/objects/{oid}/neighborhood", get(neighborhood::<E>))
 }
 
 #[utoipa::path(get, path = "/api/v1/vaults/{id}/pages", tag = "pages", params(("id" = String, Path), ListParams), responses((status = 200, body = memex_api::PageSummaryPage), (status = 404, body = ErrorBody)))]
@@ -262,21 +236,7 @@ where
     Server<E>: Send + Sync,
 {
     let v = authed(server, headers, &rid, move |s, c| s.get_wiki_page(c, &VaultId(id), &ObjectId(pid), q.revision)).await?;
-    Ok(Json(memex_api::PageDetailDto {
-        id: v.page_id.0,
-        current_revision: v.current_revision,
-        current_slug: v.current_slug,
-        redirects: v.redirects,
-        revision: v.content.revision,
-        title: v.content.title,
-        slug: v.content.slug,
-        body: v.content.body,
-        blocks: v.content.blocks.into_iter().map(Into::into).collect(),
-        claims: v.claims.into_iter().map(claim_ref_dto).collect(),
-        creator: v.content.creator,
-        updated_at_ms: v.content.updated_at_ms,
-        restored_from: v.content.restored_from,
-    }))
+    Ok(Json(memex_api::page_detail(v)))
 }
 
 /// The page as a Markdown file with front matter, which import reads back.
@@ -513,4 +473,28 @@ where
             .collect(),
         next_cursor,
     }))
+}
+
+/// Every link at one object, both ways, one hop. Kinds default to wiki links, claim references and contradictions.
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/objects/{oid}/neighborhood", tag = "pages", params(("id" = String, Path), ("oid" = String, Path), ListParams, memex_api::NeighborhoodParams), responses((status = 200, body = memex_api::NeighborPage), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody)))]
+async fn neighborhood<E>(
+    State(server): State<App<E>>,
+    Extension(rid): Extension<RequestId>,
+    headers: HeaderMap,
+    Path((id, oid)): Path<(String, String)>,
+    Query(params): Query<ListParams>,
+    Query(extra): Query<memex_api::NeighborhoodParams>,
+) -> Result<Json<memex_api::NeighborPage>, ApiError>
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
+    let l = params.validated().map_err(|m| invalid(m, &rid))?;
+    let (limit, kinds) = (l.limit, extra.kinds());
+    let rows = authed(server, headers, &rid, move |s, c| {
+        let kinds: Vec<&str> = kinds.iter().map(String::as_str).collect();
+        s.neighborhood(c, &VaultId(id), &ObjectId(oid), &kinds, l.cursor.map(ObjectId).as_ref(), l.limit + 1)
+    })
+    .await?;
+    Ok(Json(memex_api::neighbor_page(rows, limit)))
 }

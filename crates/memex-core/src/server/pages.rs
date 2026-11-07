@@ -124,6 +124,22 @@ pub struct PageDiff {
     pub blocks: Vec<PageChange>,
 }
 
+/// One link at an object, seen from that object.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NeighborView {
+    pub edge_id: ObjectId,
+    pub kind: String,
+    /// `out` when the object is where the link starts.
+    pub direction: &'static str,
+    pub from: ObjectId,
+    pub to: ObjectId,
+    pub block_id: Option<ObjectId>,
+    /// What's at the other end. None is a link to a slug no page holds.
+    pub neighbor: Option<ObjectId>,
+    /// The other end's title, when it's a page.
+    pub title: Option<String>,
+}
+
 /// The page an import made or changed, and what became of the proposal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportedPage {
@@ -547,6 +563,86 @@ impl<E: ServerEdges> Server<E> {
             }
         }
         Ok(edges.into_iter().map(|e| outgoing(e, &holders, &claims)).collect())
+    }
+
+    /// Every link of these kinds at one object, both ways, one hop, in id order. A page's links through any slug it has ever had count. Two store calls and two more to name the other ends.
+    pub fn neighborhood(
+        &self,
+        caller: &Caller,
+        vault: &VaultId,
+        id: &ObjectId,
+        kinds: &[&str],
+        after: Option<&ObjectId>,
+        limit: usize,
+    ) -> Result<Vec<NeighborView>, ServerError> {
+        self.page_read_access(caller, vault)?;
+        let snap = self.engine.store().snapshot(vault)?;
+        let tables = [Table::Page, Table::Assertion, Table::Entity, Table::Source, Table::Segment];
+        let found = snap.get_many(&tables.map(|t| key(t, id)))?.into_iter().flatten().next();
+        let Some(found) = found else {
+            return Err(ServerError::NotFound);
+        };
+        let mut ends = vec![id.clone()];
+        if let Row::Page(p) = &found {
+            ends.extend(slugs_of(p));
+        }
+        let edges = snap.edges_linked(&ends, kinds, EdgeDirection::Both, after, limit)?;
+        let outgoing_of = |e: &EdgeRow| ends.contains(&e.from);
+        let mut keys: BTreeSet<RowKey> = BTreeSet::new();
+        for e in edges.iter().filter(|e| outgoing_of(e)) {
+            if let Some(s) = slug_of_target(&e.to) {
+                keys.insert(key(Table::Slug, &ObjectId(s.to_string())));
+            }
+        }
+        let keys: Vec<RowKey> = keys.into_iter().collect();
+        let mut holders: HashMap<String, ObjectId> = HashMap::new();
+        if !keys.is_empty() {
+            for row in snap.get_many(&keys)?.into_iter().flatten() {
+                if let Row::Slug(s) = row {
+                    holders.insert(s.header.id.0, s.page_id);
+                }
+            }
+        }
+        let neighbor = |e: &EdgeRow| -> Option<ObjectId> {
+            if !outgoing_of(e) {
+                return Some(e.from.clone());
+            }
+            match slug_of_target(&e.to) {
+                Some(s) => holders.get(s).cloned(),
+                None => Some(e.to.clone()),
+            }
+        };
+        let keys: Vec<RowKey> = edges
+            .iter()
+            .filter_map(&neighbor)
+            .collect::<BTreeSet<_>>()
+            .iter()
+            .map(|p| key(Table::Page, p))
+            .collect();
+        let mut titles: HashMap<ObjectId, String> = HashMap::new();
+        if !keys.is_empty() {
+            for row in snap.get_many(&keys)?.into_iter().flatten() {
+                if let Row::Page(p) = row {
+                    titles.insert(p.header.id, p.title);
+                }
+            }
+        }
+        Ok(edges
+            .iter()
+            .map(|e| {
+                let other = neighbor(e);
+                NeighborView {
+                    edge_id: e.header.id.clone(),
+                    kind: e.kind.clone(),
+                    direction: if outgoing_of(e) { "out" } else { "in" },
+                    from: e.from.clone(),
+                    to: e.to.clone(),
+                    block_id: e.block_id.clone(),
+                    title: other.as_ref().and_then(|o| titles.get(o).cloned()),
+                    neighbor: other,
+                }
+            })
+            .collect())
     }
 
     /// Broken links across the vault, in id order. They're listed, and nothing else minds them.

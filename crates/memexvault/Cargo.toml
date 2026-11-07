@@ -13,6 +13,7 @@ sha2.workspace = true
 ureq = "3"
 memex-core.workspace = true
 memex-http.workspace = true
+memex-mcp = { path = "../memex-mcp" }
 memex-inference = { path = "../memex-inference" }
 memex-vector = { path = "../memex-vector" }
 memex-lexical = { path = "../memex-lexical" }
@@ -27,7 +28,10 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+axum.workspace = true
 postgres.workspace = true
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+rmcp = { version = "=3.9.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
 
 [lints]
 workspace = true

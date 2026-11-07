@@ -36,6 +36,10 @@ pub struct Settings {
     /// Where `models fetch` puts model files.
     pub models_dir: PathBuf,
     pub http_bind: String,
+    /// The token `memexvault mcp` acts as, over stdio.
+    pub mcp_token: Option<String>,
+    /// Host names MCP over HTTP answers to. Only this machine's, unless a proxy in front needs others.
+    pub mcp_allowed_hosts: Vec<String>,
     pub backends: Backends,
     /// CPU threads for each embedding run, so background embedding can't take the whole machine.
     pub embed_threads: usize,
@@ -86,6 +90,8 @@ impl Default for Settings {
             data_dir: PathBuf::from("./memex-data"),
             models_dir: PathBuf::from("./memex-models"),
             http_bind: "127.0.0.1:8080".into(),
+            mcp_token: None,
+            mcp_allowed_hosts: vec!["localhost".into(), "127.0.0.1".into(), "::1".into()],
             backends: Backends::default(),
             embed_threads: 4,
             embed_query_sessions: 2,
@@ -108,6 +114,8 @@ impl fmt::Debug for Settings {
             .field("data_dir", &self.data_dir)
             .field("models_dir", &self.models_dir)
             .field("http_bind", &self.http_bind)
+            .field("mcp_token", &self.mcp_token.as_ref().map(|_| "<redacted>"))
+            .field("mcp_allowed_hosts", &self.mcp_allowed_hosts)
             .field("backends", &self.backends)
             .field("embed_threads", &self.embed_threads)
             .field("embed_query_sessions", &self.embed_query_sessions)
@@ -254,6 +262,10 @@ impl Settings {
         s.embed_query_sessions = count("MEMEX_EMBED_QUERY_SESSIONS", text("MEMEX_EMBED_QUERY_SESSIONS")?, s.embed_query_sessions)?;
         s.rerank_threads = count("MEMEX_RERANK_THREADS", text("MEMEX_RERANK_THREADS")?, s.rerank_threads)?;
         s.rerank_sessions = count("MEMEX_RERANK_SESSIONS", text("MEMEX_RERANK_SESSIONS")?, s.rerank_sessions)?;
+        s.mcp_token = text("MEMEX_MCP_TOKEN")?;
+        if let Some(v) = text("MEMEX_MCP_ALLOWED_HOSTS")? {
+            s.mcp_allowed_hosts = v.split(',').map(str::trim).filter(|h| !h.is_empty()).map(String::from).collect();
+        }
         if let Some(v) = text("MEMEX_HTTP_BIND")? {
             let port_ok = v.rsplit_once(':').is_some_and(|(host, port)| !host.is_empty() && port.parse::<u16>().is_ok());
             if !port_ok {
@@ -295,6 +307,19 @@ mod tests {
     fn from(vars: &[(&str, &str)]) -> Result<Settings, SettingsError> {
         let map: HashMap<String, String> = vars.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
         Settings::from_vars(|name| map.get(name).cloned())
+    }
+
+    #[test]
+    fn the_mcp_token_is_redacted_and_hosts_stay_local_unless_named() {
+        let s = from(&[
+            ("MEMEX_MCP_TOKEN", "mxt_secret"),
+            ("MEMEX_MCP_ALLOWED_HOSTS", "kb.example.org, kb.example.org:443"),
+        ])
+        .unwrap();
+        assert_eq!(s.mcp_token.as_deref(), Some("mxt_secret"));
+        assert_eq!(s.mcp_allowed_hosts, ["kb.example.org", "kb.example.org:443"]);
+        assert!(!format!("{s:?}").contains("mxt_secret"));
+        assert!(from(&[]).unwrap().mcp_allowed_hosts.contains(&"127.0.0.1".to_string()));
     }
 
     #[test]

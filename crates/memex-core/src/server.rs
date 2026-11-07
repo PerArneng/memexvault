@@ -7,8 +7,8 @@ pub use entities::{
 };
 pub use extraction::{ExtractJobError, ExtractionReport};
 pub use pages::{
-    BacklinkView, ClaimRefStatus, ClaimReference, ImportedPage, NewPage, OutgoingLink, PageChange, PageDiff, PageRedirect, PageRevisionView, PageView,
-    UnresolvedLink,
+    BacklinkView, ClaimRefStatus, ClaimReference, ImportedPage, NeighborView, NewPage, OutgoingLink, PageChange, PageDiff, PageRedirect, PageRevisionView,
+    PageView, UnresolvedLink,
 };
 pub use review::{AutoCommitEntry, AutoCommitTable, BatchDecision, ReviewDetail, ReviewEvidence, ReviewItem};
 
