@@ -2,8 +2,8 @@
 use super::{Server, ServerEdges, ServerError};
 use crate::activity::{self, ActivityLimits, DocumentStage, EmbedState, Progress, StageInputs};
 use crate::auth::{Caller, Operation};
-use crate::{PAGE_LIMIT, RENDITION_JOB, Snapshot, Store, TRANSCRIBE_JOB, VectorIndex};
 use crate::{CacheMarks, LexicalIndex};
+use crate::{PAGE_LIMIT, RENDITION_JOB, Snapshot, Store, TRANSCRIBE_JOB, VectorIndex};
 use memex_types::{DocumentFacts, Event, Generation, JobRow, JobState, ObjectId, ProgressEntry, ProgressUpdate, Row, SourceRow, Stage, Table, VaultId};
 use std::collections::HashMap;
 
@@ -81,8 +81,9 @@ impl<E: ServerEdges> Server<E> {
 
     /// The time of the event the slowest index has reached, or none when both have reached the head.
     fn indexed_to_ms<S: Snapshot>(&self, snap: &S, vault: &VaultId, head: Option<u64>) -> Result<Option<i64>, ServerError> {
-        let lexical = LexicalIndex::watermark(&self.lexical, vault, Generation::Live)?;
-        let vector = VectorIndex::watermark(&self.vector, vault, Generation::Live)?;
+        // An index that can't say, or hasn't been built yet, hasn't reached anything. That's a fact for the board, and no reason to refuse it.
+        let lexical = LexicalIndex::watermark(&self.lexical, vault, Generation::Live).ok().flatten();
+        let vector = VectorIndex::live_mark(&self.vector, vault).ok().flatten();
         let slowest = match (lexical, vector) {
             (Some(l), Some(v)) => Some(l.min(v)),
             _ => None,

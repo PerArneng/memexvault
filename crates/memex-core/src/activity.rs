@@ -131,11 +131,16 @@ pub fn resume_request(last_event_id: Option<&str>, after: Option<&str>) -> Resum
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResumePlan {
     /// Only what comes next. `named` says the client asked for this very position.
-    Live { named: bool },
+    Live {
+        named: bool,
+    },
     /// What the ring holds after this position.
     FromRing(i64),
     /// From the log, after the first position and up to the second, and then what comes next.
-    FromLog { after: i64, until: i64 },
+    FromLog {
+        after: i64,
+        until: i64,
+    },
     Resync(ResyncReason),
 }
 
@@ -214,7 +219,7 @@ impl ProgressBoard {
     /// What changed since a version, oldest report first, with the version to ask from next.
     pub fn since(&self, vault: &VaultId, version: u64) -> (Vec<ProgressEntry>, u64) {
         let vaults = self.vaults.lock().expect("lock");
-        let Some(board) = vaults.get(vault) else { return (vec![], version) };
+        let Some(board) = vaults.get(vault) else { return (vec![], 0) };
         let mut changed: Vec<&(u64, ProgressEntry)> = board.entries.values().filter(|(v, _)| *v > version).collect();
         changed.sort_by_key(|(v, _)| *v);
         (changed.into_iter().map(|(_, e)| e.clone()).collect(), board.version)
@@ -292,10 +297,7 @@ pub struct DocumentStage {
 
 fn rendition_is_partial(facts: &DocumentFacts) -> bool {
     facts.rendition.as_ref().is_some_and(|r| {
-        r.media.as_ref().is_some_and(|m| m.skipped_spans > 0)
-            || r.pages
-                .iter()
-                .any(|p| p.flags.iter().any(|f| matches!(f, PageFlag::OcrFailed { .. })))
+        r.media.as_ref().is_some_and(|m| m.skipped_spans > 0) || r.pages.iter().any(|p| p.flags.iter().any(|f| matches!(f, PageFlag::OcrFailed { .. })))
     })
 }
 
@@ -489,7 +491,10 @@ mod tests {
     fn an_upload_nothing_has_touched_is_stored() {
         let f = facts();
         let j = job(RENDITION_JOB);
-        let s = document_stage(StageInputs { parse_job: Some(&j), ..inputs(&f) });
+        let s = document_stage(StageInputs {
+            parse_job: Some(&j),
+            ..inputs(&f)
+        });
         assert_eq!(pair(&s), (Stage::Stored, StageStatus::Queued));
         assert_eq!(s.job_id, Some(id("j")));
         assert_eq!(pair(&document_stage(inputs(&f))), (Stage::Stored, StageStatus::Queued));
@@ -500,7 +505,10 @@ mod tests {
         let f = facts();
         let j = jobs::claimed(job(RENDITION_JOB), "w", 200);
         assert_eq!(
-            pair(&document_stage(StageInputs { parse_job: Some(&j), ..inputs(&f) })),
+            pair(&document_stage(StageInputs {
+                parse_job: Some(&j),
+                ..inputs(&f)
+            })),
             (Stage::Parsing, StageStatus::Active)
         );
         let ocr = ProgressUpdate {
@@ -516,7 +524,10 @@ mod tests {
             ..inputs(&f)
         });
         assert_eq!(pair(&s), (Stage::Ocr, StageStatus::Active));
-        let segmenting = ProgressUpdate { stage: Stage::Segmenting, ..ocr.clone() };
+        let segmenting = ProgressUpdate {
+            stage: Stage::Segmenting,
+            ..ocr.clone()
+        };
         assert_eq!(
             document_stage(StageInputs {
                 parse_job: Some(&j),
@@ -528,7 +539,10 @@ mod tests {
         );
         let t = jobs::claimed(job(TRANSCRIBE_JOB), "w", 200);
         assert_eq!(
-            pair(&document_stage(StageInputs { parse_job: Some(&t), ..inputs(&f) })),
+            pair(&document_stage(StageInputs {
+                parse_job: Some(&t),
+                ..inputs(&f)
+            })),
             (Stage::Transcription, StageStatus::Active)
         );
     }
@@ -572,23 +586,37 @@ mod tests {
         let f = facts();
         let held = jobs::claimed(job(RENDITION_JOB), "w", 200);
         let retrying = jobs::failed(held.clone(), "boom", true, 300, 0);
-        let s = document_stage(StageInputs { parse_job: Some(&retrying), ..inputs(&f) });
+        let s = document_stage(StageInputs {
+            parse_job: Some(&retrying),
+            ..inputs(&f)
+        });
         assert_eq!(pair(&s), (Stage::Parsing, StageStatus::Retrying));
         assert_eq!(s.attempts, 1);
         let waiting = jobs::waiting(held.clone(), "away", 300, 0);
         // Its attempt was taken back, and it's still waiting rather than merely queued.
         assert_eq!(
-            document_stage(StageInputs { parse_job: Some(&waiting), ..inputs(&f) }).status,
+            document_stage(StageInputs {
+                parse_job: Some(&waiting),
+                ..inputs(&f)
+            })
+            .status,
             StageStatus::Waiting
         );
         let dead = jobs::failed(held.clone(), "bad", false, 300, 0);
         assert_eq!(
-            pair(&document_stage(StageInputs { parse_job: Some(&dead), ..inputs(&f) })),
+            pair(&document_stage(StageInputs {
+                parse_job: Some(&dead),
+                ..inputs(&f)
+            })),
             (Stage::Parsing, StageStatus::Failed)
         );
         let cancelled = jobs::cancelled(held, 300).unwrap();
         assert_eq!(
-            document_stage(StageInputs { parse_job: Some(&cancelled), ..inputs(&f) }).status,
+            document_stage(StageInputs {
+                parse_job: Some(&cancelled),
+                ..inputs(&f)
+            })
+            .status,
             StageStatus::Failed
         );
     }
@@ -598,12 +626,19 @@ mod tests {
         let f = with_rendition();
         let dead_after = jobs::failed(jobs::claimed(job(RENDITION_JOB), "w", 2000), "bad", false, 3000, 0);
         assert_eq!(
-            pair(&document_stage(StageInputs { parse_job: Some(&dead_after), ..inputs(&f) })),
+            pair(&document_stage(StageInputs {
+                parse_job: Some(&dead_after),
+                ..inputs(&f)
+            })),
             (Stage::Parsing, StageStatus::Failed)
         );
         let dead_before = jobs::failed(jobs::claimed(job(RENDITION_JOB), "w", 100), "bad", false, 500, 0);
         assert_eq!(
-            document_stage(StageInputs { parse_job: Some(&dead_before), ..inputs(&f) }).stage,
+            document_stage(StageInputs {
+                parse_job: Some(&dead_before),
+                ..inputs(&f)
+            })
+            .stage,
             Stage::Done
         );
     }
@@ -734,17 +769,18 @@ mod tests {
         );
     }
 
-    const LIMITS: BufferLimits = BufferLimits {
-        max_frames: 4,
-        max_bytes: 100,
-    };
+    const LIMITS: BufferLimits = BufferLimits { max_frames: 4, max_bytes: 100 };
 
     #[test]
     fn durable_frames_overflow_only_at_the_limit() {
         assert_eq!(admit(FrameClass::Durable, 3, 10, 10, LIMITS), Admission::Accept);
         assert_eq!(admit(FrameClass::Durable, 4, 10, 10, LIMITS), Admission::Overflow);
         assert_eq!(admit(FrameClass::Durable, 1, 95, 10, LIMITS), Admission::Overflow);
-        assert_eq!(admit(FrameClass::Durable, 0, 0, 1000, LIMITS), Admission::Accept, "an empty buffer takes a huge frame");
+        assert_eq!(
+            admit(FrameClass::Durable, 0, 0, 1000, LIMITS),
+            Admission::Accept,
+            "an empty buffer takes a huge frame"
+        );
     }
 
     #[test]
@@ -782,7 +818,11 @@ mod tests {
         assert_eq!(plan(ResumeRequest::After(90), Some(80)), FromRing(90));
         assert_eq!(plan(ResumeRequest::After(79), Some(80)), FromRing(79), "the ring starts right after this");
         assert_eq!(plan(ResumeRequest::After(78), Some(80)), FromLog { after: 78, until: 100 });
-        assert_eq!(plan(ResumeRequest::After(10), Some(0)), FromLog { after: 10, until: 100 }, "too much for its buffer");
+        assert_eq!(
+            plan(ResumeRequest::After(10), Some(0)),
+            FromLog { after: 10, until: 100 },
+            "too much for its buffer"
+        );
         assert_eq!(plan(ResumeRequest::After(-1), None), FromLog { after: -1, until: 100 });
     }
 
@@ -813,7 +853,10 @@ mod tests {
         b.report(&v, update("b", 1), 2);
         b.report(&v, update("a", 2), 3);
         let (seen, version) = b.since(&v, 0);
-        assert_eq!(seen.iter().map(|e| (e.update.job_id.0.as_str(), e.update.done)).collect::<Vec<_>>(), [("b", 1), ("a", 2)]);
+        assert_eq!(
+            seen.iter().map(|e| (e.update.job_id.0.as_str(), e.update.done)).collect::<Vec<_>>(),
+            [("b", 1), ("a", 2)]
+        );
         assert_eq!(b.since(&v, version).0, vec![]);
         b.report(&v, update("a", 3), 4);
         assert_eq!(b.since(&v, version).0.len(), 1);

@@ -1,8 +1,8 @@
 //! What the activity stream sends. A frame is built field by field from a fixed list: ids, kinds, stages, counts and timings. Nothing is copied across wholesale, so an event kind or row added later carries nothing into a frame until someone lists a field here. The row match has no catch-all, so a new row kind has to be decided on, and the decision that needs no thought is to count it.
 use memex_core::{ActivitySnapshot, ChangeSetRecorded, DocumentActivity, ResyncReason, StateRecorded, upcast};
 use memex_types::{
-    AuditRunRow, AuditRunState, ChangeSetRow, ChangeSetState, DerivationOutcome, DerivationRow, Event, ExtractionRow, JobRow, JobState, Mutation, ObjectId, ProgressEntry,
-    RenditionRow, Row, SourceRow, Table,
+    AuditRunRow, AuditRunState, ChangeSetRow, ChangeSetState, DerivationOutcome, DerivationRow, Event, ExtractionRow, JobRow, JobState, Mutation, ObjectId,
+    ProgressEntry, RenditionRow, Row, SourceRow, Table,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -439,6 +439,7 @@ pub fn frame_of(event: &Event) -> DurableFrame {
         }
         "changeset.recorded" => {
             if let Ok(p) = serde_json::from_value::<ChangeSetRecorded>(current.payload) {
+                frame.count(Table::ChangeSet);
                 push(&mut frame.changesets, &mut frame.omitted, ChangeSetFact::of(&p.changeset));
                 frame.add_mutations(&p.mutations);
             }

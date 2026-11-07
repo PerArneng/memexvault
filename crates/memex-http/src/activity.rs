@@ -303,7 +303,15 @@ impl Hub {
     }
 
     /// Joins the vault's feed, starting its reader if this is the first client. `head` and `generation` are what the log said a moment ago, and only a new feed uses them. Everything from here on reaches this client's buffer, so what it reads from the log needs only go up to the feed's position, and nothing is missed or repeated.
-    pub(crate) fn open<E>(self: &Arc<Self>, server: &Arc<Server<E>>, vault: &VaultId, head: i64, generation: u64, headers: &HeaderMap, request: ResumeRequest) -> Opened
+    pub(crate) fn open<E>(
+        self: &Arc<Self>,
+        server: &Arc<Server<E>>,
+        vault: &VaultId,
+        head: i64,
+        generation: u64,
+        headers: &HeaderMap,
+        request: ResumeRequest,
+    ) -> Opened
     where
         E: ServerEdges + Send + Sync + 'static,
         Server<E>: Send + Sync,
@@ -369,11 +377,7 @@ impl Hub {
         if self.stopping.load(Ordering::SeqCst) {
             client.end("server_stopping");
         }
-        Opened {
-            feed,
-            client,
-            catchup,
-        }
+        Opened { feed, client, catchup }
     }
 }
 

@@ -1,6 +1,6 @@
 use memex_types::{
-    AssertionRow, AuditCheckRow, AuditOutcome, BlockRow, ChangeSetRow, DerivationRow, DocKind, DocumentFacts, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event,
-    EvidenceRow, FieldFilter, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, QueueCount, RenditionRow, ReviewFilter, RevisionRow, Row, RowKey,
+    AssertionRow, AuditCheckRow, AuditOutcome, BlockRow, ChangeSetRow, DerivationRow, DocKind, DocumentFacts, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow,
+    Event, EvidenceRow, FieldFilter, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, QueueCount, RenditionRow, ReviewFilter, RevisionRow, Row, RowKey,
     SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
 };
 use std::fmt;

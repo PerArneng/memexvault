@@ -141,6 +141,9 @@ where
     };
     let vault = VaultId(id);
     let after = params.cursor.map(ObjectId);
-    let snapshot = authed(server, headers, &rid, move |s, c| s.activity_documents(c, &vault, stage, after.as_ref(), limit + 1)).await?;
+    let snapshot = authed(server, headers, &rid, move |s, c| {
+        s.activity_documents(c, &vault, stage, after.as_ref(), limit + 1)
+    })
+    .await?;
     Ok(Json(memex_api::activity_page(snapshot, limit)))
 }

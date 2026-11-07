@@ -1549,7 +1549,11 @@ impl PgSnapshot<'_> {
             .map(|(source, r)| memex_types::DocumentFacts {
                 source_id: source.clone(),
                 rendition: if let Some(Row::Rendition(x)) = cell(r, "rendition") { Some(x) } else { None },
-                extraction: if let Some(Row::Extraction(x)) = cell(r, "extraction") { Some(x) } else { None },
+                extraction: if let Some(Row::Extraction(x)) = cell(r, "extraction") {
+                    Some(x)
+                } else {
+                    None
+                },
                 extraction_job: if let Some(Row::Job(x)) = cell(r, "job") { Some(x) } else { None },
                 pending_review: r.get::<_, i64>("pending") as u64,
             })

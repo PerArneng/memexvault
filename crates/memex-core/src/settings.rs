@@ -440,7 +440,12 @@ impl Settings {
         a.buffer.max_frames = count("MEMEX_ACTIVITY_BUFFER_FRAMES", text("MEMEX_ACTIVITY_BUFFER_FRAMES")?, a.buffer.max_frames)?;
         a.buffer.max_bytes = count("MEMEX_ACTIVITY_BUFFER_BYTES", text("MEMEX_ACTIVITY_BUFFER_BYTES")?, a.buffer.max_bytes)?;
         a.poll_ms = count("MEMEX_ACTIVITY_POLL_MS", text("MEMEX_ACTIVITY_POLL_MS")?, a.poll_ms as usize)? as u64;
-        a.heartbeat_ms = count("MEMEX_ACTIVITY_HEARTBEAT_S", text("MEMEX_ACTIVITY_HEARTBEAT_S")?, (a.heartbeat_ms / 1000) as usize)? as u64 * 1000;
+        a.heartbeat_ms = count(
+            "MEMEX_ACTIVITY_HEARTBEAT_S",
+            text("MEMEX_ACTIVITY_HEARTBEAT_S")?,
+            (a.heartbeat_ms / 1000) as usize,
+        )? as u64
+            * 1000;
         a.recheck_ms = count("MEMEX_ACTIVITY_RECHECK_MS", text("MEMEX_ACTIVITY_RECHECK_MS")?, a.recheck_ms as usize)? as u64;
         a.stall_ms = count("MEMEX_ACTIVITY_STALL_S", text("MEMEX_ACTIVITY_STALL_S")?, (a.stall_ms / 1000) as usize)? as u64 * 1000;
         // Naming the API is the only thing that turns it on. A key on its own does nothing.

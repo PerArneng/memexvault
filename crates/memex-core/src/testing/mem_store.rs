@@ -95,7 +95,10 @@ impl Snapshot for MemSnapshot<'_> {
 
     fn document_facts(&self, sources: &[ObjectId]) -> Result<Vec<memex_types::DocumentFacts>, StoreError> {
         self.count();
-        let job_of = |id: &ObjectId| match self.state.rows.get(&RowKey { table: Table::Job, id: id.clone() }) {
+        let job_of = |id: &ObjectId| match self.state.rows.get(&RowKey {
+            table: Table::Job,
+            id: id.clone(),
+        }) {
             Some(Row::Job(j)) => Some(j.clone()),
             _ => None,
         };
