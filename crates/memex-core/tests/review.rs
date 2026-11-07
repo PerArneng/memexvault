@@ -346,7 +346,6 @@ fn there_are_at_least_30_injection_fixtures_in_all_four_places() {
     let mut ids: Vec<&str> = all.iter().map(|f| f.id.as_str()).collect();
     ids.dedup();
     assert_eq!(ids.len(), all.len());
-    println!("scripted, not a model: {} fixtures", all.len());
 }
 
 #[test]
@@ -1397,9 +1396,9 @@ fn the_queue_filters_counts_and_pages() {
     };
     assert_eq!(list(pending()), [a.header.id.clone(), b.header.id.clone(), c.header.id.clone()]);
     let with = |v| ReviewFilter { verdict: Some(v), ..pending() };
-    assert_eq!(list(with(VerdictFilter::Is(Verdict::Approve))), [a.header.id.clone()]);
-    assert_eq!(list(with(VerdictFilter::Is(Verdict::Reject))), [b.header.id.clone()]);
-    assert_eq!(list(with(VerdictFilter::None)), [c.header.id.clone()]);
+    assert_eq!(list(with(VerdictFilter::Is(Verdict::Approve))), std::slice::from_ref(&a.header.id));
+    assert_eq!(list(with(VerdictFilter::Is(Verdict::Reject))), std::slice::from_ref(&b.header.id));
+    assert_eq!(list(with(VerdictFilter::None)), std::slice::from_ref(&c.header.id));
     assert_eq!(list(with(VerdictFilter::Is(Verdict::Abstain))), Vec::<ObjectId>::new());
     let of_source = a.origin.as_ref().unwrap().source_ids[0].clone();
     assert_eq!(
@@ -1407,7 +1406,7 @@ fn the_queue_filters_counts_and_pages() {
             source_id: Some(of_source),
             ..pending()
         }),
-        [a.header.id.clone()]
+        std::slice::from_ref(&a.header.id)
     );
     assert_eq!(
         list(ReviewFilter {

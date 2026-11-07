@@ -4,7 +4,7 @@
 use memex_core::testing::{FakeEmbedder, FakeRasterizer, FakeReranker, ManualClock, MemBlobStore, MemRegistry, ScriptedAgent};
 use memex_core::{
     BatchDecision, EXTRACT_JOB, ExtractJobError, ExtractionLimits, RENDITION_JOB, REVIEW_JOB, RenditionInput, ReviewLimits, SearchEdges, Server, ServerEdges,
-    ServerError, Snapshot, Store, UploadLimits, UploadRequest, dump_store,
+    ServerError, Store, UploadLimits, UploadRequest, dump_store,
 };
 use memex_lexical::TantivyLexical;
 use memex_store_postgres::PgStore;
@@ -192,21 +192,21 @@ fn pg_review_queue_filters_counts_decisions_and_samples() {
             verdict: Some(VerdictFilter::Is(Verdict::Approve)),
             ..pending()
         }),
-        [a.header.id.clone()]
+        std::slice::from_ref(&a.header.id)
     );
     assert_eq!(
         ids(ReviewFilter {
             verdict: Some(VerdictFilter::Is(Verdict::Reject)),
             ..pending()
         }),
-        [b.header.id.clone()]
+        std::slice::from_ref(&b.header.id)
     );
     assert_eq!(
         ids(ReviewFilter {
             verdict: Some(VerdictFilter::None),
             ..pending()
         }),
-        [c.header.id.clone()]
+        std::slice::from_ref(&c.header.id)
     );
     assert_eq!(
         ids(ReviewFilter {
@@ -217,7 +217,7 @@ fn pg_review_queue_filters_counts_decisions_and_samples() {
             proposer: Some("extractor".into()),
             ..pending()
         }),
-        [a.header.id.clone()]
+        std::slice::from_ref(&a.header.id)
     );
     assert!(
         ids(ReviewFilter {
@@ -271,7 +271,7 @@ fn pg_review_queue_filters_counts_decisions_and_samples() {
             state: Some(ChangeSetState::Committed),
             ..Default::default()
         }),
-        [a.header.id.clone()]
+        std::slice::from_ref(&a.header.id)
     );
 
     // An edit: what was proposed stays on the row.

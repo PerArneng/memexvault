@@ -240,10 +240,10 @@ flowchart LR
 ```
 
 - **Validators:** schema, scope, quote verification, dedup and contradiction.
-- **Always human-reviewed:** merges, deletes, breaking schema changes, edits to verified claims, and promoting untrusted
-  sources.
+- **Always human-reviewed:** merges, deletes, breaking schema changes, edits to verified claims, promoting untrusted
+  sources, and a claim arriving as `verified` from a machine or citing an untrusted source. Only a person can approve or revert these, whatever scope an agent holds.
 - **Auto-commit starts off.** A combination of extractor, prompt version and type earns it when the Wilson lower bound
-  of its audited precision clears a threshold. An LLM's self-reported confidence never counts.
+  of its audited precision clears a threshold. An LLM's self-reported confidence never counts. See [Review gate](#review-gate).
 - **Contradictions are preserved.** Both claims stay, linked and surfaced with their sources.
 - **Reversible:** every ChangeSet has a computed inverse, and a revert is itself a ChangeSet.
 
@@ -261,6 +261,18 @@ Spec 024. A job per Rendition sends batches of segments to the LLM, and what's v
 - **An LLM outage** sends the job back to wait, taking its attempt back, so no outage can use up its attempts, with a delay of at most 5 minutes. Waiting extractions don't count as upload backlog. A refusal by the provider is an ordinary failure with attempts.
 - **Identity resolution** names existing entities sharing an identity value as candidates, in the Derivation and the proposal's rationale. It never merges.
 - **Long calls.** The holder extends its job lease before each call, by twice the call's time limit plus 30 s, as a call can outlast the usual 60 s lease.
+
+### Review gate
+
+Spec 025. Everything pending is the queue, in `/vaults/{id}/review`, with filters, counts and batches.
+
+- **The reviewer agent** runs as a job per queued machine proposal with claims, off unless `MEMEX_REVIEW_MODEL` is set. It sees each claim and its quote and nothing else, has no tools, holds no token, and writes only its own verdict. A verdict is advice for a person: it commits nothing, rejects nothing and never counts as a sample. An outage leaves the job waiting and the item in the queue, where people can still decide it.
+- **Samples** are a person's decisions on a machine's proposal: approved counts as correct, and rejected, edited or a reverted auto-commit as wrong. Audits add theirs through `record_audit_samples`. An agent's decision, a verdict, an always-review change and clearing a stale proposal all count for nothing.
+- **A combination** is the model behind an extraction, or otherwise the proposing principal, with the prompt hash and the item type (`claim`, `entity:<type>`, `page`, `link`, `source`). A ChangeSet needs every type it touches earned. The prompt hash covers the type registry, so a new entity type is a new prompt, and every combination earns again from nothing.
+- **On or off** is worked out from the counts and the threshold on each read, so it can't drift from them. Falling below turns it off, and good samples can bring it back. A manual disable starts the counts again, keeping totals for the record, and there's no way to turn one on by hand.
+- **Never auto-commits, however much is earned:** a claim citing an untrusted source, invisible characters, or a page flagged for hidden text. This limits where a planted instruction can act, and nothing judges the text itself. **The limit:** a planted sentence in plain view, in a source someone marked `unverified` or better, looks like any other claim once its combination has earned it. It commits as `asserted`, can touch nothing else, and it's the audit's to find.
+- **Decisions.** Every one has who, when and why: a person, `auto-commit` with its counts and bound, `validators`, or `pipeline`. Asking for the same decision again changes nothing, while someone else's decision on the same item is a conflict that names them. An edit keeps what was proposed on the row, and only a person can make one.
+- **A replaced rendition.** Evidence must cite a document's current rendition, so a proposal on an old one can't be approved. The new rendition's extraction run retires extraction's pending proposals on old ones, without counting against the extractor, and proposes what's still there. Other proposals stay, for a person to clear.
 
 ### Audit agent
 
