@@ -533,9 +533,12 @@ pub struct ActivityParams {
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct ActivityDocumentParams {
+    /// From `next_cursor` of the previous page.
     pub cursor: Option<String>,
-    /// At most 200. Defaults to 50.
-    pub limit: Option<usize>,
+    /// 1 to 200. The default is 50.
+    pub limit: Option<u32>,
+    /// `created`, the default.
+    pub sort: Option<String>,
     /// Only documents in this stage.
     pub stage: Option<String>,
 }

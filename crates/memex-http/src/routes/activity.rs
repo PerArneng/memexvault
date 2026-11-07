@@ -1,5 +1,5 @@
 //! Routes for the activity stream and the live board.
-use super::{App, RequestId, authed};
+use super::{App, RequestId, authed, list};
 use crate::activity::{self, Hub, TooManyStreams};
 use crate::error::ApiError;
 use axum::extract::{ConnectInfo, Extension, Path, Query, State};
@@ -7,7 +7,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use memex_api::{ActivityDocumentPage, ActivityDocumentParams, ActivityParams, ErrorBody};
+use memex_api::{ActivityDocumentPage, ActivityDocumentParams, ActivityParams, ErrorBody, ListParams};
 use memex_core::activity::resume_request;
 use memex_core::{Server, ServerEdges, ServerError};
 use memex_types::{ObjectId, Stage, VaultId};
@@ -16,8 +16,6 @@ use std::sync::Arc;
 use utoipa::OpenApi;
 
 const LAST_EVENT_ID: &str = "last-event-id";
-const MAX_LIMIT: usize = 200;
-const DEFAULT_LIMIT: usize = 50;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -131,17 +129,20 @@ where
     E: ServerEdges + Send + Sync + 'static,
     Server<E>: Send + Sync,
 {
-    let invalid = |m: String| ApiError::new(StatusCode::BAD_REQUEST, "invalid", m, &rid.0);
-    let limit = params.limit.unwrap_or(DEFAULT_LIMIT);
-    if limit == 0 || limit > MAX_LIMIT {
-        return Err(invalid(format!("limit must be from 1 to {MAX_LIMIT}")));
-    }
+    let l = list(
+        ListParams {
+            cursor: params.cursor,
+            limit: params.limit,
+            sort: params.sort,
+        },
+        &rid,
+    )?;
     let stage = match params.stage.as_deref() {
         None => None,
-        Some(text) => Some(Stage::parse(text).ok_or_else(|| invalid(format!("'{text}' isn't a stage")))?),
+        Some(text) => Some(Stage::parse(text).ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "invalid", format!("'{text}' isn't a stage"), &rid.0))?),
     };
     let vault = VaultId(id);
-    let after = params.cursor.map(ObjectId);
+    let (after, limit) = (l.cursor.map(ObjectId), l.limit);
     let snapshot = authed(server, headers, &rid, move |s, c| {
         s.activity_documents(c, &vault, stage, after.as_ref(), limit + 1)
     })
