@@ -42,6 +42,8 @@ Automatic merges, agent-created types going live without review, ontology import
 ## Result
 Built everything in the Approach, and **item 6 misses its target** as measured: exact filter p95 is 2.55 to 4.02 ms at 200k values on a shared machine, against ≤2 ms. The rest of the Verification passes. Timings were all taken on a machine shared with other workers, with Postgres behind Docker's port forwarding.
 
+**Landed with item 6 unmet, by the user's decision.** The target stays in `docs/architecture.md`, and spec 062 reviews it. The user also accepted allowing MIT-0 in `deny.toml`.
+
 **What was built.** `memex_core::entity` holds the type registry and pure rules: schema checks, additive or breaking classification, seed types, the choice of current value, the text card, typed filters and planning. New `Op`s (`DefineEntityType`, `CreateEntity`, `SetEntityAliases`, `MergeEntities`, `SplitEntity`) go through the normal proposal flow, with one new validator, `entity`. Vault migration 7 adds `entity_types`, `entities` and `entity_fields`. `DocKind::Entity` and `ItemKind::Entity` carry entities through both projectors, the fence, `as_of` and the evidence package. The tantivy schema gains an `attrs` JSON field. `crates/memex-http/src/routes/entities.rs` serves 11 routes under `/vaults/{id}/entity-types` and `/vaults/{id}/entities`.
 
 **Verification.**
@@ -77,7 +79,9 @@ Reading of it: a primary-key read on this setup already misses 2 ms, and a snaps
 
 **Rerun after all workers finished.** One run at 200k on a fresh database, with the pass rule set beforehand (both exact lanes ≤2 ms), load average 7 to 9, so still not a quiet machine: exact unique p95 2.28 ms, ~0.1% of entities 3.34 ms, primary-key read control 2.36 ms, snapshot control 1.64 ms. Item 6 still fails.
 
-**Not run.** `pg_kill_postgres`, `pg_bad_cases` (deferred to landing, as it ends advisory locks across the whole server), `pg_child` and `pg_job_child` (helpers run by their harness) and `pg_full_disk_returns_an_error_and_data_stays_readable` (needs a small disk). The change touches the commit path these cover only by adding a table.
+**Landing checks,** merged with specs 59 and 37: workspace build, tests, clippy, fmt and the licence check, the selected Postgres tests, `pg_bad_cases` alone on a fresh database, and the 8 TLS tests all passed.
+
+**Not run.** `pg_kill_postgres`, `pg_child` and `pg_job_child` (helpers run by their harness) and `pg_full_disk_returns_an_error_and_data_stays_readable` (needs a small disk). The change touches the commit path these cover only by adding a table.
 
 **Decisions.**
 - **Field values** are Assertions with the subject `entity:<id>`, and predicate the field name. They're indexed as claims as well, so a search can return an entity and the claims behind it. Claim text shows that raw subject.
