@@ -326,7 +326,7 @@ fn pg_meeting_a_search_returns_meeting_and_document_evidence_in_one_package() {
         .chain(from(&meeting_source, ItemKind::Segment))
     {
         let t = c.time.as_ref().unwrap_or_else(|| panic!("a meeting citation has a time: {c:?}"));
-        assert_eq!((t.t_start_ms, t.speaker.as_deref()), (4700, Some("S1")), "{item:?}");
+        assert_eq!((t.t_start_ms, t.speaker.as_deref()), (4400, Some("S1")), "{item:?}");
         assert_eq!(t.t_end_ms, 5000 + 10 * 400 + 380 + 300);
         assert!(c.start.is_some() && c.end.is_some());
         assert!(c.rects.is_empty());
@@ -341,7 +341,7 @@ fn pg_meeting_a_search_returns_meeting_and_document_evidence_in_one_package() {
     }
     // Every claim's citation is one the API's own shape can carry.
     let dto: Vec<memex_api::CitationDto> = cited.iter().map(|(_, c)| (*c).clone().into()).collect();
-    assert!(dto.iter().any(|d| d.t_start_ms == Some(4700) && d.speaker.as_deref() == Some("S1")));
+    assert!(dto.iter().any(|d| d.t_start_ms == Some(4400) && d.speaker.as_deref() == Some("S1")));
     println!("search: {} items, {} citations, from {} sources", package.items.len(), cited.len(), 2);
 }
 

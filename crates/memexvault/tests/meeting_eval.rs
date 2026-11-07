@@ -477,7 +477,7 @@ fn end_to_end(stem: &str, language: &str) {
     assert_eq!(disagreements, 0, "item 8");
     assert_eq!(played, samples.len());
     assert!(played >= 5, "item 5 had too few long quotes to play");
-    if stem == std::env::var("MEMEX_ASR_DECIDES").as_deref().unwrap_or("en_5m") {
+    if stem == std::env::var("MEMEX_ASR_DECIDES").as_deref().unwrap_or("en_60m") {
         assert!(n >= 50, "item 1: {n} claims is a shortfall against 50");
         assert!(share >= 95.0, "item 1 fails its rule: {share:.1}%");
     }

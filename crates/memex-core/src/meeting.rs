@@ -7,8 +7,8 @@ use std::ops::Range;
 
 /// The rate a `Transcriber` hears.
 pub const PCM_RATE: u32 = 16_000;
-/// Word starts from the local model run a steady 150-210 ms late (spec 027), and ends are the next word's start. A cited range starts and ends this far outside its words, so it holds what was said. Set from that finding, before item 1 measured anything.
-pub const START_PAD_MS: i64 = 300;
+/// Word starts from the local model run a steady 150-210 ms late (spec 027), and ends are the next word's start. A cited range starts and ends this far outside its words, so it holds what was said. 300 ms at the start missed 10% of quotes on spec 028's first recording, by up to 255 ms, and so this is 600. Playing a little early costs a listener little, and missing the first word costs more.
+pub const START_PAD_MS: i64 = 600;
 pub const END_PAD_MS: i64 = 300;
 /// A gap this long between words starts a new block of the transcript.
 pub const PAUSE_MS: i64 = 800;
@@ -439,10 +439,10 @@ mod tests {
     fn a_range_has_its_padding_stays_inside_the_recording_and_names_one_speaker_only() {
         let words = vec![sw("a", 100, "A"), sw("b", 400, "A")];
         let r = play_range(&words, 600).unwrap();
-        assert_eq!((r.t_start_ms, r.t_end_ms, r.speaker.as_deref()), (0, 700.min(600).max(700), Some("A")));
+        assert_eq!((r.t_start_ms, r.t_end_ms, r.speaker.as_deref()), (0, 700, Some("A")));
         let mixed = vec![sw("a", 1000, "A"), sw("b", 1400, "B")];
         let r = play_range(&mixed, 100_000).unwrap();
-        assert_eq!((r.t_start_ms, r.t_end_ms, r.speaker), (700, 2000, None));
+        assert_eq!((r.t_start_ms, r.t_end_ms, r.speaker), (400, 2000, None));
         assert_eq!(play_range(&[], 100), None);
     }
 
@@ -458,9 +458,9 @@ mod tests {
         assert_eq!(i.canon.text, "hej på dig");
         let (a, b) = crate::rendition::find_quote(&i.canon.text, "på dig", "", "").unwrap();
         let t = i.span_of(a as u64, b as u64).unwrap();
-        assert_eq!((t.t_start_ms, t.t_end_ms), (1200, 2800));
+        assert_eq!((t.t_start_ms, t.t_end_ms), (900, 2800));
         // Part of a word counts as the word.
-        assert_eq!(i.span_of(1, 2).unwrap().t_start_ms, 700);
+        assert_eq!(i.span_of(1, 2).unwrap().t_start_ms, 400);
         assert_eq!(i.span_of(99, 100), None);
     }
 
@@ -540,7 +540,7 @@ mod tests {
         assert_eq!(parts[0].text, "b c");
         assert_eq!(parts[0].words, 1..3);
         assert_eq!(&i.canon.text[parts[0].start as usize..parts[0].end as usize], "b c");
-        assert_eq!((parts[0].time.t_start_ms, parts[0].time.t_end_ms), (200, 1800));
+        assert_eq!((parts[0].time.t_start_ms, parts[0].time.t_end_ms), (0, 1800));
         let (all, next) = transcript_parts(&i, i64::MIN, i64::MAX, 0, 1);
         assert_eq!(all[0].text, "a b c");
         let next = next.unwrap();

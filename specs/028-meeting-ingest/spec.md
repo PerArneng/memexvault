@@ -46,4 +46,12 @@ Live capture, calendar integration and meeting summaries as a separate feature.
 - **A claim passes** when its cited `t_start_ms` is at or before that truth start, its `t_end_ms` is at or after that truth end, and `t_start_ms` is within 1,000 ms of the truth start. A claim with under half of its words aligned has no truth to check against, and counts as a failure.
 - **The item passes** with at least 50 claims and at least 95% of them passing. Padding is 300 ms on each side, set from spec 027's finding that starts run 150-210 ms late, and it isn't tuned on this measurement. If it fails, the number stays failed.
 
+**Item 1's first result: failed.** Under that rule, with 300 ms of padding, on `en_5m.wav`: 60 claims, 54 pass, 90.0% against 95%. All 6 failures start after the truth, by 4 to 255 ms, and none ends early or starts over 1 s away. 51 of the 60 had every word aligned. This number stands, and nothing below replaces it.
+
+**Item 1's second rule, set after that result and before any other recording was measured.**
+- **The change:** starts get 600 ms of padding, and ends keep 300 ms. The 600 comes from `en_5m.wav` alone: its worst miss needed 555 ms. So `en_5m.wav` can't judge it, and it isn't rerun for the record.
+- **Recording that decides:** `en_60m.wav`, which nothing has been measured on in this spec. It's the same corpus: synthetic voices, truth from the synthesizer's markers, and not hand labels, with noise at 20 dB and long lulls. `sv_5m`, `de_5m` and `es_5m`, also unseen, are reported beside it and don't decide.
+- **Everything else is as before:** the scripted agent, one claim per sentence with none left out, the alignment, and what counts as a pass, at 95% of at least 50 claims.
+- **If it fails,** that's reported as failed as well, and the padding isn't changed again here.
+
 Not finished.
