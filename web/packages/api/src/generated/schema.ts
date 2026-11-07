@@ -3458,6 +3458,423 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vaults/{id}/review/auto-commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Each combination of extractor, prompt version and type: its precision, Wilson bound, whether it's on, and every time that changed, with the threshold it's judged by. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number;
+                    /** @description `created`, the default. */
+                    sort?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AutoCommitPage"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/review/auto-commit/{combination}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stops auto-commit for this combination at once. Its counts start again, and there's no route to turn it on: only new samples clearing the threshold can. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    combination: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["DisableBody"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AutoCommitDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/review/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Up to 200 decisions, each attributed and each on its own, so one conflict leaves the others as they are. A malformed request refuses the lot. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BatchBody"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BatchResultsDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/review/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["QueueCountsDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/review/items/{cs}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One item: the proposal, the reviewer agent's verdict, what its quotes rest on, and where its combination stands. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    cs: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReviewDetailDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/review/items/{cs}/edit-approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approves a person's corrected version. What was proposed stays on record, and it counts against the extractor. Only a person can do this. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    cs: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EditApproveBody"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ChangeSetDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/review/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The queue with `state=pending`, or any other ChangeSets the filters ask for, in creation order. Each comes with the reviewer agent's verdict if it has one. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number;
+                    /** @description `created`, the default. */
+                    sort?: string;
+                    /** @description `pending`, `committed` or `rejected`. */
+                    state?: string;
+                    extractor?: string;
+                    prompt_version?: string;
+                    /** @description `claim`, `entity:<type>`, `page`, `link` or `source`. */
+                    item_type?: string;
+                    source_id?: string;
+                    proposer?: string;
+                    /** @description `approve`, `reject`, `abstain`, or `none` for items with no verdict yet. */
+                    verdict?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReviewItemPage"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/vaults/{id}/search": {
         parameters: {
             query?: never;
@@ -4612,6 +5029,54 @@ export interface components {
         AssertionList: {
             items: Record<string, never>[];
         };
+        AutoCommitChangeDto: {
+            /** Format: int64 */
+            at_ms: number;
+            by: string;
+            /** Format: int64 */
+            correct: number;
+            /** Format: int64 */
+            incorrect: number;
+            /** @description `earned`, `fell_below` or `disabled`. */
+            kind: string;
+            reason: string;
+        };
+        AutoCommitDto: {
+            /**
+             * Format: int64
+             * @description Since it was last disabled. These decide whether it's on.
+             */
+            correct: number;
+            extractor: string;
+            /** @description When it was earned, fell below the threshold or was disabled, oldest first. */
+            history: components["schemas"]["AutoCommitChangeDto"][];
+            id: string;
+            /** Format: int64 */
+            incorrect: number;
+            item_type: string;
+            on: boolean;
+            /**
+             * Format: double
+             * @description Absent with no samples.
+             */
+            precision?: number | null;
+            prompt_version: string;
+            /** Format: int64 */
+            total_correct: number;
+            /** Format: int64 */
+            total_incorrect: number;
+            /** Format: double */
+            wilson_bound: number;
+        };
+        AutoCommitPage: {
+            items: components["schemas"]["AutoCommitDto"][];
+            next_cursor?: string | null;
+            /**
+             * Format: double
+             * @description What `wilson_bound` has to reach.
+             */
+            threshold: number;
+        };
         BacklinkDto: {
             /** @description The block holding the link, which is its evidence. */
             block_id?: string | null;
@@ -4625,6 +5090,29 @@ export interface components {
         BacklinkPage: {
             items: components["schemas"]["BacklinkDto"][];
             next_cursor?: string | null;
+        };
+        BatchBody: {
+            decisions: components["schemas"]["BatchDecisionBody"][];
+        };
+        /** @description One decision in a batch. */
+        BatchDecisionBody: {
+            /** @description `approve`, `reject` or `edit_approve`. */
+            decision: string;
+            id: string;
+            /** @description With `edit_approve`. */
+            ops?: Record<string, never>[] | null;
+            reason?: string | null;
+        };
+        /** @description How one decision went. One failing leaves the others as they are. */
+        BatchResultDto: {
+            changeset?: components["schemas"]["ChangeSetDto"] | null;
+            /** @description Set when it failed, with the same codes as the single routes. */
+            error_code?: string | null;
+            error_message?: string | null;
+            id: string;
+        };
+        BatchResultsDto: {
+            results: components["schemas"]["BatchResultDto"][];
         };
         BlockChangeDto: {
             after?: string | null;
@@ -4664,9 +5152,15 @@ export interface components {
             decided_at_ms?: number | null;
             decided_by?: string | null;
             decision_reason?: string | null;
+            /** @description The model behind an extraction, or otherwise whoever proposed it. Absent from before spec 025. */
+            extractor?: string | null;
             id: string;
             idempotency_key: string;
+            item_types?: string[] | null;
             ops: Record<string, never>[];
+            /** @description What was proposed, when a person changed it before approving. `ops` then holds what was approved. */
+            original_ops?: Record<string, never>[] | null;
+            prompt_version?: string | null;
             /** Format: int64 */
             proposed_at_ms: number;
             proposer: string;
@@ -4676,6 +5170,7 @@ export interface components {
             reverts?: string | null;
             /** @description `auto_commit`, `review` or `reject`. */
             risk: string;
+            source_ids?: string[] | null;
             /** @description `pending`, `committed` or `rejected`. */
             state: string;
             validators: Record<string, never>[];
@@ -4759,6 +5254,14 @@ export interface components {
         DerivationPage: {
             items: components["schemas"]["DerivationDto"][];
             next_cursor?: string | null;
+        };
+        DisableBody: {
+            reason: string;
+        };
+        EditApproveBody: {
+            /** @description What to approve instead of what was proposed, which stays on record. */
+            ops: Record<string, never>[];
+            reason?: string | null;
         };
         EntityDetailDto: {
             aliases: string[];
@@ -5374,6 +5877,23 @@ export interface components {
             risk: string;
             validators: Record<string, never>[];
         };
+        QueueCountDto: {
+            /** Format: int64 */
+            count: number;
+            extractor: string;
+            item_type: string;
+            prompt_version: string;
+            /** @description Absent for items with no verdict yet. */
+            verdict?: string | null;
+        };
+        QueueCountsDto: {
+            groups: components["schemas"]["QueueCountDto"][];
+            /**
+             * Format: int64
+             * @description Pending items. One with several types counts once here, and once under each in `groups`.
+             */
+            pending: number;
+        };
         ReanchorFailureDto: {
             assertion_id: string;
             evidence_id: string;
@@ -5449,6 +5969,56 @@ export interface components {
             candidates: components["schemas"]["CandidateDto"][];
             /** @description `lexical`, if only exact matches could be looked for. */
             degraded: string[];
+        };
+        ReviewDetailDto: {
+            /** @description Why auto-commit wouldn't take this even if earned. */
+            auto_commit_block?: string | null;
+            changeset: components["schemas"]["ChangeSetDto"];
+            /** @description Each type's standing under this proposal's extractor and prompt. A type with no samples has no entry. */
+            combinations: components["schemas"]["AutoCommitDto"][];
+            evidence: components["schemas"]["ReviewEvidenceDto"][];
+            /** @description Only a person can approve this. */
+            needs_a_person: boolean;
+            verdict?: components["schemas"]["ReviewVerdictDto"] | null;
+        };
+        ReviewEvidenceDto: {
+            claim_id: string;
+            /** @description What the pipeline flagged on these pages, such as hidden text. */
+            page_flags: Record<string, never>[];
+            /** Format: int32 */
+            page_from?: number | null;
+            /** Format: int32 */
+            page_to?: number | null;
+            quote: string;
+            rendition_id?: string | null;
+            segment_id: string;
+            source_id?: string | null;
+            source_name?: string | null;
+            /** @description Its document was processed again, so this can't be approved as it stands. */
+            superseded: boolean;
+            trust_tier?: string | null;
+        };
+        ReviewItemDto: {
+            changeset: components["schemas"]["ChangeSetDto"];
+            verdict?: components["schemas"]["ReviewVerdictDto"] | null;
+        };
+        ReviewItemPage: {
+            items: components["schemas"]["ReviewItemDto"][];
+            next_cursor?: string | null;
+        };
+        /** @description The reviewer agent's opinion. It's advice, and it decides nothing. */
+        ReviewVerdictDto: {
+            /** Format: int32 */
+            attempts: number;
+            /** Format: int64 */
+            created_at_ms: number;
+            model: string;
+            prompt_hash: string;
+            /** @description The model's own words about untrusted text, so show them as plain text. */
+            reason: string;
+            tokens: components["schemas"]["TokenUsageDto"];
+            /** @description `approve`, `reject` or `abstain`. */
+            verdict: string;
         };
         RevisionDto: {
             changeset_id: string;

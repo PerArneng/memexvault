@@ -37,6 +37,8 @@ auto-commit is possible only where audited precision has earned it.
 Consensus across multiple agents, agent reputation scoring.
 
 ## Result
+**Landed with the live half of item 1 and all of item 2 not run, by the user's decision.** No reviewer precision exists, and spec 81 holds the live runs and the label check. At landing, merged with specs 40 and 29: workspace checks, the Postgres suite, `pg_bad_cases` on a throwaway server and the 8 TLS tests passed, the console's API types were regenerated from the merged server, and `an_agent_cant_ingest_at_a_trusted_tier` was added, which shows the rule holds through MCP and fails when the rule is removed.
+
 **Status: the gate is built, and every mechanism is verified on fakes. The live halves of items 1 and 2 haven't been run, so what a real model does with the fixtures is unknown, and no reviewer precision exists. The ≥0.9 in item 2 is unproven.** No LLM was called and no key was used. Every number here comes from a scripted agent or fake samples.
 
 **Built.**
