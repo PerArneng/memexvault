@@ -1,4 +1,21 @@
-import { failureFromWire, identityFromWire, objectsFromWire, vaultFromWire, vaultPageFromWire } from "@memex/api";
+import {
+  failureFromWire,
+  identityFromWire,
+  lineageStepFromWire,
+  objectsFromWire,
+  vaultFromWire,
+  vaultPageFromWire,
+  wikiAttributionFromWire,
+  wikiBacklinkPageFromWire,
+  wikiDiffFromWire,
+  wikiOutgoingPageFromWire,
+  wikiPageFromWire,
+  wikiRedirectFromWire,
+  wikiRevisionPageFromWire,
+  wikiSummaryPageFromWire,
+  wikiUnresolvedPageFromWire,
+  wikiWriteFromWire,
+} from "@memex/api";
 import type { paths } from "@memex/api";
 import { failed, ok } from "@memex/core";
 import type { Api, ApiResult } from "@memex/core";
@@ -9,6 +26,7 @@ const CSRF_HEADERS = { "x-memex-csrf": "1" };
 
 /** The palette's first look at a vault: the API's largest page of each kind. */
 const OBJECT_PAGE = { limit: 200 };
+const page = (cursor: string | null) => ({ limit: 200, ...(cursor === null ? {} : { cursor }) });
 
 interface Answer<D> {
   readonly data?: D;
@@ -54,6 +72,60 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
       if (!entityTypes.ok) return failed(entityTypes.failure);
       return ok(objectsFromWire({ sources: sources.value, pages: pages.value, entityTypes: entityTypes.value }));
     },
+    listWikiPages: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/pages", { params: { path: { id: vault }, query: page(cursor) } }), wikiSummaryPageFromWire),
+    getWikiPage: (vault, id, revision) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/pages/{pid}", { params: { path: { id: vault, pid: id }, query: revision === null ? {} : { revision } } }), wikiPageFromWire),
+    resolveWikiSlug: (vault, slug) => attempt(() => client.GET("/api/v1/vaults/{id}/pages/by-slug/{slug}", { params: { path: { id: vault, slug } } }), wikiRedirectFromWire),
+    listWikiBacklinks: (vault, id, cursor) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/pages/{pid}/backlinks", { params: { path: { id: vault, pid: id }, query: page(cursor) } }), wikiBacklinkPageFromWire),
+    listWikiLinks: (vault, id, cursor) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/pages/{pid}/links", { params: { path: { id: vault, pid: id }, query: page(cursor) } }), wikiOutgoingPageFromWire),
+    listWikiUnresolved: (vault, cursor) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/pages/unresolved-links", { params: { path: { id: vault }, query: page(cursor) } }), wikiUnresolvedPageFromWire),
+    listWikiRevisions: (vault, id, cursor) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/pages/{pid}/revisions", { params: { path: { id: vault, pid: id }, query: page(cursor) } }), wikiRevisionPageFromWire),
+    getWikiDiff: (vault, id, from, to) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/pages/{pid}/diff", { params: { path: { id: vault, pid: id }, query: { from, to } } }), wikiDiffFromWire),
+    getWikiAttribution: (vault, changesetId) => attempt(() => client.GET("/api/v1/vaults/{id}/changesets/{cs}", { params: { path: { id: vault, cs: changesetId } } }), wikiAttributionFromWire),
+    exportWikiPage: (vault, id) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/pages/{pid}/export", { params: { path: { id: vault, pid: id } }, parseAs: "text" }), (text) => String(text)),
+    createWikiPage: (vault, input) =>
+      attempt(
+        () => client.POST("/api/v1/vaults/{id}/pages", { params: { path: { id: vault } }, body: { title: input.title, body: input.body, rationale: input.rationale, idempotency_key: input.idempotencyKey } }),
+        (r) => ({ pageId: r.page_id, write: wikiWriteFromWire(r.result) }),
+      ),
+    editWikiPage: (vault, id, input) =>
+      attempt(
+        () => client.POST("/api/v1/vaults/{id}/pages/{pid}/edit", { params: { path: { id: vault, pid: id } }, body: { base_version: input.baseVersion, body: input.body, rationale: input.rationale, idempotency_key: input.idempotencyKey } }),
+        wikiWriteFromWire,
+      ),
+    renameWikiPage: (vault, id, input) =>
+      attempt(
+        () => client.POST("/api/v1/vaults/{id}/pages/{pid}/rename", { params: { path: { id: vault, pid: id } }, body: { base_version: input.baseVersion, title: input.title, ...(input.slug === null ? {} : { slug: input.slug }), rationale: input.rationale, idempotency_key: input.idempotencyKey } }),
+        wikiWriteFromWire,
+      ),
+    revertWikiPage: (vault, id, input) =>
+      attempt(
+        () => client.POST("/api/v1/vaults/{id}/pages/{pid}/revert", { params: { path: { id: vault, pid: id } }, body: { base_version: input.baseVersion, revision: input.revision, rationale: input.rationale, idempotency_key: input.idempotencyKey } }),
+        wikiWriteFromWire,
+      ),
+    deleteWikiPage: (vault, id, input) =>
+      attempt(
+        () => client.POST("/api/v1/vaults/{id}/pages/{pid}/delete", { params: { path: { id: vault, pid: id } }, body: { base_version: input.baseVersion, rationale: input.rationale, idempotency_key: input.idempotencyKey } }),
+        wikiWriteFromWire,
+      ),
+    importWikiPage: (vault, input) =>
+      attempt(
+        () => client.POST("/api/v1/vaults/{id}/pages/import", { params: { path: { id: vault } }, body: { markdown: input.markdown, ...(input.baseVersion === null ? {} : { base_version: input.baseVersion }), rationale: input.rationale, idempotency_key: input.idempotencyKey } }),
+        (r) => ({ pageId: r.page_id, created: r.created, write: wikiWriteFromWire(r.result) }),
+      ),
+    searchClaimIds: (vault, q, limit) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/search/lexical", { params: { path: { id: vault }, query: { q, limit, kind: "claim" } } }), (r) => r.hits.map((h) => h.id)),
+    readClaim: (vault, id) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/assertions/{aid}/lineage", { params: { path: { id: vault, aid: id } } }), (l) => {
+        const step = lineageStepFromWire(id, l);
+        return { claim: step.claim, supersededBy: step.supersededBy };
+      }),
     health: (timeoutMs) => attempt(() => client.GET("/api/v1/health", { signal: AbortSignal.timeout(timeoutMs) }), none),
   };
 };

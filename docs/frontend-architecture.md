@@ -74,8 +74,9 @@ virtualized.
 All vault content is untrusted, including document text, OCR output, entity fields, page bodies and model replies.
 
 - No `dangerouslySetInnerHTML`. An ESLint rule enforces this.
-- Markdown goes through one sanitizing component, with raw HTML disabled.
+- Markdown goes through one sanitizing component, `SafeMarkdown` in `@memex/ui/markdown`, with raw HTML shown as text.
 - No remote images or media in rendered content. This also stops data leaking out through image URLs.
+- CodeMirror runs in a shadow root, as its runtime styles are then a constructable stylesheet, which the CSP allows. In the document it adds a `<style>`, which the CSP blocks. See spec 044.
 - The server sends a strict CSP with `default-src 'self'`, so the build inlines nothing (`assetsInlineLimit: 0`). Radix's modal scroll lock adds a `<style>` element, which the CSP blocks, and `Select` adds a second one, so prefer `Menu` until that's decided. See specs 037 and 040.
 - The console signs in through `POST /api/v1/session`, and sends `x-memex-csrf` on every state-changing request. Page script can't read the session cookie.
 - External links are visibly marked and open with `noopener`.
@@ -86,6 +87,7 @@ All vault content is untrusted, including document text, OCR output, entity fiel
 - Every screen has loading, empty, error and offline states.
 - Everything works by keyboard, with visible focus. Contrast meets WCAG AA.
 - URLs hold screen state, so any view can be linked to and reloaded.
+- An action on a page asks for confirmation in the page rather than in a modal while the modal's CSP error is undecided. See spec 040.
 - Screens can be built against `FakeApi`, but a spec isn't done until it passes against the real API.
 - `QueryView` is the one way a screen shows loading, empty, error and offline. `accessTo` in `core` decides what a URL may show, so a direct link gets the same answer as the navigation.
 - The API types are generated from the committed `packages/api/openapi.json`. `pnpm api:check` fails on drift from the server's document, and `pnpm typecheck` on drift from the committed one.
@@ -103,8 +105,8 @@ GPL are denied, as in spec 008.
 | `@tanstack/react-router`, `react-query`, `react-table`, `react-virtual` | 1.170, 5.106, 9.3, 3.14 | MIT | Routes, server state, tables, long lists |
 | `tailwindcss`, `@radix-ui/*`, `lucide-react` | 4.3, 1.x, 1.69 | MIT, MIT, ISC | Styling, accessible primitives, icons |
 | `@ag-ui/client` | 1.0.4 | MIT | Chat protocol, in `edge-agui` only |
-| `@codemirror/*` | 6.x | MIT | Page editor |
-| `react-markdown`, `rehype-sanitize` | 10.1, 6.0 | MIT | Rendering Markdown |
+| `@codemirror/*`, `@lezer/highlight` | 6.x, 1.2 | MIT | Page editor |
+| `react-markdown`, `rehype-sanitize`, `remark-gfm` | 10.1, 6.0, 4.0 | MIT | Rendering Markdown |
 | `openapi-typescript`, `openapi-fetch` | 7.13, 0.17 | MIT | API types and client |
 | `vitest`, `@playwright/test`, `msw` | 5.1, 1.64, 3.0 | MIT, Apache-2.0, MIT | Tests |
 | `@fontsource-variable/inter`, `@fontsource-variable/jetbrains-mono` | 5.3 | OFL-1.1 | Bundled interface fonts |

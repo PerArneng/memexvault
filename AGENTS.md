@@ -103,6 +103,7 @@ The browser session checks run against a real server: with `memexvault serve` ru
 `MEMEX_E2E_URL=http://127.0.0.1:<port> MEMEX_E2E_TOKEN=<token> pnpm --filter @memex/console e2e:session`. The URL must use `127.0.0.1`, as the cross-site test uses `localhost` as the other site.
 The shell checks start and kill the server themselves, so nothing else may be serving that address. They use what `memexvault serve` needs, including `MEMEX_MODELS_DIR`, and the embedded console, so run `pnpm build` and `cargo build -p memexvault` first:
 `MEMEX_E2E_BIN=$PWD/../target/debug/memexvault MEMEX_E2E_TOKEN=<token> MEMEX_HTTP_BIND=127.0.0.1:<port> MEMEX_DATABASE_URL=<url> pnpm --filter @memex/console e2e:shell`.
+The page screens' checks do the same, with the same variables, on a database of their own: `pnpm --filter @memex/console e2e:wiki`. `MEMEX_E2E_EVIDENCE=<file>` also writes the hostile page's network log there.
 The API types come from `web/packages/api/openapi.json`. After an API change, with a server running, from `web/`: `MEMEX_OPENAPI_URL=http://127.0.0.1:<port>/api/v1/openapi.json pnpm api:gen`, then `pnpm typecheck`. `pnpm api:check` with the same variable fails on drift from the server, or takes `--from <file>`. `pnpm typecheck` compares only the committed types with the committed document.
 `pnpm budget`, after `pnpm build`, fails when the sign-in route's initial JavaScript passes 200 kB gzip.
 

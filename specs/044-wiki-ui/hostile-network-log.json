@@ -1,0 +1,123 @@
+{
+  "note": "Spec 044, item 3, from wiki.spec.ts. Requests after sign-in, in the reader and the preview.",
+  "withCsp": {
+    "bypassCSP": false,
+    "requestsAfterSignIn": 65,
+    "outside": [],
+    "pwned": null,
+    "dialogs": [],
+    "violations": [],
+    "errors": [],
+    "hrefsInReader": [
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/01a1b695d3230000002c68bd8c7562db/edit",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/01a1b695d3230000002c68bd8c7562db/history",
+      "https://evil.example/linked",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/-/by-slug/some-page",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/-/by-slug/script-window-pwned-wiki-target-script",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/-/by-slug/javascript-window-pwned-wiki-js",
+      "https://example.org/safe"
+    ],
+    "hrefsInPreview": [
+      "https://evil.example/linked",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/-/by-slug/some-page",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/-/by-slug/script-window-pwned-wiki-target-script",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/-/by-slug/javascript-window-pwned-wiki-js",
+      "https://example.org/safe"
+    ],
+    "sameOriginPaths": [
+      "document /vaults/<vault>/pages/<page>",
+      "document /vaults/<vault>/pages/<page>/edit",
+      "fetch /api/v1/health",
+      "fetch /api/v1/vaults",
+      "fetch /api/v1/vaults/<vault>",
+      "fetch /api/v1/vaults/<vault>/changesets/01a1b695d34b0000002d2d0263242a11",
+      "fetch /api/v1/vaults/<vault>/pages",
+      "fetch /api/v1/vaults/<vault>/pages/<page>",
+      "fetch /api/v1/vaults/<vault>/pages/<page>/backlinks",
+      "fetch /api/v1/vaults/<vault>/pages/<page>/links",
+      "fetch /api/v1/vaults/<vault>/pages/<page>/revisions",
+      "fetch /api/v1/whoami",
+      "font /assets/inter-latin-wght-normal-<hash>.woff2",
+      "font /assets/jetbrains-mono-latin-wght-normal-<hash>.woff2",
+      "script /assets/index-<hash>.js",
+      "script /assets/jsx-runtime-<hash>.js",
+      "script /assets/markdown-editor-<hash>.js",
+      "script /assets/overlays-<hash>.js",
+      "script /assets/preload-helper-<hash>.js",
+      "script /assets/shell-<hash>.js",
+      "script /assets/split-pane-<hash>.js",
+      "script /assets/src-<hash>.js",
+      "script /assets/wiki-screen-<hash>.js",
+      "stylesheet /assets/index-<hash>.css"
+    ]
+  },
+  "withoutCsp": {
+    "bypassCSP": true,
+    "requestsAfterSignIn": 66,
+    "outside": [],
+    "pwned": null,
+    "dialogs": [],
+    "violations": [],
+    "errors": [],
+    "hrefsInReader": [
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/01a1b695d3230000002c68bd8c7562db/edit",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/01a1b695d3230000002c68bd8c7562db/history",
+      "https://evil.example/linked",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/-/by-slug/some-page",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/-/by-slug/script-window-pwned-wiki-target-script",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/-/by-slug/javascript-window-pwned-wiki-js",
+      "https://example.org/safe"
+    ],
+    "hrefsInPreview": [
+      "https://evil.example/linked",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/-/by-slug/some-page",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/-/by-slug/script-window-pwned-wiki-target-script",
+      "/vaults/01a1b6947fb30000000067c63c894612/pages/-/by-slug/javascript-window-pwned-wiki-js",
+      "https://example.org/safe"
+    ],
+    "sameOriginPaths": [
+      "document /vaults/<vault>/pages/<page>",
+      "document /vaults/<vault>/pages/<page>/edit",
+      "fetch /api/v1/health",
+      "fetch /api/v1/vaults",
+      "fetch /api/v1/vaults/<vault>",
+      "fetch /api/v1/vaults/<vault>/changesets/01a1b695d34b0000002d2d0263242a11",
+      "fetch /api/v1/vaults/<vault>/pages",
+      "fetch /api/v1/vaults/<vault>/pages/<page>",
+      "fetch /api/v1/vaults/<vault>/pages/<page>/backlinks",
+      "fetch /api/v1/vaults/<vault>/pages/<page>/links",
+      "fetch /api/v1/vaults/<vault>/pages/<page>/revisions",
+      "fetch /api/v1/whoami",
+      "font /assets/inter-latin-wght-normal-<hash>.woff2",
+      "font /assets/jetbrains-mono-latin-wght-normal-<hash>.woff2",
+      "script /assets/index-<hash>.js",
+      "script /assets/jsx-runtime-<hash>.js",
+      "script /assets/markdown-editor-<hash>.js",
+      "script /assets/overlays-<hash>.js",
+      "script /assets/preload-helper-<hash>.js",
+      "script /assets/shell-<hash>.js",
+      "script /assets/split-pane-<hash>.js",
+      "script /assets/src-<hash>.js",
+      "script /assets/wiki-screen-<hash>.js",
+      "stylesheet /assets/index-<hash>.css"
+    ]
+  },
+  "positiveControl": [
+    {
+      "bypassCSP": false,
+      "pwned": null,
+      "outside": [
+        "https://evil.example/control.png"
+      ],
+      "violations": 2
+    },
+    {
+      "bypassCSP": true,
+      "pwned": "control",
+      "outside": [
+        "https://evil.example/control.png"
+      ],
+      "violations": 0
+    }
+  ]
+}
