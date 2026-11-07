@@ -101,4 +101,6 @@ How far to trust this:
 - **Upgrade:** the keyword schema moved to 4, so **each existing vault's keyword index rebuilds once**. Old pages get a slug, blocks and a first revision on their first edit, and the vector index only gets them through a rebuild.
 - **`expand=on` stays available per request** when k-hop is off by default, with `EXPAND_BY_DEFAULT` false in `search/run.rs`.
 
+**Landing.** The user accepted k-hop shipping off and `expand=on` staying available per request. On this commit, with `main` unchanged since the checks above, `pg_bad_cases` passed on a throwaway Postgres, and the 8 TLS tests passed. `pg_kill_postgres`, the full-disk test and the two harness helpers weren't run.
+
 **Follow-ups.** Decide whether to rerun k-hop on a quiet machine or on real wiki content, and whether `expand=on` should stay. Bound `PgStore`'s connections (spec 062 or 030). k-hop picks a neighbour's block from the first few per page in one read, so a very long page can crowd others out, and those fall back to their page item. An agent with admin scope can still approve a page delete, as spec 023 noted for spec 025.
