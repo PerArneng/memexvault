@@ -49,7 +49,8 @@ test("every interactive component works by keyboard with visible focus", async (
     const outline = await b.evaluate((el) => getComputedStyle(el).outlineStyle);
     return outline;
   };
-  // Tab order reaches the first button, and focus is visible.
+  // The gallery is a lazy chunk since spec 040, so wait for it. Tab order reaches the first button, and focus is visible.
+  await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Approve" })).toBeFocused();
   expect(await page.getByRole("button", { name: "Approve" }).evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("solid");
