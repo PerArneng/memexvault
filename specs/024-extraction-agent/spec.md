@@ -95,8 +95,10 @@ Not run, as the brief says: `pg_bad_cases`, `pg_kill_postgres` (both reach beyon
 - The set uses opening text, not whole articles, and CC BY-SA text sits in a fixture folder with its own README, as the repository's Apache-2.0 doesn't cover it. The golden set has a similar note.
 - Wikipedia's API rate-limited the fetch after 10 documents. I stopped asking it, and took the rest from the published dump, so those 40 are from 2023-11-01 and aren't pinned to a revision.
 
+**Landed with item 1 not run, by the user's decision.** Precision and recall are still unmeasured, and spec 81 holds the live run and the label review. At landing, `pg_bad_cases` and the 8 TLS tests passed on this code. The first TLS run lost one test to its server still starting up, and one rerun passed all 8. `pg_kill_postgres`, the full-disk test and the two harness helpers weren't run.
+
 **Follow-ups.**
-- Run item 1, and have a person review the labels first and adjudicate after.
+- Run item 1, and have a person review the labels first and adjudicate after: spec 81.
 - Reprocessing makes a new rendition, so the same fact gets a new key. Pending proposals on the old rendition stay, and a claim approved after that keeps its anchor on the old rendition. Worth settling with spec 025.
 - Two mentions of one thing with different fields, across batches, give two entity proposals. Only their identity candidates link them, and only once one is committed.
 - A claim identical to an active one from another document is refused by the dedup validator, instead of adding evidence to it.
