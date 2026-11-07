@@ -16,11 +16,7 @@ fn temp(name: &str) -> PathBuf {
 }
 
 fn pcm_of(path: &std::path::Path) -> Vec<f32> {
-    std::fs::read(path)
-        .unwrap()
-        .chunks_exact(4)
-        .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
-        .collect()
+    std::fs::read(path).unwrap().as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect()
 }
 
 /// When the tone starts, in ms. It's steady, so the first loud 10 ms show it.

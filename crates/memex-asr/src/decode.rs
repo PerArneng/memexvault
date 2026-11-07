@@ -101,7 +101,7 @@ impl Timeline {
 }
 
 enum Dec {
-    Opus(OpusDecoder, Vec<f32>),
+    Opus(Box<OpusDecoder>, Vec<f32>),
     Other(Box<dyn symphonia::core::codecs::audio::AudioDecoder>),
 }
 
@@ -131,7 +131,10 @@ pub fn decode_to_file(path: &Path, out: &Path, max_seconds: u64) -> Result<Media
     let channels_hint = head_channels.or(params.channels.as_ref().map(|c| c.count())).unwrap_or(2);
     let mut dec = if is_opus {
         let c = channels_hint.clamp(1, 2);
-        Dec::Opus(OpusDecoder::new(48_000, c).map_err(|e| refused(format!("opus: {e}")))?, vec![0.0; 5760 * c])
+        Dec::Opus(
+            Box::new(OpusDecoder::new(48_000, c).map_err(|e| refused(format!("opus: {e}")))?),
+            vec![0.0; 5760 * c],
+        )
     } else {
         Dec::Other(
             symphonia::default::get_codecs()
@@ -491,11 +494,7 @@ mod tests {
     }
 
     fn pcm_of(path: &Path) -> Vec<f32> {
-        std::fs::read(path)
-            .unwrap()
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
-            .collect()
+        std::fs::read(path).unwrap().as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect()
     }
 
     #[test]

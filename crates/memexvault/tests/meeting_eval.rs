@@ -455,7 +455,7 @@ fn end_to_end(stem: &str, language: &str) {
         let (status, part) = r.get(&rt, &stream, Some(&format!("bytes={a}-{b}")));
         assert_eq!(status, StatusCode::PARTIAL_CONTENT);
         assert_eq!(&part[..], &bytes[a as usize..=b as usize], "the original's own bytes");
-        let pcm: Vec<f32> = part.chunks_exact(2).map(|s| f32::from(i16::from_le_bytes([s[0], s[1]])) / 32768.0).collect();
+        let pcm: Vec<f32> = part.as_chunks::<2>().0.iter().map(|s| f32::from(i16::from_le_bytes(*s)) / 32768.0).collect();
         let mut resampler = Resampler::new(rate, 16_000);
         let mut out = vec![];
         resampler.push(&pcm, &mut out);
@@ -907,8 +907,10 @@ fn asr_whisper_passes_the_contract() {
     let bytes = fs::read(corpus("en_5m.wav")).unwrap();
     let (data, rate, _) = wav_layout(&bytes[..4096]);
     let pcm: Vec<f32> = bytes[data as usize..data as usize + rate as usize * 2 * 20]
-        .chunks_exact(2)
-        .map(|s| f32::from(i16::from_le_bytes([s[0], s[1]])) / 32768.0)
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|s| f32::from(i16::from_le_bytes(*s)) / 32768.0)
         .collect();
     let mut resampler = Resampler::new(rate, 16_000);
     let mut out = vec![];
