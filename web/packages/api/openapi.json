@@ -722,9 +722,31 @@
               "null"
             ]
           },
+          "speaker": {
+            "description": "Who was speaking, when that's known and one person spoke all of it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "start": {
             "format": "int64",
             "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "t_end_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "t_start_ms": {
+            "description": "Where it plays in the original recording, in milliseconds. Only a recording has these.",
+            "format": "int64",
             "type": [
               "integer",
               "null"
@@ -1542,6 +1564,10 @@
           "evidence_id": {
             "type": "string"
           },
+          "media_type": {
+            "description": "The source's media type. A recording's bytes play from `/sources/{sid}/stream`.",
+            "type": "string"
+          },
           "parser": {
             "type": "string"
           },
@@ -1570,12 +1596,34 @@
           "source_sha256": {
             "type": "string"
           },
+          "speaker": {
+            "description": "Who was speaking, when that's known and one person spoke all of it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "stance": {
             "type": "string"
           },
           "superseded": {
             "description": "A newer rendition exists. This still resolves.",
             "type": "boolean"
+          },
+          "t_end_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "t_start_ms": {
+            "description": "Where the quote plays in the original recording, in milliseconds. Only a recording has these.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "trust_tier": {
             "type": "string"
@@ -1594,7 +1642,8 @@
           "trust_tier",
           "superseded",
           "broken",
-          "rects"
+          "rects",
+          "media_type"
         ],
         "type": "object"
       },
@@ -2103,6 +2152,27 @@
           },
           "source_id": {
             "type": "string"
+          },
+          "speaker": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "t_end_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "t_start_ms": {
+            "description": "A recording's highlight is a time range and has no page or rects.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -2321,6 +2391,190 @@
         },
         "required": [
           "token"
+        ],
+        "type": "object"
+      },
+      "MediaInfoDto": {
+        "properties": {
+          "channels": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "coarse_spans": {
+            "description": "Stretches read with less accurate times, because the transcriber crashed on them once.",
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "codec": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_ms": {
+            "description": "Empty until transcribed, as decoding is what finds it.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "gap_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "gaps": {
+            "description": "Holes in the audio, kept as silence so times stay on the original timeline.",
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "rendition_id": {
+            "description": "The current rendition, once transcribed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sample_rate": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "size": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "skipped_spans": {
+            "description": "Stretches the transcriber crashed on twice, which have no words.",
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "source_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "media_type",
+          "size"
+        ],
+        "type": "object"
+      },
+      "MeetingBody": {
+        "description": "A full replacement of a meeting's metadata, as a proposal.",
+        "properties": {
+          "base_version": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "date_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/ParticipantInput"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "participants",
+          "base_version",
+          "idempotency_key"
+        ],
+        "type": "object"
+      },
+      "MeetingDto": {
+        "properties": {
+          "date_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/ParticipantDto"
+            },
+            "type": "array"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "title": {
+            "description": "With no title set, the file's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "description": "The version to base an edit on.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "version",
+          "participants"
+        ],
+        "type": "object"
+      },
+      "MeetingProposalResult": {
+        "properties": {
+          "result": {
+            "$ref": "#/components/schemas/ProposalResult"
+          },
+          "source_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "result"
         ],
         "type": "object"
       },
@@ -3125,6 +3379,80 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "ParticipantDto": {
+        "properties": {
+          "entity_id": {
+            "description": "The Person a committed proposal links them to.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "Stable, so a link can follow them. The server gives one to a participant sent without it.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "speaker": {
+            "description": "A transcript's label for them, when someone knows it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ParticipantInput": {
+        "properties": {
+          "id": {
+            "description": "Leave out for a new participant.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "speaker": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "ParticipantLinkBody": {
+        "description": "Proposes that a participant is this Person.",
+        "properties": {
+          "entity_id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_id",
+          "rationale",
+          "idempotency_key"
         ],
         "type": "object"
       },
@@ -4006,10 +4334,31 @@
           "source_id": {
             "type": "string"
           },
+          "speaker": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "start": {
             "format": "int64",
             "minimum": 0,
             "type": "integer"
+          },
+          "t_end_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "t_start_ms": {
+            "description": "Where it plays, when it comes from a recording.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "text": {
             "type": "string"
@@ -4349,6 +4698,112 @@
           "input_tokens",
           "output_tokens",
           "thinking_tokens"
+        ],
+        "type": "object"
+      },
+      "TranscriptDto": {
+        "properties": {
+          "duration_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parser": {
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptPartDto"
+            },
+            "type": "array"
+          },
+          "rendition_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rendition_id",
+          "parser",
+          "duration_ms",
+          "parts"
+        ],
+        "type": "object"
+      },
+      "TranscriptPartDto": {
+        "description": "A stretch of a transcript: a turn, cut to the window asked for. Its range is the same a claim citing these words gets.",
+        "properties": {
+          "end": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "speaker": {
+            "description": "Who was speaking, when that's known and one person spoke all of it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "description": "UTF-8 byte offsets into the rendition's canonical text.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "t_end_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "t_start_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptWordDto"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "text",
+          "t_start_ms",
+          "t_end_ms"
+        ],
+        "type": "object"
+      },
+      "TranscriptWordDto": {
+        "properties": {
+          "end_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "start_ms": {
+            "description": "The table's own times, with no padding.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "start_ms",
+          "end_ms"
         ],
         "type": "object"
       },
@@ -9963,6 +10418,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "A recording's language, such as `sv`, which helps its transcriber. Without it, the transcriber works it out.",
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -10325,6 +10789,263 @@
         ]
       }
     },
+    "/api/v1/vaults/{id}/sources/{sid}/media": {
+      "get": {
+        "operationId": "get_media",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaInfoDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/sources/{sid}/meeting": {
+      "get": {
+        "operationId": "get_meeting",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "meetings"
+        ]
+      },
+      "put": {
+        "operationId": "put_meeting",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingProposalResult"
+                }
+              }
+            },
+            "description": "Proposed. A person's commits at once and an agent's waits for review."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/sources/{sid}/meeting/participants/{pid}/link": {
+      "post": {
+        "operationId": "link_participant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantLinkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingProposalResult"
+                }
+              }
+            },
+            "description": "Proposed. A person's commits at once and an agent's waits for review."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
     "/api/v1/vaults/{id}/sources/{sid}/pages": {
       "get": {
         "operationId": "get_pages",
@@ -10604,6 +11325,195 @@
         },
         "tags": [
           "renditions"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/sources/{sid}/stream": {
+      "get": {
+        "operationId": "stream_media",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The original recording, as it was uploaded, to play"
+          },
+          "206": {
+            "description": "Part of it, for a Range request. A player seeks to a cited time with these."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "The range starts past the end"
+          }
+        },
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/sources/{sid}/transcript": {
+      "get": {
+        "operationId": "get_transcript",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Text around this time, in milliseconds. Goes with `window_ms`.",
+            "in": "query",
+            "name": "around_ms",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "How far either side of `around_ms`. The default is 30000.",
+            "in": "query",
+            "name": "window_ms",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Text from this time on.",
+            "in": "query",
+            "name": "from_ms",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Text up to this time.",
+            "in": "query",
+            "name": "to_ms",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Include each word's own times.",
+            "in": "query",
+            "name": "words",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "From `next_cursor` of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 200. The default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not transcribed yet"
+          }
+        },
+        "tags": [
+          "meetings"
         ]
       }
     },

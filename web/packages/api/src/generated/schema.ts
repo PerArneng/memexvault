@@ -4319,6 +4319,8 @@ export interface paths {
                     trust_tier?: string;
                     /** @description The Source this is a new version of. */
                     replaces?: string;
+                    /** @description A recording's language, such as `sv`, which helps its transcriber. Without it, the transcriber works it out. */
+                    language?: string;
                 };
                 header?: never;
                 path: {
@@ -4651,6 +4653,221 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vaults/{id}/sources/{sid}/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    sid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MediaInfoDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/sources/{sid}/meeting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    sid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MeetingDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    sid: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["MeetingBody"];
+                };
+            };
+            responses: {
+                /** @description Proposed. A person's commits at once and an agent's waits for review. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MeetingProposalResult"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/sources/{sid}/meeting/participants/{pid}/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    sid: string;
+                    pid: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ParticipantLinkBody"];
+                };
+            };
+            responses: {
+                /** @description Proposed. A person's commits at once and an agent's waits for review. */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MeetingProposalResult"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/vaults/{id}/sources/{sid}/pages": {
         parameters: {
             query?: never;
@@ -4901,6 +5118,149 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/sources/{sid}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    sid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The original recording, as it was uploaded, to play */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Part of it, for a Range request. A player seeks to a cited time with these. */
+                206: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                /** @description The range starts past the end */
+                416: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/sources/{sid}/transcript": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Text around this time, in milliseconds. Goes with `window_ms`. */
+                    around_ms?: number;
+                    /** @description How far either side of `around_ms`. The default is 30000. */
+                    window_ms?: number;
+                    /** @description Text from this time on. */
+                    from_ms?: number;
+                    /** @description Text up to this time. */
+                    to_ms?: number;
+                    /** @description Include each word's own times. */
+                    words?: boolean;
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                    sid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TranscriptDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                /** @description Not transcribed yet */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5278,8 +5638,17 @@ export interface components {
             source_id?: string | null;
             source_name?: string | null;
             source_sha256?: string | null;
+            /** @description Who was speaking, when that's known and one person spoke all of it. */
+            speaker?: string | null;
             /** Format: int64 */
             start?: number | null;
+            /** Format: int64 */
+            t_end_ms?: number | null;
+            /**
+             * Format: int64
+             * @description Where it plays in the original recording, in milliseconds. Only a recording has these.
+             */
+            t_start_ms?: number | null;
             trust_tier?: string | null;
         };
         ClaimRefDto: {
@@ -5485,6 +5854,8 @@ export interface components {
             /** @description The quote no longer resolves. Reported rather than guessed. */
             broken: boolean;
             evidence_id: string;
+            /** @description The source's media type. A recording's bytes play from `/sources/{sid}/stream`. */
+            media_type: string;
             parser: string;
             quote: string;
             /** @description Displayed coordinates in 1/100 pt, one per line. */
@@ -5494,9 +5865,18 @@ export interface components {
             source_id: string;
             source_name: string;
             source_sha256: string;
+            /** @description Who was speaking, when that's known and one person spoke all of it. */
+            speaker?: string | null;
             stance: string;
             /** @description A newer rendition exists. This still resolves. */
             superseded: boolean;
+            /** Format: int64 */
+            t_end_ms?: number | null;
+            /**
+             * Format: int64
+             * @description Where the quote plays in the original recording, in milliseconds. Only a recording has these.
+             */
+            t_start_ms?: number | null;
             trust_tier: string;
         };
         /** @description The answer to a search: claims first, then segments, then context sections, within a token budget. */
@@ -5633,6 +6013,14 @@ export interface components {
             page_width: number;
             rects: components["schemas"]["RectDto"][];
             source_id: string;
+            speaker?: string | null;
+            /** Format: int64 */
+            t_end_ms?: number | null;
+            /**
+             * Format: int64
+             * @description A recording's highlight is a time range and has no page or rects.
+             */
+            t_start_ms?: number | null;
         };
         InversePreview: {
             blocked_because?: string | null;
@@ -5692,6 +6080,68 @@ export interface components {
         /** @description Signs in a browser. No `Debug`, so the token can't reach a log by accident. */
         LoginBody: {
             token: string;
+        };
+        MediaInfoDto: {
+            /** Format: int32 */
+            channels?: number | null;
+            /**
+             * Format: int32
+             * @description Stretches read with less accurate times, because the transcriber crashed on them once.
+             */
+            coarse_spans?: number | null;
+            codec?: string | null;
+            /**
+             * Format: int64
+             * @description Empty until transcribed, as decoding is what finds it.
+             */
+            duration_ms?: number | null;
+            /** Format: int64 */
+            gap_ms?: number | null;
+            /**
+             * Format: int32
+             * @description Holes in the audio, kept as silence so times stay on the original timeline.
+             */
+            gaps?: number | null;
+            media_type: string;
+            /** @description The current rendition, once transcribed. */
+            rendition_id?: string | null;
+            /** Format: int32 */
+            sample_rate?: number | null;
+            /** Format: int64 */
+            size: number;
+            /**
+             * Format: int32
+             * @description Stretches the transcriber crashed on twice, which have no words.
+             */
+            skipped_spans?: number | null;
+            source_id: string;
+        };
+        /** @description A full replacement of a meeting's metadata, as a proposal. */
+        MeetingBody: {
+            /** Format: int32 */
+            base_version: number;
+            /** Format: int64 */
+            date_ms?: number | null;
+            idempotency_key: string;
+            participants: components["schemas"]["ParticipantInput"][];
+            title?: string | null;
+        };
+        MeetingDto: {
+            /** Format: int64 */
+            date_ms?: number | null;
+            participants: components["schemas"]["ParticipantDto"][];
+            source_id: string;
+            /** @description With no title set, the file's name. */
+            title?: string | null;
+            /**
+             * Format: int32
+             * @description The version to base an edit on.
+             */
+            version: number;
+        };
+        MeetingProposalResult: {
+            result: components["schemas"]["ProposalResult"];
+            source_id: string;
         };
         MergeBody: {
             idempotency_key: string;
@@ -5929,6 +6379,27 @@ export interface components {
             items: components["schemas"]["PageSummaryDto"][];
             next_cursor?: string | null;
         };
+        ParticipantDto: {
+            /** @description The Person a committed proposal links them to. */
+            entity_id?: string | null;
+            /** @description Stable, so a link can follow them. The server gives one to a participant sent without it. */
+            id: string;
+            name: string;
+            /** @description A transcript's label for them, when someone knows it. */
+            speaker?: string | null;
+        };
+        ParticipantInput: {
+            /** @description Leave out for a new participant. */
+            id?: string | null;
+            name: string;
+            speaker?: string | null;
+        };
+        /** @description Proposes that a participant is this Person. */
+        ParticipantLinkBody: {
+            entity_id: string;
+            idempotency_key: string;
+            rationale: string;
+        };
         PrincipalDto: {
             /** Format: int64 */
             created_at_ms: number;
@@ -6161,8 +6632,16 @@ export interface components {
             page_to?: number | null;
             rendition_id?: string | null;
             source_id: string;
+            speaker?: string | null;
             /** Format: int64 */
             start: number;
+            /** Format: int64 */
+            t_end_ms?: number | null;
+            /**
+             * Format: int64
+             * @description Where it plays, when it comes from a recording.
+             */
+            t_start_ms?: number | null;
             text: string;
         };
         SegmentPage: {
@@ -6254,6 +6733,42 @@ export interface components {
             output_tokens: number;
             /** Format: int64 */
             thinking_tokens: number;
+        };
+        TranscriptDto: {
+            /** Format: int64 */
+            duration_ms: number;
+            next_cursor?: string | null;
+            parser: string;
+            parts: components["schemas"]["TranscriptPartDto"][];
+            rendition_id: string;
+        };
+        /** @description A stretch of a transcript: a turn, cut to the window asked for. Its range is the same a claim citing these words gets. */
+        TranscriptPartDto: {
+            /** Format: int64 */
+            end: number;
+            /** @description Who was speaking, when that's known and one person spoke all of it. */
+            speaker?: string | null;
+            /**
+             * Format: int64
+             * @description UTF-8 byte offsets into the rendition's canonical text.
+             */
+            start: number;
+            /** Format: int64 */
+            t_end_ms: number;
+            /** Format: int64 */
+            t_start_ms: number;
+            text: string;
+            words?: components["schemas"]["TranscriptWordDto"][] | null;
+        };
+        TranscriptWordDto: {
+            /** Format: int64 */
+            end_ms: number;
+            /**
+             * Format: int64
+             * @description The table's own times, with no padding.
+             */
+            start_ms: number;
+            text: string;
         };
         TypePreviewBody: {
             schema: Record<string, never>;
