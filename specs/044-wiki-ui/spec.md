@@ -103,3 +103,5 @@ Also passed in `e2e:wiki`: claims with status, trust tier and evidence; claim au
 - Autocomplete and link states work from a list of at most 10,000 pages, as the API has no prefix search. Past that, the list says so, and a link not in it is neutral and resolves when followed.
 - Each history row reads its changeset for attribution, at most 50 per screen. A field on `RevisionDto` would remove those calls.
 - Run the editor once in Firefox and Safari.
+
+**Landing checks,** by the coordinator on d392ec8, with the load average at 15 to 25: `pnpm typecheck`, `lint`, `test`, `run licenses`, `run contrast`, `build`, `budget` and `e2e` all exit 0, and `e2e:wiki` and `e2e:shell` pass 17 of 17 each on a fresh database. No test failed or needed a rerun in that one pass, against the failures seen at a load of about 900. That fits load as the cause of the stalls, but one quiet pass doesn't prove it. Firefox and Safari still haven't run the editor. The backend checks didn't run, as no crate changed.
