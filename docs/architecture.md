@@ -160,10 +160,25 @@ prefix and suffix.
 - **PDF:** 0-based page index plus one rect per line, in displayed coordinates: after CropBox and `/Rotate`, origin top
   left, y down, integer 1/100 pt. Integers keep hashes stable. The Rendition stores each page's transform so raw PDF
   space can be recovered. OCR converts with `px * 72 / dpi` and adds a quad for skewed text.
-- **Audio:** integer `t_start_ms` and `t_end_ms` on the original media timeline, with an optional speaker.
+- **Audio:** integer `t_start_ms` and `t_end_ms` on the original media timeline, with an optional speaker. See [Recordings](#recordings).
 - **LLMs never emit bboxes.** They return a segment id and a quote, and our locator derives the rects.
 - A new Rendition re-anchors by quote. A failure flags the claim for review.
 - **Evidence gets its anchor as it commits,** on approval or auto-commit, from within the segment it cites, so the same words elsewhere in the document can't be taken for it. Evidence on a segment with no rendition has no anchor to get.
+
+### Recordings
+
+Spec 028. A recording takes the same path as a document, with its own job kind (`transcription`) and one worker, as one holds a large model and can take many minutes.
+
+- **The original is the Source,** byte for byte, in the blob store. Its type comes from sniffing its container: WAV, MP3, MP4, Ogg, FLAC, WebM and Matroska.
+- **The worker is a child process with saved progress,** in `<data>/vaults/<vault>/transcribe/<job>`. whisper.cpp can abort the process, so each stretch of speech is logged before and after it runs. A new process carries on from there: a stretch that crashed once runs on token times, and one that crashed twice is skipped. Both are counted in the rendition's `media`. Crashes with no progress between them end the job, and the folder goes when the job ends, as it holds the recording.
+- **Memory stays flat with length.** Decoding streams to a PCM file on disk, VAD reads 5 minutes at a time, and whisper reads a stretch of at most 2 minutes. A worker over `MEMEX_TRANSCRIBE_MAX_RSS_MB` is killed and fails the job, and a recording over `MEMEX_TRANSCRIBE_MAX_SECONDS`, by default 6 hours, is refused.
+- **The word table** is a `TimedDocument` in the rendition's words blob, and `media` on the row says so. The canonical text is its words with spaces, and a blank line at each change of speaker or pause of 800 ms. Speakers aren't in it, as a quote has to be what was said.
+- **Segments end at turns and pauses,** joining short ones up to about 100 tokens, and a change of speaker closes one that holds 30. Only a turn over the maximum is cut inside itself. Each carries its time range, so a search's citations give one without reading the word table.
+- **A cited range is its words' times with 300 ms each side, inside the recording.** One function makes every range, so the transcript and provenance can't disagree. Word starts are about 170 ms late, and the padding covers that. The word table keeps the model's own times.
+- **Extraction is unchanged.** It sees segments and returns quotes, and an anchor's bytes find its words. If they can't, the anchor is broken.
+- **Meeting metadata** (title, date, participants) is under `meeting` in the Source's metadata, and changes by proposal, so a person's commits at once and an agent's waits. A new version of a recording keeps it. A participant links to a Person with an Edge of kind `meeting_participant` from the recording, proposed like any other, and its id comes from the recording and the participant.
+- **Reading.** `/sources/{sid}/meeting`, `/transcript`, `/media` and `/stream`. `/stream` serves the original with its sniffed type and Range support, streaming, so memory stays flat, in the same sandbox as a download.
+- **The API is off unless named** by `MEMEX_BACKEND_TRANSCRIBER=gemini`. A key on its own does nothing, and a worker with the API off doesn't get the key. On, a chunk with no speech is never sent, spending stops at a token limit per recording, and under 50% of its words matching the local clock fails the job. An outage waits, as with extraction. Speaker labels name their chunk, since linking them across chunks is unsolved.
 
 ### Dynamic entity types
 

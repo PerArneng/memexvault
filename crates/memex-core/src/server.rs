@@ -1566,7 +1566,7 @@ impl<E: ServerEdges> Server<E> {
             return Err(refuse(ServerError::Invalid("the upload is empty".into())));
         }
         let Some(media_type) = sources::sniff_media_type(&reader.prefix, &req.name) else {
-            return Err(refuse(ServerError::UnsupportedMedia("not a PDF, text file or recording".into())));
+            return Err(refuse(ServerError::UnsupportedMedia("not a PDF or text file or a recording".into())));
         };
         let vault_lock = self.vault_lock(vault);
         let _one_at_a_time = vault_lock.lock().expect("lock");

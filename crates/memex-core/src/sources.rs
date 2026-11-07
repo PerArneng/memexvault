@@ -86,11 +86,11 @@ fn sniff_recording(prefix: &[u8]) -> Option<&'static str> {
     if prefix.starts_with(b"ID3") {
         return Some("audio/mpeg");
     }
-    // An MP3 frame header: the sync bits, then a version, layer, bitrate and rate that aren't reserved.
+    // An MP3 frame header: the sync bits, then a version, bitrate and rate that aren't reserved, and layer II or III. Layer I is left out because its header starts like a UTF-16 byte order mark, `ff fe`.
     if let [0xff, b1, b2, ..] = prefix
         && b1 & 0xe0 == 0xe0
         && b1 & 0x18 != 0x08
-        && b1 & 0x06 != 0
+        && matches!(b1 & 0x06, 0x02 | 0x04)
         && b2 & 0xf0 != 0xf0
         && b2 & 0x0c != 0x0c
     {
