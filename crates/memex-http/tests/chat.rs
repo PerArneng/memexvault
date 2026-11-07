@@ -550,6 +550,8 @@ async fn your_own_threads_list_rename_read_and_delete() {
     assert_eq!(rest["items"][0]["id"], json!("one"));
     assert_eq!(rest["next_cursor"], Value::Null);
     assert_eq!(w.call("GET", &format!("{threads}?cursor=junk"), &w.root, None).await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(w.call("GET", &format!("{threads}?sort=updated"), &w.root, None).await.0, StatusCode::OK);
+    assert_eq!(w.call("GET", &format!("{threads}?sort=created"), &w.root, None).await.0, StatusCode::BAD_REQUEST, "it says what it does");
 
     let one = format!("{threads}/one");
     let (status, renamed) = w.call("PATCH", &one, &w.root, Some(json!({"title": " Better name "}))).await;

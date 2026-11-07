@@ -207,19 +207,29 @@ where
     Ok(Json(dto))
 }
 
-/// Your own threads, the most recently updated first. Nobody can list another's, whatever their scope.
+/// Your own threads, the most recently updated first, so the only `sort` here is `updated`. Nobody can list another's, whatever their scope.
 #[utoipa::path(get, path = "/api/v1/vaults/{id}/chat/threads", tag = "chat", params(("id" = String, Path), ListParams), responses((status = 200, body = memex_api::ChatThreadPage), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody)))]
 async fn list_threads<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
     headers: HeaderMap,
     Path(id): Path<String>,
-    Query(params): Query<ListParams>,
+    Query(mut params): Query<ListParams>,
 ) -> Result<Json<ChatThreadPage>, ApiError>
 where
     E: ServerEdges + Send + Sync + 'static,
     Server<E>: Send + Sync,
 {
+    if let Some(sort) = params.sort.take()
+        && sort != "updated"
+    {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid",
+            format!("unknown sort '{sort}': the only sort here is 'updated'"),
+            &rid.0,
+        ));
+    }
     let l = super::list(params, &rid)?;
     if let Some(cursor) = &l.cursor
         && memex_api::parse_thread_cursor(cursor).is_none()
