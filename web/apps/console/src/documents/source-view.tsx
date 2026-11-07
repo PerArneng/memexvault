@@ -3,7 +3,7 @@ import type { SourceViewRoute } from "@memex/core";
 import type { AnchorRect, DocumentSource, EvidenceStep, PageWord, Rendition, Transcript, VaultId } from "@memex/types";
 import { Badge, Button, EmptyState } from "@memex/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEngine } from "../engine-context";
 import { FailureError, QUERY_KEYS, unwrap } from "../query";
 import { QueryView } from "../shell/query-view";
@@ -103,7 +103,8 @@ const PdfView = ({ vault, source, renditions, route, highlights }: PdfProps) => 
           highlights={highlights}
           page={route.page ?? (highlights[0]?.page ?? 0)}
           zoom={route.zoom ?? DEFAULT_ZOOM}
-          onPageChange={(page) => go(pathWith({ page: page === 0 ? null : page }), true)}
+          // The first page needs no number, unless a highlight would otherwise take the link back to its own page.
+          onPageChange={(page) => go(pathWith({ page: page === 0 && highlights.length === 0 ? null : page }), true)}
           onZoomChange={(zoom) => go(pathWith({ zoom: zoom === DEFAULT_ZOOM ? null : zoom }), true)}
           marks={marks}
           wordsOnPage={wordsOnPage}
@@ -126,11 +127,15 @@ const TranscriptPanel = ({ vault, source, timeMs, fromMs, toMs, onSeek }: { read
   // Starts a little before a cited time, so what leads up to it is there. Whatever comes after loads as it's reached.
   const startAt = fromMs === null ? null : Math.max(0, fromMs - 60_000);
   const [from, setFrom] = useState<number | null>(startAt);
+  // A later link can go to before what's loaded.
+  useEffect(() => {
+    if (startAt !== null) setFrom((now) => (now !== null && startAt < now ? startAt : now));
+  }, [startAt]);
   const query = useInfiniteQuery({
     queryKey: QUERY_KEYS.transcript(vault, source.id, from),
     initialPageParam: null as string | null,
     getNextPageParam: (last: Transcript) => last.nextCursor,
-    queryFn: async ({ pageParam }) => unwrap(await engine.getTranscript(vault, source.id, { fromMs: pageParam === null ? from : null, cursor: pageParam, words: true })),
+    queryFn: async ({ pageParam }) => unwrap(await engine.getTranscript(vault, source.id, { fromMs: from, cursor: pageParam, words: true })),
   });
   const parts = useMemo(() => query.data?.pages.flatMap((p) => p.parts) ?? [], [query.data]);
   if (failureStatus(query.error) === 409 || failureCode(query.error) === "conflict") {

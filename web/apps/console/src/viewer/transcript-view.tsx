@@ -51,6 +51,11 @@ export const TranscriptView = ({ parts, timeMs, fromMs, toMs, onSeek, hasMore, l
     if (row instanceof HTMLElement) list.scrollTop = Math.max(0, row.offsetTop - list.offsetTop - list.clientHeight / 3);
   }, [active, follow]);
 
+  // Playback reaching the end of what's loaded brings in the next stretch.
+  useEffect(() => {
+    if (hasMore && !loadingMore && active !== null && active >= parts.length - 1) onLoadMore();
+  }, [active, hasMore, loadingMore, onLoadMore, parts.length]);
+
   return (
     <section aria-label="Transcript" className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">

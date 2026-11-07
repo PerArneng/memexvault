@@ -6,8 +6,12 @@ import type { DocumentRoute } from "./document-routes";
 const V = vaultId("v1");
 const parse = (path: string): DocumentRoute => {
   const [rest = "", search = ""] = path.split("?");
-  const query = new URLSearchParams(search);
-  return parseDocumentRoute(rest.split("/").filter((p) => p !== "").map(decodeURIComponent), (name) => query.get(name));
+  // This package has no URL type, as nothing pure needs one.
+  const query = new Map(search.split("&").filter((p) => p !== "").map((p) => {
+    const [name = "", value = ""] = p.split("=");
+    return [name, decodeURIComponent(value)] as const;
+  }));
+  return parseDocumentRoute(rest.split("/").filter((p) => p !== "").map(decodeURIComponent), (name) => query.get(name) ?? null);
 };
 const source = (path: string) => {
   const route = parse(path);

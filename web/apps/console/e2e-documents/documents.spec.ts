@@ -361,6 +361,30 @@ test("item 3: a link to a time plays from it, and the transcript follows, on a r
     freshLoad: { positionErrorMs: median(of("fresh load", "positionErrorMs")), toAdvancingMs: median(of("fresh load", "toAdvancingMs")), blocked: runs.filter((r) => r.blockedByAutoplay === true).length },
   });
 
+  // A browser that insists on a click. Playwright's Chromium doesn't, whatever flags it gets, so the refusal is scripted, as a real one comes to the page.
+  const strictContext = await signedInContext(browser);
+  const strictPage = await strictContext.newPage();
+  await strictPage.addInitScript(() => {
+    const play = HTMLMediaElement.prototype.play;
+    let refusals = 1;
+    HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+      if (refusals > 0) {
+        refusals -= 1;
+        return Promise.reject(new DOMException("needs a click", "NotAllowedError"));
+      }
+      return play.call(this);
+    };
+  });
+  await strictPage.goto(docsPath(`/${source.id}?t=${String(start)}&end=${String(end)}`));
+  const notice = strictPage.getByRole("status").filter({ hasText: "wants a click" });
+  await expect(notice).toBeVisible();
+  const readyAt = await strictPage.locator("audio").evaluate((el: HTMLAudioElement) => ({ time: el.currentTime, paused: el.paused }));
+  await notice.getByRole("button", { name: "Play" }).click();
+  await expect.poll(() => strictPage.locator("audio").evaluate((el: HTMLAudioElement, at) => !el.paused && el.currentTime > at, start / 1000)).toBe(true);
+  await expect(notice).toHaveCount(0);
+  record("a scripted autoplay refusal", { ...readyAt, requested: start / 1000, afterClick: "playing" });
+  await strictContext.close();
+
   // The rest of the player, on the same recording.
   const problems = problemsOf(page);
   await signIn(page);
@@ -821,11 +845,11 @@ test("item 6: a broken anchor, a superseded rendition, a missing blob, an erased
   await expect(page.locator("[data-superseded-rendition]")).toContainText("superseded rendition");
   const evidenceNow = await get<{ evidence: { superseded: boolean; broken: boolean; rendition_id: string }[] }>(request, api(`/assertions/${kept.claim}/lineage`));
   record("a claim after its rendition is replaced", evidenceNow.evidence[0]);
-  // An old rendition's evidence, kept on the old one by the row itself, is what `superseded` marks. If re-anchoring moved it, mark the row back, in this database only.
+  // Re-anchoring moved it to the new rendition, as it should when the quote is still there. A claim left on the old one is what `superseded` marks, so the row is put back there, in this database only.
   if (evidenceNow.evidence[0]?.superseded !== true && PG_CONTAINER !== undefined) {
     const schema = vaultSchema();
     const oldSegment = (await segmentsOf(request, before.id))[0];
-    sql(`update "${schema}".evidence set row = jsonb_set(row, '{segment_id}', '"${oldSegment?.id ?? ""}"') where id = '${kept.evidence}'`);
+    sql(`update "${schema}".evidence set segment_id = '${oldSegment?.id ?? ""}', row = jsonb_set(row, '{evidence,segment_id}', '"${oldSegment?.id ?? ""}"') where id = '${kept.evidence}'`);
   }
   await page.goto(docsPath(`/${older.id}?claim=${kept.claim}&evidence=${kept.evidence}`));
   await expect(page.locator("[data-evidence-state='superseded']")).toContainText("superseded rendition");
@@ -840,7 +864,7 @@ test("item 6: a broken anchor, a superseded rendition, a missing blob, an erased
   const brokenQuote = normal(brokenSegment?.text ?? "").split(" ").slice(0, 4).join(" ");
   const broken = await addClaim(request, `broken-${run}`, brokenSegment?.id ?? "", brokenQuote);
   const schema = vaultSchema();
-  sql(`update "${schema}".evidence set row = jsonb_set(row, '{anchor_broken}', 'true') where id = '${broken.evidence}'`);
+  sql(`update "${schema}".evidence set anchor_broken = true, row = jsonb_set(row, '{evidence,anchor_broken}', 'true') where id = '${broken.evidence}'`);
   const reported = await get<{ evidence: { broken: boolean; rects: unknown[] }[] }>(request, api(`/assertions/${broken.claim}/lineage`));
   record("the server on a broken anchor", { broken: reported.evidence[0]?.broken, rects: reported.evidence[0]?.rects.length });
   expect(reported.evidence[0]?.broken).toBe(true);
@@ -887,13 +911,24 @@ test("item 6: a broken anchor, a superseded rendition, a missing blob, an erased
   await page.goto(docsPath(`/${gone.id}?claim=${cited.claim}&evidence=${cited.evidence}`));
   await expect(page.locator("[data-source-gone]")).toBeVisible();
 
-  // A type this browser can't play. Playwright's Chromium has no AAC, so a real .m4a through the real stream is refused by the browser itself.
-  const m4a = await upload(request, `tone-${run}.m4a`, readFileSync(join(repo, "crates/memex-asr/tests/fixtures/tone.m4a")));
+  // A type this browser can't play. Playwright's Chromium plays AAC and even PCM in Matroska, and refuses ALAC, so half a second of generated tone in ALAC goes through the real stream and the browser itself refuses it.
+  const m4a = await upload(request, `tone-${run}.m4a`, readFileSync(join(here, "fixtures/tone-alac.m4a")));
   await page.goto(docsPath(`/${m4a.id}`));
   const problem = page.locator("[data-media-problem]");
   await expect(problem).toContainText("This recording can't be played here.");
   await expect(problem.getByRole("link", { name: "download the original" })).toHaveAttribute("href", new RegExp(`/sources/${m4a.id}/file$`));
   record("a type the browser can't play", await problem.textContent());
+  // A browser that says so before trying, which is a different path. Its answer is scripted, and the stream is then never asked for.
+  const streams: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().endsWith("/stream")) streams.push(r.url());
+  });
+  await page.addInitScript(() => {
+    HTMLMediaElement.prototype.canPlayType = () => "";
+  });
+  await page.goto(docsPath(`/${m4a.id}`));
+  await expect(problem).toContainText("This browser has no player for audio/mp4.");
+  expect(streams).toEqual([]);
   const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations.map((v) => `${v.id}: ${v.nodes[0]?.target} ${v.nodes[0]?.failureSummary}`)).toEqual([]);
 });
