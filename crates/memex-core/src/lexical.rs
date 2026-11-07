@@ -146,6 +146,8 @@ pub struct Touched {
     pub entities: BTreeSet<ObjectId>,
     /// Types with a new or removed version, whose entities' documents depend on it.
     pub entity_types: BTreeSet<String>,
+    pub pages: BTreeSet<ObjectId>,
+    pub blocks: BTreeSet<ObjectId>,
 }
 
 impl Touched {
@@ -156,6 +158,12 @@ impl Touched {
             "segment.recorded" => {
                 if let Some(id) = current.payload.get("id").and_then(|v| v.as_str()) {
                     self.segments.insert(ObjectId(id.into()));
+                }
+                None
+            }
+            "page.created" | "page.edited" | "page.deleted" => {
+                if let Some(id) = current.payload.get("id").and_then(|v| v.as_str()) {
+                    self.pages.insert(ObjectId(id.into()));
                 }
                 None
             }
@@ -190,6 +198,22 @@ impl Touched {
             Mutation::Put(Row::Entity(r)) => {
                 self.entities.insert(r.header.id);
             }
+            Mutation::Put(Row::Page(r)) => {
+                self.pages.insert(r.header.id);
+            }
+            // Headings are part of their page's document.
+            Mutation::Put(Row::Block(r)) => {
+                if r.kind == memex_types::BlockKind::Heading {
+                    self.pages.insert(r.page_id);
+                }
+                self.blocks.insert(r.header.id);
+            }
+            Mutation::Delete(RowKey { table: Table::Page, id }) => {
+                self.pages.insert(id);
+            }
+            Mutation::Delete(RowKey { table: Table::Block, id }) => {
+                self.blocks.insert(id);
+            }
             Mutation::Put(Row::EntityType(r)) => {
                 self.entity_types.insert(r.name);
             }
@@ -218,6 +242,8 @@ impl Touched {
             && self.sources.is_empty()
             && self.entities.is_empty()
             && self.entity_types.is_empty()
+            && self.pages.is_empty()
+            && self.blocks.is_empty()
     }
 }
 
@@ -443,6 +469,8 @@ pub fn fence_hits<S: Snapshot>(snap: &S, results: LexicalResults) -> Result<Lexi
         DocKind::Segment => Table::Segment,
         DocKind::Claim => Table::Assertion,
         DocKind::Entity => Table::Entity,
+        DocKind::Page => Table::Page,
+        DocKind::Block => Table::Block,
     };
     let lookups: Vec<RowKey> = results
         .hits
@@ -472,6 +500,7 @@ pub fn fence_hits<S: Snapshot>(snap: &S, results: LexicalResults) -> Result<Lexi
             Some(Row::Segment(s)) => segment_is_current(s, &stale),
             Some(Row::Assertion(a)) => a.header.status == Status::Active && a.superseded_by.is_none(),
             Some(Row::Entity(e)) => e.is_current(),
+            Some(Row::Page(_) | Row::Block(_)) => true,
             _ => false,
         })
         .map(|(hit, _)| hit)

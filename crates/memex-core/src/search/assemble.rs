@@ -4,10 +4,11 @@ use super::fusion::Fused;
 use crate::entity::{current_claims, entity_doc, latest_types};
 use crate::governance::CONTRADICTS;
 use crate::lexical::{assertion_doc, claim_text, current_rendition, filter_passes, segment_doc};
+use crate::page::{block_doc, page_doc};
 use crate::{Snapshot, StoreError};
 use memex_types::{
-    AnchorStatus, AssertionRow, Citation, Conflict, DocKind, EntityRow, EntityTypeRow, EvidenceItem, EvidenceRow, FacetCount, Facets, IndexDoc, ItemKind,
-    LexicalFilter, ObjectId, RenditionRow, Row, RowKey, SegmentRow, SourceRow, Status, Table,
+    AnchorStatus, AssertionRow, BlockRow, Citation, Conflict, DocKind, EntityRow, EntityTypeRow, EvidenceItem, EvidenceRow, FacetCount, Facets, IndexDoc,
+    ItemKind, LexicalFilter, ObjectId, PageRow, RenditionRow, Row, RowKey, SegmentRow, SourceRow, Status, Table,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -33,6 +34,8 @@ fn table_of(kind: DocKind) -> Table {
         DocKind::Segment => Table::Segment,
         DocKind::Claim => Table::Assertion,
         DocKind::Entity => Table::Entity,
+        DocKind::Page => Table::Page,
+        DocKind::Block => Table::Block,
     }
 }
 
@@ -56,6 +59,8 @@ struct Loaded {
     evidence: HashMap<ObjectId, Vec<EvidenceRow>>,
     /// Each claim's current rivals.
     conflicts: HashMap<ObjectId, Vec<ObjectId>>,
+    pages: HashMap<ObjectId, PageRow>,
+    blocks: HashMap<ObjectId, BlockRow>,
 }
 
 impl Loaded {
@@ -77,6 +82,12 @@ impl Loaded {
                 Row::Rendition(r) => {
                     self.renditions.insert(r.header.id.clone(), r);
                 }
+                Row::Page(p) => {
+                    self.pages.insert(p.header.id.clone(), p);
+                }
+                Row::Block(b) => {
+                    self.blocks.insert(b.header.id.clone(), b);
+                }
                 _ => {}
             }
         }
@@ -94,6 +105,17 @@ impl Loaded {
         let keys: Vec<RowKey> = candidates.iter().map(|c| key(table_of(c.kind), &c.id)).collect();
         Self::read(snap, &keys, &mut l)?;
         l.entities.retain(|_, e| e.is_current());
+        // A block's item names its page.
+        let keys: Vec<RowKey> = l
+            .blocks
+            .values()
+            .map(|b| &b.page_id)
+            .filter(|p| !l.pages.contains_key(*p))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(|p| key(Table::Page, p))
+            .collect();
+        Self::read(snap, &keys, &mut l)?;
         if !l.entities.is_empty() {
             // An entity's citations are the evidence behind its values, and its conflicts are the claims those values beat.
             let keys: Vec<RowKey> = l
@@ -271,6 +293,7 @@ impl Loaded {
             estimated_tokens: 0,
             citations: vec![self.segment_citation(s)],
             conflicts: vec![],
+            page_id: None,
         })
     }
 
@@ -322,6 +345,7 @@ impl Loaded {
             estimated_tokens: 0,
             citations,
             conflicts,
+            page_id: None,
         })
     }
 
@@ -344,6 +368,27 @@ impl Loaded {
             estimated_tokens: 0,
             citations,
             conflicts: self.conflicts_of(&a.header.id),
+            page_id: None,
+        })
+    }
+
+    /// A page or a block. Its text is the document's, without link syntax. It has no source, so its one citation says so.
+    fn page_item(&self, id: &ObjectId, kind: ItemKind, page: &PageRow, score: f32, doc: &IndexDoc) -> EvidenceItem {
+        finish(EvidenceItem {
+            id: id.clone(),
+            kind,
+            text: doc.text.clone(),
+            heading: Some(page.title.clone()),
+            language: doc.language.clone(),
+            epistemic: None,
+            trust_tiers: vec![],
+            valid_from_ms: None,
+            valid_to_ms: None,
+            score: Some(score),
+            estimated_tokens: 0,
+            citations: vec![Self::no_anchor()],
+            conflicts: vec![],
+            page_id: Some(page.header.id.clone()),
         })
     }
 }
@@ -374,6 +419,16 @@ pub fn fence<S: Snapshot>(snap: &S, candidates: Vec<Fused>, filter: &LexicalFilt
             DocKind::Entity => loaded.entities.get(&fused.id).and_then(|e| {
                 let doc = loaded.entity_doc(e)?;
                 Some((loaded.entity_item(e, fused.score, &doc), doc))
+            }),
+            // The fence reads no headings for a page's item: its document's search text was only for finding it.
+            DocKind::Page => loaded.pages.get(&fused.id).map(|p| {
+                let doc = page_doc(p, &[]);
+                (loaded.page_item(&fused.id, ItemKind::Page, p, fused.score, &doc), doc)
+            }),
+            DocKind::Block => loaded.blocks.get(&fused.id).and_then(|b| {
+                let doc = block_doc(b)?;
+                let page = loaded.pages.get(&b.page_id)?;
+                Some((loaded.page_item(&fused.id, ItemKind::Block, page, fused.score, &doc), doc))
             }),
         };
         if let Some((item, doc)) = built
@@ -480,6 +535,7 @@ pub fn parent_sections<S: Snapshot>(snap: &S, page: &[&Fenced], budget_left: usi
             estimated_tokens: 0,
             citations: vec![citation],
             conflicts: vec![],
+            page_id: None,
         });
         if item.estimated_tokens <= left {
             left -= item.estimated_tokens;

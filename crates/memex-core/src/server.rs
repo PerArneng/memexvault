@@ -1,9 +1,14 @@
 mod entities;
 mod extraction;
+mod pages;
 pub use entities::{
     ClaimEvidence, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, FieldInput, NewEntity, Redirect, SplitRequest, TypeDecision,
 };
 pub use extraction::{ExtractJobError, ExtractionReport};
+pub use pages::{
+    BacklinkView, ClaimRefStatus, ClaimReference, ImportedPage, NewPage, OutgoingLink, PageChange, PageDiff, PageRedirect, PageRevisionView, PageView,
+    UnresolvedLink,
+};
 
 use crate::auth::{Caller, Decision, Operation, authorize};
 use crate::governance::{self, Author, NotReversible, PlanError};
@@ -731,6 +736,8 @@ impl<E: ServerEdges> Server<E> {
         let mut ops = crate::lexical::segment_ops(&snap, &ids_of(memex_types::DocKind::Segment)).map_err(EmbedJobError::retry)?;
         ops.extend(crate::lexical::assertion_ops(&snap, &ids_of(memex_types::DocKind::Claim)).map_err(EmbedJobError::retry)?);
         ops.extend(crate::entity::entity_ops(&snap, &ids_of(memex_types::DocKind::Entity)).map_err(EmbedJobError::retry)?);
+        ops.extend(crate::page::page_ops(&snap, &ids_of(memex_types::DocKind::Page)).map_err(EmbedJobError::retry)?);
+        ops.extend(crate::page::block_ops(&snap, &ids_of(memex_types::DocKind::Block)).map_err(EmbedJobError::retry)?);
         let docs: Vec<memex_types::IndexDoc> = ops
             .into_iter()
             .filter_map(|op| match op {
@@ -918,7 +925,8 @@ impl<E: ServerEdges> Server<E> {
         let quote = governance::validate_quotes(snap, &p.ops)?;
         let (dedup, check) = governance::validate_dedup(snap, &p.ops)?;
         let entity = governance::validate_entities(snap, &p.ops)?;
-        Ok((vec![schema, evidence, quote, dedup, entity], check.contradictions))
+        let page = governance::validate_pages(snap, &p.ops)?;
+        Ok((vec![schema, evidence, quote, dedup, entity, page], check.contradictions))
     }
 
     fn commit_changeset(&self, lease: &WriterLease, actor: &str, changeset: ChangeSetRow, mutations: Vec<Mutation>) -> Result<(), ServerError> {
@@ -955,6 +963,7 @@ impl<E: ServerEdges> Server<E> {
     /// `propose` for someone already allowed to: a caller, or a job of the server's own.
     fn propose_as(&self, actor: &str, machine: bool, vault: &VaultId, p: Proposal, dry_run: bool) -> Result<ProposalOutcome, ServerError> {
         self.vault_exists(vault)?;
+        crate::page::check_sizes(&p.ops).map_err(ServerError::Invalid)?;
         let lease = self.lease(vault)?;
         let vault_lock = self.vault_lock(vault);
         let _one_at_a_time = vault_lock.lock().expect("lock");

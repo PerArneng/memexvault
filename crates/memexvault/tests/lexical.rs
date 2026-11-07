@@ -364,7 +364,7 @@ fn a_generation_from_an_older_schema_is_rebuilt() {
     };
     let meta = base.join("gen-1").join("meta.json");
     let text = fs::read_to_string(&meta).unwrap();
-    let older = text.replace("\\\"schema\\\":3", "\\\"schema\\\":2");
+    let older = text.replace("\\\"schema\\\":4", "\\\"schema\\\":3");
     assert_ne!(text, older, "the payload's format changed, so this test needs updating");
     fs::write(&meta, older).unwrap();
     let l = index(&dir);

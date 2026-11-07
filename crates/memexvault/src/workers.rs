@@ -283,6 +283,8 @@ mod tests {
                 title: "t".into(),
                 body: "b".into(),
                 updated_at_ms: 0,
+                slug: String::new(),
+                redirects: vec![],
             }))])
         }
     }

@@ -30,6 +30,26 @@ pub enum AsOf {
     Time(i64),
 }
 
+/// Whether a search follows Edges from its best candidates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Expand {
+    /// As the planner's rules decide.
+    Auto,
+    On,
+    Off,
+}
+
+impl Expand {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "auto" => Some(Self::Auto),
+            "on" => Some(Self::On),
+            "off" => Some(Self::Off),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchRequest {
     pub text: String,
@@ -46,6 +66,7 @@ pub struct SearchRequest {
     pub rerank: bool,
     pub debug: bool,
     pub facets: bool,
+    pub expand: Expand,
 }
 
 impl SearchRequest {
@@ -62,6 +83,7 @@ impl SearchRequest {
             rerank: false,
             debug: false,
             facets: false,
+            expand: Expand::Auto,
         }
     }
 }
@@ -98,6 +120,8 @@ pub enum ItemKind {
     Entity,
     /// The segments around a hit under the same heading, for context.
     Section,
+    Page,
+    Block,
 }
 
 impl ItemKind {
@@ -107,6 +131,8 @@ impl ItemKind {
             Self::Segment => "segment",
             Self::Entity => "entity",
             Self::Section => "section",
+            Self::Page => "page",
+            Self::Block => "block",
         }
     }
 
@@ -115,6 +141,8 @@ impl ItemKind {
             DocKind::Claim => Self::Claim,
             DocKind::Segment => Self::Segment,
             DocKind::Entity => Self::Entity,
+            DocKind::Page => Self::Page,
+            DocKind::Block => Self::Block,
         }
     }
 }
@@ -186,6 +214,8 @@ pub struct EvidenceItem {
     pub estimated_tokens: usize,
     pub citations: Vec<Citation>,
     pub conflicts: Vec<Conflict>,
+    /// The wiki page a page or block item belongs to.
+    pub page_id: Option<ObjectId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -221,6 +251,8 @@ pub struct SearchDebug {
     pub term_coverage: Option<f32>,
     pub candidates_before_fence: usize,
     pub candidates_after_fence: usize,
+    /// Candidates that following Edges added.
+    pub expanded: usize,
     pub signals: Vec<SignalScores>,
     /// Milliseconds per stage, in order.
     pub timings_ms: Vec<(String, f64)>,

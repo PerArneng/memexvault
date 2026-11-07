@@ -225,6 +225,35 @@ pub const VAULT_MIGRATIONS: &[&str] = &[
     CREATE INDEX ON {s}.entity_fields (text_value, entity_id) WHERE text_value IS NOT NULL;
     CREATE INDEX ON {s}.assertions (subject, id) WHERE active;
 ",
+    // Spec 022: wiki pages' slugs, blocks and history, and links as edges with their block. Rows of older pages stay as they are until their first edit.
+    "
+    ALTER TABLE {s}.pages
+        ADD COLUMN slug text NOT NULL DEFAULT '',
+        ADD COLUMN redirects jsonb NOT NULL DEFAULT '[]';
+    ALTER TABLE {s}.edges ADD COLUMN block_id text COLLATE \"C\";
+    CREATE INDEX ON {s}.edges (kind, id);
+    CREATE TABLE {s}.blocks (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL,
+        page_id text COLLATE \"C\" NOT NULL,
+        position integer NOT NULL,
+        kind text NOT NULL
+    );
+    CREATE INDEX ON {s}.blocks (page_id, position);
+    CREATE TABLE {s}.page_slugs (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL,
+        page_id text COLLATE \"C\" NOT NULL
+    );
+    CREATE INDEX ON {s}.page_slugs (page_id);
+    CREATE TABLE {s}.page_revisions (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL,
+        page_id text COLLATE \"C\" NOT NULL,
+        revision integer NOT NULL,
+        UNIQUE (page_id, revision)
+    );
+",
     // Spec 024: what each extraction call was given and returned, and each rendition's latest run.
     "
     CREATE TABLE {s}.derivations (

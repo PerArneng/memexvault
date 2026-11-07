@@ -1,6 +1,7 @@
 //! Pure: request and response types for the HTTP API, and their translation from domain data. No web framework.
 mod entities;
 mod extraction;
+mod pages;
 pub use entities::*;
 pub use extraction::*;
 use memex_types::{
@@ -8,6 +9,7 @@ use memex_types::{
     LexicalFilter, LexicalResults, ObjectId, Op, Principal, PrincipalKind, RenditionRow, Scope, SearchDebug, SearchMode, SearchRequest, SegmentRow,
     SignalScores, SourceRow, TokenRow, VaultId, VaultRow,
 };
+pub use pages::*;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -877,7 +879,7 @@ impl LexicalSearchParams {
         }
         let kinds = match self.kind.as_deref() {
             None => vec![],
-            Some(k) => vec![DocKind::parse(k).ok_or_else(|| format!("kind must be segment, claim or entity, not {k}"))?],
+            Some(k) => vec![DocKind::parse(k).ok_or_else(|| format!("kind must be segment, claim, entity, page or block, not {k}"))?],
         };
         let filter = LexicalFilter {
             kinds,
@@ -959,6 +961,8 @@ pub struct SearchParams {
     pub debug: Option<bool>,
     /// Add counts for the typed filters, over the candidates found.
     pub facets: Option<bool>,
+    /// Whether to follow Edges from the best candidates: `auto`, the default, leaves it to the planner's rules, or `on` or `off`.
+    pub expand: Option<String>,
     /// `<type>.<field>`: search within one entity field. Keyword only, since the vector index has no fields.
     pub attr: Option<String>,
 }
@@ -988,13 +992,17 @@ impl SearchParams {
         };
         let kinds = csv(self.kind)
             .iter()
-            .map(|k| DocKind::parse(k).ok_or_else(|| format!("kind must be segment, claim or entity, not {k}")))
+            .map(|k| DocKind::parse(k).ok_or_else(|| format!("kind must be segment, claim, entity, page or block, not {k}")))
             .collect::<Result<_, _>>()?;
         let as_of = match (self.as_of, self.as_of_ms) {
             (Some(_), Some(_)) => return Err("give as_of or as_of_ms, not both".into()),
             (Some(seq), None) => Some(AsOf::Seq(seq)),
             (None, Some(ms)) => Some(AsOf::Time(ms)),
             (None, None) => None,
+        };
+        let expand = match self.expand.as_deref() {
+            None => memex_types::Expand::Auto,
+            Some(e) => memex_types::Expand::parse(e).ok_or_else(|| format!("expand must be auto, on or off, not {e}"))?,
         };
         let attr = match self.attr.as_deref() {
             None => None,
@@ -1027,6 +1035,7 @@ impl SearchParams {
                 rerank: self.rerank.unwrap_or(false),
                 debug: self.debug.unwrap_or(false),
                 facets: self.facets.unwrap_or(false),
+                expand,
             },
             wait,
         ))
@@ -1105,7 +1114,7 @@ impl From<Conflict> for ConflictDto {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct EvidenceItemDto {
     pub id: String,
-    /// `claim`, `segment` or `section`.
+    /// `claim`, `segment`, `entity`, `section`, `page` or `block`.
     pub kind: String,
     pub text: String,
     pub heading: Option<String>,
@@ -1118,6 +1127,8 @@ pub struct EvidenceItemDto {
     pub estimated_tokens: usize,
     pub citations: Vec<CitationDto>,
     pub conflicts: Vec<ConflictDto>,
+    /// The wiki page a page or block item belongs to.
+    pub page_id: Option<String>,
 }
 
 impl From<EvidenceItem> for EvidenceItemDto {
@@ -1136,6 +1147,7 @@ impl From<EvidenceItem> for EvidenceItemDto {
             estimated_tokens: i.estimated_tokens,
             citations: i.citations.into_iter().map(Into::into).collect(),
             conflicts: i.conflicts.into_iter().map(Into::into).collect(),
+            page_id: i.page_id.map(|p| p.0),
         }
     }
 }
@@ -1189,6 +1201,8 @@ pub struct SearchDebugDto {
     pub term_coverage: Option<f32>,
     pub candidates_before_fence: usize,
     pub candidates_after_fence: usize,
+    /// Candidates that following Edges added.
+    pub expanded: usize,
     pub signals: Vec<SignalScoresDto>,
     pub timings: Vec<StageTimingDto>,
 }
@@ -1204,6 +1218,7 @@ impl From<SearchDebug> for SearchDebugDto {
             term_coverage: d.term_coverage,
             candidates_before_fence: d.candidates_before_fence,
             candidates_after_fence: d.candidates_after_fence,
+            expanded: d.expanded,
             signals: d.signals.into_iter().map(Into::into).collect(),
             timings: d.timings_ms.into_iter().map(|(stage, ms)| StageTimingDto { stage, ms }).collect(),
         }

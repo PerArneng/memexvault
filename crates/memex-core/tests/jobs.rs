@@ -91,6 +91,8 @@ fn derived(job: &str, id: &str) -> Mutation {
         title: job.into(),
         body: "derived".into(),
         updated_at_ms: 0,
+        slug: String::new(),
+        redirects: vec![],
     }))
 }
 

@@ -76,18 +76,18 @@ where
         .route("/vaults/{id}/entities/{eid}/split", post(split::<E>))
 }
 
-fn invalid(m: String, rid: &RequestId) -> ApiError {
+pub(super) fn invalid(m: String, rid: &RequestId) -> ApiError {
     ApiError::new(StatusCode::BAD_REQUEST, "invalid", m, &rid.0)
 }
 
-fn text_of<T: serde::Serialize>(value: &T) -> String {
+pub(super) fn text_of<T: serde::Serialize>(value: &T) -> String {
     serde_json::to_value(value)
         .ok()
         .and_then(|v| v.as_str().map(str::to_string))
         .unwrap_or_default()
 }
 
-fn result_of(out: ProposalOutcome) -> ProposalResult {
+pub(super) fn result_of(out: ProposalOutcome) -> ProposalResult {
     ProposalResult {
         changeset: out.changeset.map(Into::into),
         validators: out.validators.iter().filter_map(|v| serde_json::to_value(v).ok()).collect(),

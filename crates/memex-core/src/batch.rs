@@ -138,6 +138,43 @@ impl<S: Snapshot> Snapshot for Pending<'_, S> {
     }
 
     /// Committed rows only, as with `rows`.
+    fn blocks_of(&self, pages: &[ObjectId], limit: usize) -> Result<Vec<memex_types::BlockRow>, StoreError> {
+        self.base.blocks_of(pages, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn headings_of(&self, pages: &[ObjectId]) -> Result<Vec<memex_types::BlockRow>, StoreError> {
+        self.base.headings_of(pages)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn page_summaries(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::PageRow>, StoreError> {
+        self.base.page_summaries(after, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn revisions_of(&self, page: &ObjectId, after: Option<u32>, limit: usize) -> Result<Vec<memex_types::RevisionRow>, StoreError> {
+        self.base.revisions_of(page, after, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn edges_linked(
+        &self,
+        ids: &[ObjectId],
+        kinds: &[&str],
+        direction: memex_types::EdgeDirection,
+        after: Option<&ObjectId>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::EdgeRow>, StoreError> {
+        self.base.edges_linked(ids, kinds, direction, after, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn unresolved_links(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::EdgeRow>, StoreError> {
+        self.base.unresolved_links(after, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
     fn shared_values(
         &self,
         type_name: &str,

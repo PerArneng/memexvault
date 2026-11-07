@@ -12,6 +12,7 @@ pub mod governance;
 pub mod jobs;
 pub mod lexical;
 pub mod ocr;
+pub mod page;
 pub mod projector;
 pub mod raster;
 mod reducer;
@@ -47,9 +48,10 @@ pub use replay::{ReplayError, all_events, replay};
 pub use search::Reranker;
 pub use seed::Seed;
 pub use server::{
-    ClaimEvidence, ClaimRef, CreatedSession, CreatedToken, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, EvidenceLineage,
-    ExtractJobError, ExtractionReport, FieldInput, Lineage, NewEntity, NewToken, PIPELINE_VERSION, PageList, Proposal, ProposalOutcome, RENDITION_JOB,
-    RESULT_LIMIT, Redirect, RenditionInput, SearchEdges, Server, ServerEdges, ServerError, SplitRequest, TypeDecision,
+    BacklinkView, ClaimEvidence, ClaimRef, ClaimRefStatus, ClaimReference, CreatedSession, CreatedToken, EntityCandidate, EntityClaim, EntityEdit,
+    EntityResolution, EntityView, EvidenceLineage, ExtractJobError, ExtractionReport, FieldInput, ImportedPage, Lineage, NewEntity, NewPage, NewToken,
+    OutgoingLink, PIPELINE_VERSION, PageChange, PageDiff, PageList, PageRedirect, PageRevisionView, PageView, Proposal, ProposalOutcome, RENDITION_JOB,
+    RESULT_LIMIT, Redirect, RenditionInput, SearchEdges, Server, ServerEdges, ServerError, SplitRequest, TypeDecision, UnresolvedLink,
 };
 pub use session::{LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, SESSION_TTL_MS};
 pub use settings::{Backends, LlmSettings, Settings, SettingsError};

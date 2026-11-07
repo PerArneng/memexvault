@@ -292,6 +292,7 @@ fn a_claim_carries_its_trust_status_and_conflicts() {
             from: oid("c2"),
             to: oid("c1"),
             kind: "contradicts".into(),
+            block_id: None,
         })),
     ]);
     w.settle();
@@ -323,6 +324,7 @@ fn a_superseded_rival_is_no_conflict() {
             from: oid("old"),
             to: oid("c1"),
             kind: "contradicts".into(),
+            block_id: None,
         })),
     ]);
     w.settle();
@@ -1017,9 +1019,9 @@ fn min_seq_does_not_wait_for_events_that_change_nothing_searchable() {
                 &lease,
                 EventDraft {
                     actor: "t".into(),
-                    kind: "page.created".into(),
+                    kind: "edge.linked".into(),
                     schema_version: 1,
-                    payload: json!({"id": "p", "title": "t", "body": "b"}),
+                    payload: json!({"id": "e", "from": "a", "to": "b", "kind": "k"}),
                 },
             )
             .unwrap()
