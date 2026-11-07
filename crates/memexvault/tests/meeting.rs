@@ -8,7 +8,9 @@ use memex_core::{
 };
 use memex_lexical::TantivyLexical;
 use memex_store_postgres::{PgStore, schema_of_vault};
-use memex_types::{AgentReply, AgentRequest, AgentUsage, ChangeSetState, ItemKind, MediaFacts, ObjectId, SearchRequest, TimedDocument, TimedWord, TranscribeUsage, VaultId};
+use memex_types::{
+    AgentReply, AgentRequest, AgentUsage, ChangeSetState, ItemKind, MediaFacts, ObjectId, SearchRequest, TimedDocument, TimedWord, TranscribeUsage, VaultId,
+};
 use memex_vector::PgVectors;
 use memexvault::edges::{PgVectorIndex, SystemClock, SystemSeed, TantivyIndex};
 use memexvault::pg_edge::PostgresStore;
@@ -155,7 +157,12 @@ impl Rig {
             replaces: None,
         };
         let mut b = bytes;
-        self.s.upload(&self.admin, &self.v, req, UploadLimits::default(), &mut b).unwrap().source.header.id
+        self.s
+            .upload(&self.admin, &self.v, req, UploadLimits::default(), &mut b)
+            .unwrap()
+            .source
+            .header
+            .id
     }
 
     fn ingest_recording(&self, doc: TimedDocument) -> ObjectId {
@@ -255,13 +262,27 @@ fn pg_meeting_every_committed_claim_has_a_time_anchor_that_resolves() {
         let e = &lineage.evidence[0];
         assert!(!e.broken);
         let time = e.anchor.as_ref().and_then(|a| a.time.clone()).unwrap();
-        let n: usize = e.evidence.quote.split_whitespace().nth(1).unwrap().trim_start_matches("nummer").parse().unwrap();
+        let n: usize = e
+            .evidence
+            .quote
+            .split_whitespace()
+            .nth(1)
+            .unwrap()
+            .trim_start_matches("nummer")
+            .parse()
+            .unwrap();
         let first = words.iter().find(|w| w.text == format!("nummer{n}")).unwrap();
-        assert!(time.t_start_ms <= first.start_ms && first.start_ms - time.t_start_ms <= 1000, "{time:?} {first:?}");
+        assert!(
+            time.t_start_ms <= first.start_ms && first.start_ms - time.t_start_ms <= 1000,
+            "{time:?} {first:?}"
+        );
         assert!(time.t_end_ms >= first.end_ms);
         assert_eq!(e.segment.source_id, source);
         let sp = e.segment.time.as_ref().unwrap();
-        assert!(sp.t_start_ms <= time.t_start_ms && sp.t_end_ms >= time.t_end_ms, "a claim's range sits inside its segment's");
+        assert!(
+            sp.t_start_ms <= time.t_start_ms && sp.t_end_ms >= time.t_end_ms,
+            "a claim's range sits inside its segment's"
+        );
     }
 }
 
@@ -271,12 +292,16 @@ fn pg_meeting_a_search_returns_meeting_and_document_evidence_in_one_package() {
     let r = rig("meet-search");
     let text = "Dokumentet säger att ventilen vid pumpstationen byttes i mars.\n\nDet är en annan sak än själva stationen.";
     let doc_source = r.ingest_text(text);
-    let words: Vec<TimedWord> = "Vi såg i mötet att ventilen vid pumpstationen läckte i april.".split_whitespace().enumerate().map(|(i, w)| TimedWord {
-        text: w.into(),
-        start_ms: 5000 + i as i64 * 400,
-        end_ms: 5000 + i as i64 * 400 + 380,
-        speaker: Some("S1".into()),
-    }).collect();
+    let words: Vec<TimedWord> = "Vi såg i mötet att ventilen vid pumpstationen läckte i april."
+        .split_whitespace()
+        .enumerate()
+        .map(|(i, w)| TimedWord {
+            text: w.into(),
+            start_ms: 5000 + i as i64 * 400,
+            end_ms: 5000 + i as i64 * 400 + 380,
+            speaker: Some("S1".into()),
+        })
+        .collect();
     let meeting_source = r.ingest_recording(recording_of(words));
     let agent = ScriptedAgent::answering(every_sentence);
     r.extract(&agent);
@@ -285,13 +310,21 @@ fn pg_meeting_a_search_returns_meeting_and_document_evidence_in_one_package() {
     let package = r.s.search(&r.admin, &r.v, &SearchRequest::new("ventilen pumpstationen")).unwrap();
     assert!(package.degraded.is_empty(), "{:?}", package.degraded);
     let cited: Vec<_> = package.items.iter().flat_map(|i| i.citations.iter().map(move |c| (i, c))).collect();
-    let from = |id: &ObjectId, kind: ItemKind| cited.iter().filter(|(i, c)| c.source_id.as_ref() == Some(id) && i.kind == kind).collect::<Vec<_>>();
+    let from = |id: &ObjectId, kind: ItemKind| {
+        cited
+            .iter()
+            .filter(|(i, c)| c.source_id.as_ref() == Some(id) && i.kind == kind)
+            .collect::<Vec<_>>()
+    };
     // Each kind from each source, in one package.
     for (name, source) in [("the meeting", &meeting_source), ("the document", &doc_source)] {
         assert!(!from(source, ItemKind::Claim).is_empty(), "a claim from {name}: {:?}", package.items);
         assert!(!from(source, ItemKind::Segment).is_empty(), "a segment from {name}: {:?}", package.items);
     }
-    for (item, c) in from(&meeting_source, ItemKind::Claim).into_iter().chain(from(&meeting_source, ItemKind::Segment)) {
+    for (item, c) in from(&meeting_source, ItemKind::Claim)
+        .into_iter()
+        .chain(from(&meeting_source, ItemKind::Segment))
+    {
         let t = c.time.as_ref().unwrap_or_else(|| panic!("a meeting citation has a time: {c:?}"));
         assert_eq!((t.t_start_ms, t.speaker.as_deref()), (4700, Some("S1")), "{item:?}");
         assert_eq!(t.t_end_ms, 5000 + 10 * 400 + 380 + 300);
