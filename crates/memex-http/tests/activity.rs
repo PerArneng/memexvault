@@ -995,7 +995,7 @@ fn fill_with_marker(w: &World) {
             evidence: vec![(
                 ObjectId("evidencemarker".into()),
                 EvidenceInput {
-                    segment_id: segment,
+                    segment_id: segment.clone(),
                     quote: sentence.clone(),
                     stance: Stance::Supports,
                 },
@@ -1035,7 +1035,7 @@ fn fill_with_marker(w: &World) {
             c,
             v,
             NewEntity {
-                type_name: "Person".into(),
+                type_name: "Markertype".into(),
                 aliases: vec![MARKER.into()],
                 fields: vec![],
                 rationale: format!("because {MARKER}"),
@@ -1186,11 +1186,10 @@ fn a_marker_in_a_document_never_appears_in_any_frame() {
         assert!(text.len() > 1000, "recorded {} bytes", text.len());
     }
     eprintln!(
-        "marker scan: {} events, {with_marker} holding the marker, {} bytes replayed and {} live, {} marker hits; tables {tables:?}; not reached: {:?}",
+        "marker scan: {} events, {with_marker} holding the marker, {} bytes replayed and {} live, no marker in either; tables {tables:?}; not reached: {:?}",
         events.len(),
         replayed.len(),
         live.recorded.len(),
-        0,
         Table::ALL
             .iter()
             .map(|t| format!("{t:?}"))
