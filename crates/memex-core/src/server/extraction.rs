@@ -740,11 +740,14 @@ impl<E: ServerEdges> Server<E> {
                 else {
                     continue;
                 };
-                sources.insert(rendition_id.clone(), (self.canonical_of(vault, &r)?, source.sha256));
+                sources.insert(rendition_id.clone(), (self.canonical_of(vault, &r)?, source.sha256, self.timed_of(vault, &r)?));
             }
-            let ((canon, words), sha) = &sources[rendition_id];
+            let ((canon, words), sha, timed) = &sources[rendition_id];
             match crate::rendition::locate_within(canon, words, sha, rendition_id, &e.quote, segment.start as usize, segment.end as usize) {
-                Some(anchor) => e.anchor = Some(anchor),
+                Some(anchor) => match Self::with_time(anchor, timed.as_ref()) {
+                    Some(anchor) => e.anchor = Some(anchor),
+                    None => e.anchor_broken = true,
+                },
                 None => e.anchor_broken = true,
             }
         }

@@ -98,7 +98,7 @@ fn is_heading(block: &str, tall: bool) -> bool {
 }
 
 /// Splits a long block at sentence ends where it can and at word boundaries where it can't.
-fn split_long(text: &str, start: usize, end: usize, max_tokens: usize) -> Vec<(usize, usize)> {
+pub(crate) fn split_long(text: &str, start: usize, end: usize, max_tokens: usize) -> Vec<(usize, usize)> {
     let (mut out, mut from) = (vec![], start);
     while estimate_tokens(&text[from..end]) > max_tokens {
         let budget_words = max_tokens * 3 / 4;
@@ -343,6 +343,7 @@ fn anchor_at(canon: &Canonical, words: &[Word], source_sha256: &str, rendition_i
         prefix: before,
         suffix: after,
         rects: rects_for(canon, words, start, end),
+        time: None,
     }
 }
 

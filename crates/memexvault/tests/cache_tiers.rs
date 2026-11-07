@@ -119,6 +119,7 @@ fn rendition_row(id: &str, source: &str, words_blob: &str) -> RenditionRow {
         created_at_ms: 0,
         superseded_by: None,
         pages: vec![],
+        media: None,
     }
 }
 
@@ -134,6 +135,7 @@ fn segment_row(id: &str, version: u32, text: &str) -> SegmentRow {
         heading: None,
         page_from: Some(0),
         page_to: Some(0),
+        time: None,
     }
 }
 

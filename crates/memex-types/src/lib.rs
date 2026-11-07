@@ -39,7 +39,10 @@ pub use lexical::{
 };
 pub use page::{BlockKind, BlockRow, CLAIM_REF, EdgeDirection, RevisionBlock, RevisionRow, SlugRow, WIKI_LINK, revision_id, slug_of_target, slug_target};
 pub use registry::{Audit, Grant, Principal, PrincipalKind, Scope, SessionRow, TokenRow, VaultRow};
-pub use rendition::{Anchor, PageClass, PageFacts, PageFlag, PageOutcome, PageRoute, ParsedDocument, Rect, RenditionRow, Word};
+pub use rendition::{
+    Anchor, MediaFacts, MeetingMeta, PageClass, PageFacts, PageFlag, PageOutcome, PageRoute, ParsedDocument, Participant, Rect, RenditionRow, TimeSpan,
+    TimedDocument, TimedWord, TranscribeUsage, Word,
+};
 pub use review::{AutoCommitChange, AutoCommitChangeKind, AutoCommitRow, ProposalOrigin, QueueCount, ReviewFilter, ReviewVerdictRow, Verdict, VerdictFilter};
 pub use rows::{AssertionRow, ChangeSetRow, EdgeRow, EvidenceRow, Header, Mutation, PageRow, Row, RowKey, SegmentRow, SourceRow, Status, Table};
 pub use search::{

@@ -187,6 +187,8 @@ pub struct Citation {
     pub rects: Vec<(u32, Rect)>,
     /// Verbatim. Absent when the item's text is itself the quote.
     pub quote: Option<String>,
+    /// Where it plays, when it comes from a recording.
+    pub time: Option<crate::rendition::TimeSpan>,
 }
 
 /// A claim that disagrees with this one. Both stay, and the reader decides.

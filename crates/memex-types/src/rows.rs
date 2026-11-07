@@ -148,6 +148,9 @@ pub struct SegmentRow {
     pub page_from: Option<u32>,
     #[serde(default)]
     pub page_to: Option<u32>,
+    /// Where it plays, when it comes from a recording.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time: Option<crate::rendition::TimeSpan>,
 }
 
 /// One claim. Never edited: a change makes a new one and supersedes this.

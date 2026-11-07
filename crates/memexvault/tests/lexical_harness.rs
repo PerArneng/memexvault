@@ -75,6 +75,7 @@ fn segment(id: &str, text: &str, version: u32) -> SegmentRow {
         heading: None,
         page_from: None,
         page_to: None,
+        time: None,
     }
 }
 

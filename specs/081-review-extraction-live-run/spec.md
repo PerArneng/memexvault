@@ -31,8 +31,8 @@ Then run the live commands from the Results of specs 024, 025 and 029, and rerun
 1. Extraction precision and recall are recorded per type and per language, with token cost, after a person's adjudication.
 2. Reviewer agreement against human labels, and the injection fixtures' results on a real model, are recorded.
 3. The MCP agent test is scored by its pass rule.
-5. Spec 026's planted-error recall per kind, overall against 80%, and its false-positive rate, are recorded on a real model.
-4. Precision ≥0.9 keeps the design. If anything misses, the user decides what follows.
+4. Spec 026's planted-error recall per kind, overall against 80%, and its false-positive rate, are recorded on a real model.
+5. Precision ≥0.9 keeps the design. If anything misses, the user decides what follows.
 
 ## Out of scope
 Changing prompts or models before the first measurement. A per-vault provider switch, which is a separate follow-up.

@@ -1,6 +1,7 @@
 mod audit;
 mod entities;
 mod extraction;
+mod meeting;
 mod pages;
 mod review;
 
@@ -160,6 +161,7 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     doc.merge(audit::AuditDoc::openapi());
     doc.merge(entities::EntityDoc::openapi());
     doc.merge(extraction::ExtractionDoc::openapi());
+    doc.merge(meeting::MeetingDoc::openapi());
     doc.merge(review::ReviewDoc::openapi());
     doc.merge(pages::PageDoc::openapi());
     doc
@@ -244,6 +246,7 @@ where
     let api = audit::add_routes::<E>(api);
     let api = entities::add_routes::<E>(api);
     let api = extraction::add_routes::<E>(api);
+    let api = meeting::add_routes::<E>(api);
     let api = review::add_routes::<E>(api);
     let api = pages::add_routes::<E>(api);
     Router::new()
@@ -856,10 +859,22 @@ where
             }
         }
     });
+    if let Some(language) = &q.language
+        && !memex_core::meeting::valid_language(language)
+    {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid",
+            format!("'{language}' isn't a language code"),
+            &rid.0,
+        ));
+    }
     let request = memex_core::UploadRequest {
         name: q.name,
         trust_tier: q.trust_tier.unwrap_or_else(|| "unverified".into()),
-        metadata: serde_json::json!({}),
+        metadata: q
+            .language
+            .map_or_else(|| serde_json::json!({}), |language| serde_json::json!({"language": language})),
         replaces: q.replaces.map(memex_types::ObjectId),
     };
     let out = authed(server, headers, &rid, move |s, c| {
@@ -1303,7 +1318,11 @@ where
             .list_pages(c, &vault, &e.source.header.id)
             .ok()
             .and_then(|l| l.pages.into_iter().find(|p| p.index == page));
+        let time = e.anchor.as_ref().and_then(|a| a.time.clone());
         Ok(memex_api::HighlightDto {
+            t_start_ms: time.as_ref().map(|t| t.t_start_ms),
+            t_end_ms: time.as_ref().map(|t| t.t_end_ms),
+            speaker: time.and_then(|t| t.speaker),
             source_id: e.source.header.id.0,
             page,
             page_width: facts.as_ref().map_or(0, |f| f.width),

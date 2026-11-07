@@ -70,6 +70,7 @@ fn rendition(id: &str, src: &str, superseded_by: Option<&str>) -> RenditionRow {
         created_at_ms: 0,
         superseded_by: superseded_by.map(oid),
         pages: vec![],
+        media: None,
     }
 }
 
@@ -85,6 +86,7 @@ fn segment(id: &str, src: &str, rend: Option<&str>, heading: Option<&str>, start
         heading: heading.map(String::from),
         page_from: Some(0),
         page_to: Some(0),
+        time: None,
     }
 }
 

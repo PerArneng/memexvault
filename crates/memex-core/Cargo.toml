@@ -6,6 +6,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+similar = "=2.7.0"
 jsonschema.workspace = true
 tracing.workspace = true
 memex-types.workspace = true

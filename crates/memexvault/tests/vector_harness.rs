@@ -79,6 +79,7 @@ fn segment(id: u64, text: &str, source: String) -> SegmentRow {
         heading: None,
         page_from: None,
         page_to: None,
+        time: None,
     }
 }
 

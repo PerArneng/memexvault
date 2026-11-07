@@ -250,6 +250,7 @@ fn recovers(dir: &Path) {
         heading: None,
         page_from: None,
         page_to: None,
+        time: None,
     });
     let draft = EventDraft {
         actor: "t".into(),

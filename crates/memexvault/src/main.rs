@@ -12,6 +12,7 @@ use memexvault::edges::{AdkAgentRunner, FsBlobStore, PgVectorIndex, SystemClock,
 use memexvault::pg_edge::PostgresStore;
 use memexvault::registry_edge::PostgresRegistry;
 use memexvault::rendition_job::{ChildRasterizer, EXIT_UNPARSEABLE, RenditionHandler, WorkerCommand};
+use memexvault::transcribe_job::{TranscribeCommand, TranscribeHandler};
 use memexvault::workers::{self, AuditHandler, EmbedHandler, ExtractHandler, Pool, ReviewHandler};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -151,16 +152,60 @@ fn render_worker(args: &[String]) -> ExitCode {
     }
 }
 
+/// Transcribes a recording in the folder named, carrying on from what the folder holds. A child process, since whisper.cpp can abort the process and the decoders read untrusted files: a crash here loses at most one stretch of speech. The API is built here only when settings name it, and nothing else can send audio anywhere.
+fn transcribe_worker(args: &[String]) -> ExitCode {
+    use memex_asr::worker::{self, ApiPart, WorkerFail};
+    let finish = |result: Result<memex_types::TimedDocument, WorkerFail>| match result {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{}", e.message());
+            ExitCode::from(e.exit_code())
+        }
+    };
+    let Some(dir) = args.first().map(std::path::Path::new) else {
+        return finish(Err(WorkerFail::Refused("usage: memexvault transcribe-worker <folder> [language]".into())));
+    };
+    let language = args.get(1).map(String::as_str);
+    let settings = match Settings::from_vars(|name| std::env::var(name).ok()) {
+        Ok(s) => s,
+        Err(e) => return finish(Err(WorkerFail::Refused(e.to_string()))),
+    };
+    if let Err(e) = memexvault::models::check_present(&settings.models_dir, &memexvault::models::ASR_MODELS) {
+        return finish(Err(WorkerFail::Refused(e)));
+    }
+    whisper_rs::install_logging_hooks();
+    let t = &settings.transcribe;
+    let ears = memex_asr::whisper::WhisperEars {
+        model: settings.models_dir.join(memex_asr::whisper::WHISPER_FILE),
+        vad: settings.models_dir.join(memex_asr::whisper::VAD_FILE),
+        threads: t.threads,
+    };
+    let parser = format!("whisper-rs-0.16.0+{}+silero-v6.2.0", memex_asr::whisper::MODEL);
+    let api = t.api.as_ref().map(|a| memex_asr::GeminiApi {
+        key: a.api_key.clone(),
+        model: a.model.clone(),
+        base_url: a.base_url.clone(),
+        retry_after: Duration::from_secs(10),
+    });
+    let part = api.as_ref().zip(t.api.as_ref()).map(|(transcriber, a)| ApiPart {
+        transcriber,
+        max_tokens: a.max_tokens,
+    });
+    finish(worker::run(dir, &ears, part, language, t.max_seconds, &parser))
+}
+
 /// `models fetch` and `models check`.
 fn models_command(args: &[String], settings: &Settings) -> ExitCode {
     let dir = &settings.models_dir;
     let result = match args.first().map(String::as_str) {
         Some("fetch") => memexvault::models::fetch(dir, &memexvault::models::OCR_MODELS)
             .and_then(|()| memexvault::models::fetch(dir, &memexvault::models::EMBED_MODELS))
-            .and_then(|()| memexvault::models::fetch(dir, &memexvault::models::RERANK_MODELS)),
+            .and_then(|()| memexvault::models::fetch(dir, &memexvault::models::RERANK_MODELS))
+            .and_then(|()| memexvault::models::fetch(dir, &memexvault::models::ASR_MODELS)),
         Some("check") => memexvault::models::verify(dir, &memexvault::models::OCR_MODELS)
             .and_then(|()| memexvault::models::verify(dir, &memexvault::models::EMBED_MODELS))
-            .and_then(|()| memexvault::models::verify(dir, &memexvault::models::RERANK_MODELS)),
+            .and_then(|()| memexvault::models::verify(dir, &memexvault::models::RERANK_MODELS))
+            .and_then(|()| memexvault::models::verify(dir, &memexvault::models::ASR_MODELS)),
         _ => Err("usage: memexvault models fetch | check".to_string()),
     };
     match result {
@@ -177,6 +222,7 @@ fn main() -> ExitCode {
         Some("pdf-worker") => return pdf_worker(),
         Some("ocr-worker") => return ocr_worker(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("render-worker") => return render_worker(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("transcribe-worker") => return transcribe_worker(&std::env::args().skip(2).collect::<Vec<_>>()),
         _ => {}
     }
     tracing_subscriber::fmt().with_writer(std::io::stderr).init();
@@ -288,12 +334,40 @@ fn main() -> ExitCode {
             };
             server.set_auto_commit_threshold(f64::from(settings.auto_commit_threshold_permille) / 1000.0);
             let stop = Arc::new(AtomicBool::new(false));
+            let transcribe = TranscribeHandler {
+                server: server.clone(),
+                command: TranscribeCommand {
+                    // Lower priority, so transcribing takes what reads leave over.
+                    program: "nice".into(),
+                    args: vec!["-n".into(), "10".into(), program.to_string_lossy().into_owned(), "transcribe-worker".into()],
+                    envs: vec![],
+                    // Off means the worker never even sees the key.
+                    env_remove: if settings.transcribe.api.is_none() {
+                        vec!["MEMEX_TRANSCRIBE_API_KEY".into()]
+                    } else {
+                        vec![]
+                    },
+                    max_rss_mb: settings.transcribe.max_rss_mb,
+                    stall: Duration::from_secs(settings.transcribe.stall_seconds),
+                },
+                root: settings.data_dir.join("vaults"),
+                stop: stop.clone(),
+            };
+            if settings.transcribe.api.is_some() {
+                tracing::info!("the transcription API is on, so recordings go to it");
+            }
             // One embedding worker: its CPU use is capped by the session's threads, and identical text can't be embedded twice at once.
             let mut pools = vec![
                 Pool {
                     kind: memex_core::RENDITION_JOB.into(),
                     workers: 2,
                     handler: Arc::new(handler),
+                },
+                // One at a time, since each holds a large model in memory.
+                Pool {
+                    kind: memex_core::TRANSCRIBE_JOB.into(),
+                    workers: 1,
+                    handler: Arc::new(transcribe),
                 },
                 Pool {
                     kind: memex_core::EMBED_JOB.into(),
