@@ -522,6 +522,8 @@ impl crate::workers::JobHandler for DerivedOnce {
             title: job.header.id.0.clone(),
             body: "derived".into(),
             updated_at_ms: 0,
+            slug: String::new(),
+            redirects: vec![],
         }))])
     }
 }

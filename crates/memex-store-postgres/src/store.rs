@@ -2,8 +2,9 @@ use crate::migrate::{LATEST_SERVER_VERSION, LATEST_VAULT_VERSION, SERVER_MIGRATI
 use crate::net::net_mutations;
 use crate::tls::Target;
 use memex_types::{
-    AssertionRow, ChangeSetRow, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, FilterValue, Header, JobRow, JobState, Mutation, ObjectId,
-    PageRow, RenditionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Status, Table, ValueMatch, VaultId,
+    AssertionRow, BlockKind, BlockRow, ChangeSetRow, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, FilterValue, Header,
+    JobRow, JobState, Mutation, ObjectId, PageRow, RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Status, Table, ValueMatch,
+    VaultId,
 };
 use postgres::{Client, Statement, types::ToSql};
 use serde_json::Value;
@@ -357,6 +358,9 @@ impl PgStore {
             "entity_types",
             "entities",
             "entity_fields",
+            "blocks",
+            "page_slugs",
+            "page_revisions",
         ] {
             client.batch_execute(&format!("VACUUM {schema}.{t}")).map_err(backend)?;
         }
@@ -491,6 +495,9 @@ fn table_name(t: Table) -> &'static str {
         Table::Rendition => "renditions",
         Table::EntityType => "entity_types",
         Table::Entity => "entities",
+        Table::Block => "blocks",
+        Table::Slug => "page_slugs",
+        Table::Revision => "page_revisions",
     }
 }
 
@@ -568,10 +575,32 @@ fn upsert_json_row(t: &mut postgres::Transaction<'_>, cache: &mut Statements, sc
             &[&id, &json, &x.name, &(x.version_no as i32)],
         ),
         Row::Entity(x) => return upsert_entity(t, cache, schema, x, &json),
+        Row::Block(x) => exec(
+            t,
+            cache,
+            &format!("INSERT INTO {schema}.blocks (id, row, page_id, position, kind) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET row = excluded.row, page_id = excluded.page_id, position = excluded.position, kind = excluded.kind"),
+            &[&id, &json, &x.page_id.0, &(x.position as i32), &block_kind_text(x.kind)],
+        ),
+        Row::Slug(x) => exec(
+            t,
+            cache,
+            &format!("INSERT INTO {schema}.page_slugs (id, row, page_id) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET row = excluded.row, page_id = excluded.page_id"),
+            &[&id, &json, &x.page_id.0],
+        ),
+        Row::Revision(x) => exec(
+            t,
+            cache,
+            &format!("INSERT INTO {schema}.page_revisions (id, row, page_id, revision) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET row = excluded.row"),
+            &[&id, &json, &x.page_id.0, &(x.revision as i32)],
+        ),
         _ => return Ok(()),
     }
     .map_err(backend)?;
     Ok(())
+}
+
+fn block_kind_text(kind: BlockKind) -> String {
+    format!("{kind:?}").to_lowercase()
 }
 
 /// The row and its values in the field table, which are replaced whole, so the table can't drift from the row.
@@ -666,11 +695,13 @@ fn upsert_rows(t: &mut postgres::Transaction<'_>, cache: &mut Statements, schema
         let title: Vec<&str> = pages.iter().map(|r| r.title.as_str()).collect();
         let body: Vec<&str> = pages.iter().map(|r| r.body.as_str()).collect();
         let at: Vec<i64> = pages.iter().map(|r| r.updated_at_ms).collect();
-        let params: [&(dyn ToSql + Sync); 8] = [&h.id, &h.creator, &h.status, &h.version, &h.acl, &title, &body, &at];
+        let slug: Vec<&str> = pages.iter().map(|r| r.slug.as_str()).collect();
+        let redirects: Vec<Value> = pages.iter().map(|r| serde_json::json!(r.redirects)).collect();
+        let params: [&(dyn ToSql + Sync); 10] = [&h.id, &h.creator, &h.status, &h.version, &h.acl, &title, &body, &at, &slug, &redirects];
         exec(
             t,
             cache,
-            &format!("INSERT INTO {schema}.pages SELECT * FROM unnest({HEADER_CAST}, $6::text[], $7::text[], $8::bigint[]) ON CONFLICT (id) DO UPDATE SET {HEADER_SET}, title = excluded.title, body = excluded.body, updated_at_ms = excluded.updated_at_ms"),
+            &format!("INSERT INTO {schema}.pages SELECT * FROM unnest({HEADER_CAST}, $6::text[], $7::text[], $8::bigint[], $9::text[], $10::jsonb[]) ON CONFLICT (id) DO UPDATE SET {HEADER_SET}, title = excluded.title, body = excluded.body, updated_at_ms = excluded.updated_at_ms, slug = excluded.slug, redirects = excluded.redirects"),
             &params,
         )
         .map_err(backend)?;
@@ -680,11 +711,12 @@ fn upsert_rows(t: &mut postgres::Transaction<'_>, cache: &mut Statements, schema
         let from: Vec<&str> = edges.iter().map(|r| r.from.0.as_str()).collect();
         let to: Vec<&str> = edges.iter().map(|r| r.to.0.as_str()).collect();
         let kind: Vec<&str> = edges.iter().map(|r| r.kind.as_str()).collect();
-        let params: [&(dyn ToSql + Sync); 8] = [&h.id, &h.creator, &h.status, &h.version, &h.acl, &from, &to, &kind];
+        let block: Vec<Option<&str>> = edges.iter().map(|r| r.block_id.as_ref().map(|b| b.0.as_str())).collect();
+        let params: [&(dyn ToSql + Sync); 9] = [&h.id, &h.creator, &h.status, &h.version, &h.acl, &from, &to, &kind, &block];
         exec(
             t,
             cache,
-            &format!("INSERT INTO {schema}.edges SELECT * FROM unnest({HEADER_CAST}, $6::text[], $7::text[], $8::text[]) ON CONFLICT (id) DO UPDATE SET {HEADER_SET}, from_id = excluded.from_id, to_id = excluded.to_id, kind = excluded.kind"),
+            &format!("INSERT INTO {schema}.edges SELECT * FROM unnest({HEADER_CAST}, $6::text[], $7::text[], $8::text[], $9::text[]) ON CONFLICT (id) DO UPDATE SET {HEADER_SET}, from_id = excluded.from_id, to_id = excluded.to_id, kind = excluded.kind, block_id = excluded.block_id"),
             &params,
         )
         .map_err(backend)?;
@@ -725,10 +757,27 @@ fn json_row(r: &postgres::Row) -> Row {
     serde_json::from_value(r.get("row")).expect("a row this binary wrote")
 }
 
+fn json_revision(r: &postgres::Row) -> Option<RevisionRow> {
+    match json_row(r) {
+        Row::Revision(x) => Some(x),
+        _ => None,
+    }
+}
+
 fn row_from(table: Table, r: &postgres::Row) -> Row {
     if matches!(
         table,
-        Table::Segment | Table::Assertion | Table::Evidence | Table::ChangeSet | Table::Job | Table::Rendition | Table::EntityType | Table::Entity
+        Table::Segment
+            | Table::Assertion
+            | Table::Evidence
+            | Table::ChangeSet
+            | Table::Job
+            | Table::Rendition
+            | Table::EntityType
+            | Table::Entity
+            | Table::Block
+            | Table::Slug
+            | Table::Revision
     ) {
         return json_row(r);
     }
@@ -751,14 +800,27 @@ fn row_from(table: Table, r: &postgres::Row) -> Row {
             title: r.get("title"),
             body: r.get("body"),
             updated_at_ms: r.get("updated_at_ms"),
+            slug: r.get("slug"),
+            redirects: serde_json::from_value(r.get("redirects")).expect("a row this binary wrote"),
         }),
         Table::Edge => Row::Edge(EdgeRow {
             header,
             from: ObjectId(r.get("from_id")),
             to: ObjectId(r.get("to_id")),
             kind: r.get("kind"),
+            block_id: r.get::<_, Option<String>>("block_id").map(ObjectId),
         }),
-        Table::Segment | Table::Assertion | Table::Evidence | Table::ChangeSet | Table::Job | Table::Rendition | Table::EntityType | Table::Entity => {
+        Table::Segment
+        | Table::Assertion
+        | Table::Evidence
+        | Table::ChangeSet
+        | Table::Job
+        | Table::Rendition
+        | Table::EntityType
+        | Table::Entity
+        | Table::Block
+        | Table::Slug
+        | Table::Revision => {
             unreachable!("handled above")
         }
     }
@@ -862,6 +924,97 @@ impl PgSnapshot<'_> {
             self.schema
         );
         let rows = self.with_statement(&sql, |c, st| c.query(st, &[&kind, &ids]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Edge(x) = row_from(Table::Edge, r) { Some(x) } else { None })
+            .collect())
+    }
+
+    pub fn blocks_of(&self, pages: &[ObjectId], limit: usize) -> Result<Vec<BlockRow>, PgError> {
+        let ids: Vec<&str> = pages.iter().map(|i| i.0.as_str()).collect();
+        let sql = format!(
+            "SELECT row FROM {}.blocks WHERE page_id = ANY($1) ORDER BY page_id, position LIMIT $2",
+            self.schema
+        );
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&ids, &(limit as i64)]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Block(x) = json_row(r) { Some(x) } else { None })
+            .collect())
+    }
+
+    pub fn headings_of(&self, pages: &[ObjectId]) -> Result<Vec<BlockRow>, PgError> {
+        let ids: Vec<&str> = pages.iter().map(|i| i.0.as_str()).collect();
+        let sql = format!(
+            "SELECT row FROM {}.blocks WHERE page_id = ANY($1) AND kind = 'heading' ORDER BY page_id, position",
+            self.schema
+        );
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&ids]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Block(x) = json_row(r) { Some(x) } else { None })
+            .collect())
+    }
+
+    pub fn page_summaries(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<PageRow>, PgError> {
+        let sql = format!(
+            "SELECT id, creator, status, version, acl_id, title, '' AS body, updated_at_ms, slug, redirects FROM {}.pages WHERE $1::text IS NULL OR id > $1 ORDER BY id LIMIT $2",
+            self.schema
+        );
+        let after = after.map(|a| a.0.as_str());
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&after, &(limit as i64)]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Page(x) = row_from(Table::Page, r) { Some(x) } else { None })
+            .collect())
+    }
+
+    pub fn revisions_of(&self, page: &ObjectId, after: Option<u32>, limit: usize) -> Result<Vec<RevisionRow>, PgError> {
+        let sql = format!(
+            "SELECT row #- '{{revision,blocks}}' AS row FROM {}.page_revisions WHERE page_id = $1 AND revision > $2 ORDER BY revision LIMIT $3",
+            self.schema
+        );
+        let after = after.map_or(-1, |a| a as i32);
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&page.0, &after, &(limit as i64)]))?;
+        Ok(rows.iter().filter_map(|r| json_revision(r)).collect())
+    }
+
+    pub fn edges_linked(
+        &self,
+        ids: &[ObjectId],
+        kinds: &[&str],
+        direction: EdgeDirection,
+        after: Option<&ObjectId>,
+        limit: usize,
+    ) -> Result<Vec<EdgeRow>, PgError> {
+        let ids: Vec<&str> = ids.iter().map(|i| i.0.as_str()).collect();
+        let ends = match direction {
+            EdgeDirection::From => "from_id = ANY($2)",
+            EdgeDirection::To => "to_id = ANY($2)",
+            EdgeDirection::Both => "(from_id = ANY($2) OR to_id = ANY($2))",
+        };
+        let sql = format!(
+            "SELECT * FROM {}.edges WHERE kind = ANY($1) AND status = 'active' AND {ends} AND ($3::text IS NULL OR id > $3) ORDER BY id LIMIT $4",
+            self.schema
+        );
+        let after = after.map(|a| a.0.as_str());
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&kinds, &ids, &after, &(limit as i64)]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Edge(x) = row_from(Table::Edge, r) { Some(x) } else { None })
+            .collect())
+    }
+
+    pub fn unresolved_links(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<EdgeRow>, PgError> {
+        let s = &self.schema;
+        let sql = format!(
+            "SELECT e.* FROM {s}.edges AS e WHERE ($1::text IS NULL OR e.id > $1) AND (
+                (e.kind = 'wiki_link' AND NOT EXISTS (SELECT 1 FROM {s}.page_slugs AS g WHERE 'slug:' || g.id = e.to_id))
+                OR (e.kind = 'claim_ref' AND NOT EXISTS (SELECT 1 FROM {s}.assertions AS a WHERE a.id = e.to_id))
+             ) ORDER BY e.id LIMIT $2"
+        );
+        let after = after.map(|a| a.0.as_str());
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&after, &(limit as i64)]))?;
         Ok(rows
             .iter()
             .filter_map(|r| if let Row::Edge(x) = row_from(Table::Edge, r) { Some(x) } else { None })

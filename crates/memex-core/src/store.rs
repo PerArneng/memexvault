@@ -1,6 +1,6 @@
 use memex_types::{
-    AssertionRow, ChangeSetRow, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, JobRow, JobState, Mutation, ObjectId, RenditionRow, Row,
-    RowKey, SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
+    AssertionRow, BlockRow, ChangeSetRow, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, JobRow, JobState, Mutation,
+    ObjectId, PageRow, RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
 };
 use std::fmt;
 
@@ -124,6 +124,25 @@ pub trait Snapshot {
     fn entities_with_value(&self, text: &str, limit: usize) -> Result<Vec<ValueMatch>, StoreError>;
     /// Folded values held by more than one current entity of a type, in these fields, by field and value, after the given pair. At most `MAX_SHARED_IDS` ids each.
     fn shared_values(&self, type_name: &str, fields: &[String], after: Option<(&str, &str)>, limit: usize) -> Result<Vec<SharedValue>, StoreError>;
+    /// These pages' blocks, by page and position, at most `limit`. One store call.
+    fn blocks_of(&self, pages: &[ObjectId], limit: usize) -> Result<Vec<BlockRow>, StoreError>;
+    /// Only these pages' heading blocks, by page and position. One store call.
+    fn headings_of(&self, pages: &[ObjectId]) -> Result<Vec<BlockRow>, StoreError>;
+    /// Pages in id order, after the given id, with empty bodies, as lists don't show them.
+    fn page_summaries(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<PageRow>, StoreError>;
+    /// A page's revisions, oldest first, after the given revision, with empty block lists. A deleted page's are still here.
+    fn revisions_of(&self, page: &ObjectId, after: Option<u32>, limit: usize) -> Result<Vec<RevisionRow>, StoreError>;
+    /// Active edges of these kinds with these ids at the given end, in id order, after the given id, at most `limit`. One store call.
+    fn edges_linked(
+        &self,
+        ids: &[ObjectId],
+        kinds: &[&str],
+        direction: EdgeDirection,
+        after: Option<&ObjectId>,
+        limit: usize,
+    ) -> Result<Vec<EdgeRow>, StoreError>;
+    /// Wiki links whose slug no page holds and claim references whose claim doesn't exist, in id order, after the given id. One store call.
+    fn unresolved_links(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<EdgeRow>, StoreError>;
 }
 
 /// The system of record. Synchronous, so pure crates stay free of an async runtime.

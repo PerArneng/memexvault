@@ -46,6 +46,65 @@ pub fn is_identifier(word: &str) -> bool {
     (digits && (letters || joined)) || shouting
 }
 
+/// Words that ask how things relate, in the tested languages. Each has its spaces, so it matches whole words in folded text.
+const RELATION_CUES: [&str; 27] = [
+    " related to ",
+    " relationship ",
+    " relation ",
+    " connected to ",
+    " connection ",
+    " linked to ",
+    " links to ",
+    " associated with ",
+    " depends on ",
+    " refers to ",
+    " mentions ",
+    " references ",
+    " verbunden ",
+    " beziehung ",
+    " verweist ",
+    " zusammenhang ",
+    " relacionado ",
+    " relacionada ",
+    " relacion ",
+    " conectado ",
+    " vinculado ",
+    " depende de ",
+    " kopplad ",
+    " relaterad ",
+    " relation till ",
+    " samband ",
+    " beror pa ",
+];
+/// Words that open a clause describing something, as a question reaching one thing through another does: `the man who founded the firm that ...`. Common words like German `die` aren't here, as they're mostly articles.
+const CLAUSE_WORDS: [&str; 12] = [
+    " who ",
+    " whose ",
+    " which ",
+    " that ",
+    " dessen ",
+    " deren ",
+    " welche ",
+    " welcher ",
+    " cuyo ",
+    " cuya ",
+    " que ",
+    " vars ",
+];
+
+/// Whether a query asks about how things relate, or describes one thing through another. Rules only, with no model. It was written before its author read any relational question, and spec 022 records how often it fires.
+pub fn is_relational(text: &str) -> bool {
+    let folded = crate::search::relevance::fold_text(text).to_lowercase();
+    let words: Vec<&str> = folded.split_whitespace().map(trim_word).filter(|w| !w.is_empty()).collect();
+    let spaced = format!(" {} ", words.join(" "));
+    if RELATION_CUES.iter().any(|c| spaced.contains(c)) {
+        return true;
+    }
+    // The first word is the question's own, as in `Who founded it?` or `Que es?`, and doesn't open a clause.
+    let tail = format!(" {} ", words.get(1..).unwrap_or(&[]).join(" "));
+    CLAUSE_WORDS.iter().any(|c| tail.contains(c))
+}
+
 fn identifier_share(terms: &[QueryTerm]) -> f32 {
     let words: Vec<&str> = terms
         .iter()
@@ -126,6 +185,23 @@ mod tests {
 
     fn path(text: &str) -> QueryPath {
         plan_query(text, &LexicalFilter::default(), SearchMode::Hybrid).unwrap().path
+    }
+
+    #[test]
+    fn relational_questions_are_told_by_rule() {
+        for q in [
+            "What is related to the pump?",
+            "the founder of the firm that built the bridge",
+            "Who was the man whose brother ran the mill?",
+            "Welche Stadt, deren Bürgermeister bekannt ist?",
+            "la ciudad cuyo alcalde dimitió",
+            "Vad är kopplad till pumpen?",
+        ] {
+            assert!(is_relational(q), "{q}");
+        }
+        for q in ["Who founded Acme?", "pump weight", "ORA-00904", "Que es un puente", "When did the war end?"] {
+            assert!(!is_relational(q), "{q}");
+        }
     }
 
     #[test]

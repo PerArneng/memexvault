@@ -257,6 +257,7 @@ fn edges_and_sections_read_in_batches<S: Store>(store: &S, v: &VaultId) {
             from: ObjectId(from.into()),
             to: ObjectId(to.into()),
             kind: kind.into(),
+            block_id: None,
         }))
     };
     let segment = |id: &str, rendition: &str, heading: Option<&str>, start: u64| {

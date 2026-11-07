@@ -560,7 +560,7 @@ fn follow<S: Snapshot>(snap: &S, id: &ObjectId) -> Result<(EntityRow, Vec<Object
 }
 
 /// These claims with their evidence and sources, in a fixed number of store calls.
-fn claims_behind<S: Snapshot>(snap: &S, ids: &[ObjectId]) -> Result<HashMap<ObjectId, EntityClaim>, ServerError> {
+pub(super) fn claims_behind<S: Snapshot>(snap: &S, ids: &[ObjectId]) -> Result<HashMap<ObjectId, EntityClaim>, ServerError> {
     if ids.is_empty() {
         return Ok(HashMap::new());
     }

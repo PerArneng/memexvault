@@ -9,6 +9,8 @@ pub enum DocKind {
     Segment,
     Claim,
     Entity,
+    Page,
+    Block,
 }
 
 impl DocKind {
@@ -17,6 +19,8 @@ impl DocKind {
             Self::Segment => "segment",
             Self::Claim => "claim",
             Self::Entity => "entity",
+            Self::Page => "page",
+            Self::Block => "block",
         }
     }
 
@@ -25,6 +29,8 @@ impl DocKind {
             "segment" => Some(Self::Segment),
             "claim" => Some(Self::Claim),
             "entity" => Some(Self::Entity),
+            "page" => Some(Self::Page),
+            "block" => Some(Self::Block),
             _ => None,
         }
     }
@@ -57,7 +63,7 @@ pub struct IndexDoc {
     pub epistemic: Option<String>,
     pub valid_from_ms: Option<i64>,
     pub valid_to_ms: Option<i64>,
-    /// What sort of thing it is within its kind: a segment's media type, a claim's predicate, or an entity's type.
+    /// What sort of thing it is within its kind: a segment's media type, a claim's predicate, or an entity's type. Pages and blocks have none.
     pub doc_type: Option<String>,
     /// The trust tiers of the sources behind it. A claim can cite several.
     pub trust_tiers: Vec<String>,

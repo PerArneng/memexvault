@@ -59,6 +59,12 @@ pub enum Op {
         id: ObjectId,
         title: String,
         body: String,
+        /// None takes it from the title.
+        #[serde(default)]
+        slug: Option<String>,
+        /// Old slugs that lead here, as an import brings them.
+        #[serde(default)]
+        redirects: Vec<String>,
     },
     EditPage {
         id: ObjectId,
@@ -68,6 +74,20 @@ pub enum Op {
     DeletePage {
         id: ObjectId,
         base_version: u32,
+    },
+    /// A new title, and with it a new slug unless one is given. The old slug keeps leading here.
+    RenamePage {
+        id: ObjectId,
+        base_version: u32,
+        title: String,
+        #[serde(default)]
+        slug: Option<String>,
+    },
+    /// Makes an old revision current again, as a new revision.
+    RevertPage {
+        id: ObjectId,
+        base_version: u32,
+        revision: u32,
     },
     AddEdge {
         id: ObjectId,

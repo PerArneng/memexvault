@@ -972,8 +972,8 @@ fn every_list_route_in_the_openapi_document_has_cursor_limit_and_sort() {
         }
     }
     assert_eq!(
-        lists, 16,
-        "vaults, principals, tokens, changesets, changes, contradictions, sources, jobs, segments, re-anchor failures, flagged pages, two claim lists, entity types, entities and same-as suggestions"
+        lists, 21,
+        "vaults, principals, tokens, changesets, changes, contradictions, sources, jobs, segments, re-anchor failures, flagged pages, two claim lists, entity types, entities, same-as suggestions, pages, revisions, backlinks, outgoing links and unresolved links"
     );
     // Every route the router serves is documented.
     for p in [

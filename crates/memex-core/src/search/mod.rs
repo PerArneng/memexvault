@@ -1,6 +1,7 @@
 //! Hybrid search: plans a query, gathers candidates from the indexes, fuses and fences them, and fits the result into an evidence package. Everything but the edge traits runs in memory.
 pub mod assemble;
 pub mod budget;
+pub mod expand;
 pub mod fusion;
 pub mod history;
 pub mod plan;

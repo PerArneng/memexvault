@@ -1,6 +1,11 @@
 mod entities;
+mod pages;
 pub use entities::{
     ClaimEvidence, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, FieldInput, NewEntity, Redirect, SplitRequest, TypeDecision,
+};
+pub use pages::{
+    BacklinkView, ClaimRefStatus, ClaimReference, ImportedPage, NewPage, OutgoingLink, PageChange, PageDiff, PageRedirect, PageRevisionView, PageView,
+    UnresolvedLink,
 };
 
 use crate::auth::{Caller, Decision, Operation, authorize};
@@ -913,7 +918,8 @@ impl<E: ServerEdges> Server<E> {
         let quote = governance::validate_quotes(snap, &p.ops)?;
         let (dedup, check) = governance::validate_dedup(snap, &p.ops)?;
         let entity = governance::validate_entities(snap, &p.ops)?;
-        Ok((vec![schema, evidence, quote, dedup, entity], check.contradictions))
+        let page = governance::validate_pages(snap, &p.ops)?;
+        Ok((vec![schema, evidence, quote, dedup, entity, page], check.contradictions))
     }
 
     fn commit_changeset(&self, lease: &WriterLease, actor: &str, changeset: ChangeSetRow, mutations: Vec<Mutation>) -> Result<(), ServerError> {
@@ -944,6 +950,7 @@ impl<E: ServerEdges> Server<E> {
     pub fn propose(&self, caller: &Caller, vault: &VaultId, p: Proposal, dry_run: bool) -> Result<ProposalOutcome, ServerError> {
         self.allow(caller, Operation::VaultContentPropose(vault))?;
         self.vault_exists(vault)?;
+        crate::page::check_sizes(&p.ops).map_err(ServerError::Invalid)?;
         let lease = self.lease(vault)?;
         let vault_lock = self.vault_lock(vault);
         let _one_at_a_time = vault_lock.lock().expect("lock");
