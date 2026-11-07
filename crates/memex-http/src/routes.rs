@@ -1,5 +1,6 @@
 mod entities;
 
+use crate::browser::{self, ConsoleLookup};
 use crate::error::ApiError;
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{DefaultBodyLimit, Extension, Path, Query, Request, State};
@@ -22,9 +23,9 @@ use utoipa::OpenApi;
 pub const BODY_LIMIT: usize = 1024 * 1024;
 
 #[derive(Clone)]
-struct RequestId(String);
+pub(crate) struct RequestId(pub(crate) String);
 
-type App<E> = Arc<Server<E>>;
+pub(crate) type App<E> = Arc<Server<E>>;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -33,6 +34,8 @@ type App<E> = Arc<Server<E>>;
         health,
         version,
         whoami,
+        browser::login,
+        browser::logout,
         create_vault,
         list_vaults,
         get_vault,
@@ -102,6 +105,7 @@ type App<E> = Arc<Server<E>>;
         VaultPage,
         VersionDto,
         WhoAmI,
+        memex_api::LoginBody,
         memex_api::ProposalBody,
         memex_api::ProposalResult,
         memex_api::ChangeSetDto,
@@ -155,11 +159,21 @@ where
     E: ServerEdges + Send + Sync + 'static,
     Server<E>: Send + Sync,
 {
+    router_with_console(server, browser::embedded_asset)
+}
+
+/// `console` finds the console's files by path. Tests pass their own, so they don't depend on what `web/` has built.
+pub fn router_with_console<E>(server: App<E>, console: ConsoleLookup) -> Router
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
     let api = Router::new()
         .route("/health", get(health::<E>))
         .route("/version", get(version))
         .route("/openapi.json", get(|| async { Json(openapi()) }))
         .route("/whoami", get(whoami::<E>))
+        .route("/session", post(browser::login::<E>).delete(browser::logout::<E>))
         .route("/vaults", get(list_vaults::<E>).post(create_vault::<E>))
         .route("/vaults/{id}", get(get_vault::<E>).patch(rename_vault::<E>).delete(delete_vault::<E>))
         .route("/vaults/{id}/proposals", post(propose::<E>))
@@ -209,9 +223,10 @@ where
     let api = entities::add_routes::<E>(api);
     Router::new()
         .nest("/api/v1", api)
-        .fallback(not_found)
+        .fallback(move |Extension(rid): Extension<RequestId>, req: Request| browser::console_or_not_found(console, rid, req))
         .method_not_allowed_fallback(method_not_allowed)
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
+        .layer(middleware::from_fn(browser::csrf_guard))
         .layer(middleware::from_fn_with_state(server.clone(), request_scope::<E>))
         .with_state(server)
 }
@@ -227,14 +242,11 @@ where
     req.extensions_mut().insert(RequestId(id.clone()));
     let mut res = next.run(req).await;
     tracing::info!(request_id = %id, %method, %path, status = res.status().as_u16(), "request");
+    browser::security_headers(res.headers_mut());
     if let Ok(v) = HeaderValue::from_str(&id) {
         res.headers_mut().insert("x-request-id", v);
     }
     res
-}
-
-async fn not_found(Extension(rid): Extension<RequestId>) -> ApiError {
-    ApiError::new(StatusCode::NOT_FOUND, "not_found", "not found", &rid.0)
 }
 
 async fn method_not_allowed(Extension(rid): Extension<RequestId>) -> ApiError {
@@ -246,14 +258,6 @@ async fn method_not_allowed(Extension(rid): Extension<RequestId>) -> ApiError {
     )
 }
 
-fn bearer(headers: &HeaderMap) -> Result<String, ServerError> {
-    let value = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .ok_or(ServerError::Unauthenticated)?;
-    value.strip_prefix("Bearer ").map(str::to_string).ok_or(ServerError::Unauthenticated)
-}
-
 /// Runs a synchronous core call on a blocking thread, after authenticating.
 async fn authed<E, T, F>(server: App<E>, headers: HeaderMap, rid: &RequestId, f: F) -> Result<T, ApiError>
 where
@@ -263,7 +267,7 @@ where
     F: FnOnce(&Server<E>, &Caller) -> Result<T, ServerError> + Send + 'static,
 {
     let result = tokio::task::spawn_blocking(move || {
-        let caller = server.authenticate(&bearer(&headers)?)?;
+        let caller = browser::caller_from(&server, &headers)?;
         f(&server, &caller)
     })
     .await;
@@ -273,7 +277,7 @@ where
     }
 }
 
-fn body<T: DeserializeOwned>(parsed: Result<Json<T>, JsonRejection>, rid: &RequestId) -> Result<T, ApiError> {
+pub(crate) fn body<T: DeserializeOwned>(parsed: Result<Json<T>, JsonRejection>, rid: &RequestId) -> Result<T, ApiError> {
     parsed.map(|Json(v)| v).map_err(|e| {
         if e.status() == StatusCode::PAYLOAD_TOO_LARGE {
             ApiError::new(
@@ -1408,7 +1412,7 @@ where
     })
     .await?;
     let (row, part, bytes) = out;
-    // An attachment, so an uploaded HTML or SVG file can't run on our origin. Spec 037 adds the matching security headers.
+    // An attachment in a sandbox, so an uploaded HTML or SVG file can't run on our origin, even if a browser opens it anyway.
     let safe_name: String = row
         .name
         .chars()
@@ -1419,7 +1423,7 @@ where
     let h = res.headers_mut();
     h.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
     h.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
-    h.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(browser::DOWNLOAD_CSP));
     if let Ok(v) = HeaderValue::from_str(&disposition) {
         h.insert(header::CONTENT_DISPOSITION, v);
     }
@@ -1564,5 +1568,7 @@ where
 {
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!(addr = %listener.local_addr()?, "listening");
-    axum::serve(listener, router(server)).with_graceful_shutdown(shutdown).await
+    axum::serve(listener, router(server).into_make_service_with_connect_info::<std::net::SocketAddr>())
+        .with_graceful_shutdown(shutdown)
+        .await
 }

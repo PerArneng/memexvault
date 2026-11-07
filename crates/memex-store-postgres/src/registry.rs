@@ -1,7 +1,7 @@
 //! The server registry in the `memex_server` schema. Each write and its audit row are one transaction.
 use crate::PgStore;
 use crate::store::{PgError, describe, schema_of_vault};
-use memex_types::{Audit, Grant, Principal, PrincipalKind, TokenRow, VaultId, VaultRow};
+use memex_types::{Audit, Grant, Principal, PrincipalKind, SessionRow, TokenRow, VaultId, VaultRow};
 use postgres::Row;
 use postgres::error::SqlState;
 
@@ -203,6 +203,42 @@ impl PgStore {
             t.execute("UPDATE memex_server.tokens SET last_used_at_ms = $2 WHERE id = $1", &[&id, &at_ms])
         })
         .map(|_| ())
+    }
+
+    pub fn reg_insert_session(&self, s: &SessionRow, a: &Audit) -> Result<(), PgRegistryError> {
+        self.write(Some(a), |t| {
+            t.execute(
+                "INSERT INTO memex_server.sessions (hash, token_id, principal_id, created_at_ms, expires_at_ms) VALUES ($1, $2, $3, $4, $5)",
+                &[&s.hash, &s.token_id, &s.principal_id, &s.created_at_ms, &s.expires_at_ms],
+            )
+        })
+        .map(|_| ())
+    }
+
+    pub fn reg_session_by_hash(&self, hash: &str) -> Result<Option<SessionRow>, PgRegistryError> {
+        self.read(|c| {
+            Ok(c.query_opt("SELECT * FROM memex_server.sessions WHERE hash = $1", &[&hash])
+                .map_err(map)?
+                .map(|r| SessionRow {
+                    hash: r.get("hash"),
+                    token_id: r.get("token_id"),
+                    principal_id: r.get("principal_id"),
+                    created_at_ms: r.get("created_at_ms"),
+                    expires_at_ms: r.get("expires_at_ms"),
+                }))
+        })
+    }
+
+    pub fn reg_delete_session(&self, hash: &str, a: &Audit) -> Result<(), PgRegistryError> {
+        self.write(Some(a), |t| t.execute("DELETE FROM memex_server.sessions WHERE hash = $1", &[&hash]))
+            .map(|_| ())
+    }
+
+    pub fn reg_delete_expired_sessions(&self, now_ms: i64) -> Result<u64, PgRegistryError> {
+        match self.write(None, |t| t.execute("DELETE FROM memex_server.sessions WHERE expires_at_ms <= $1", &[&now_ms])) {
+            Err(PgRegistryError::NotFound) => Ok(0),
+            other => other,
+        }
     }
 
     pub fn reg_insert_vault(&self, v: &VaultRow, a: &Audit) -> Result<(), PgRegistryError> {

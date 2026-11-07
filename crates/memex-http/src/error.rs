@@ -1,5 +1,5 @@
 use axum::Json;
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use memex_api::{ErrorBody, ErrorDetail};
 use memex_core::ServerError;
@@ -10,6 +10,7 @@ pub struct ApiError {
     message: String,
     request_id: String,
     current: Option<serde_json::Value>,
+    retry_after_s: Option<u64>,
 }
 
 impl ApiError {
@@ -24,6 +25,7 @@ impl ApiError {
             message: message.into(),
             request_id: request_id.into(),
             current: None,
+            retry_after_s: None,
         }
     }
 
@@ -39,6 +41,7 @@ impl ApiError {
             ServerError::TooLarge { .. } => (StatusCode::PAYLOAD_TOO_LARGE, "too_large"),
             ServerError::UnsupportedMedia(_) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported_media"),
             ServerError::Busy => (StatusCode::TOO_MANY_REQUESTS, "busy"),
+            ServerError::RateLimited { .. } => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             ServerError::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
             ServerError::NotCaughtUp { .. } => (StatusCode::SERVICE_UNAVAILABLE, "not_caught_up"),
             ServerError::AlreadyBootstrapped => (StatusCode::CONFLICT, "conflict"),
@@ -55,8 +58,14 @@ impl ApiError {
         } else {
             None
         };
+        let retry_after_s = if let ServerError::RateLimited { retry_after_s } = &e {
+            Some(*retry_after_s)
+        } else {
+            None
+        };
         Self {
             current,
+            retry_after_s,
             ..Self::new(status, code, message, request_id)
         }
     }
@@ -64,8 +73,10 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        let retry_after = self.retry_after_s.map(|s| [(header::RETRY_AFTER, s.to_string())]);
         (
             self.status,
+            retry_after,
             Json(ErrorBody {
                 error: ErrorDetail {
                     code: self.code.into(),

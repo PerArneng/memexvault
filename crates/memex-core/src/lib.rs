@@ -19,6 +19,7 @@ mod replay;
 pub mod search;
 mod seed;
 mod server;
+mod session;
 mod settings;
 pub mod sources;
 mod store;
@@ -42,10 +43,11 @@ pub use replay::{ReplayError, all_events, replay};
 pub use search::Reranker;
 pub use seed::Seed;
 pub use server::{
-    ClaimEvidence, ClaimRef, CreatedToken, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, EvidenceLineage, FieldInput, Lineage,
-    NewEntity, NewToken, PIPELINE_VERSION, PageList, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT, Redirect, RenditionInput, SearchEdges, Server,
-    ServerEdges, ServerError, SplitRequest, TypeDecision,
+    ClaimEvidence, ClaimRef, CreatedSession, CreatedToken, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, EvidenceLineage, FieldInput,
+    Lineage, NewEntity, NewToken, PIPELINE_VERSION, PageList, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT, Redirect, RenditionInput, SearchEdges,
+    Server, ServerEdges, ServerError, SplitRequest, TypeDecision,
 };
+pub use session::{LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, SESSION_TTL_MS};
 pub use settings::{Backends, Settings, SettingsError};
 pub use sources::{ALLOWED_MEDIA_TYPES, UNTRUSTED, UploadLimits, UploadOutcome, UploadRequest, sniff_media_type};
 pub use store::{CommitItem, MAX_SHARED_IDS, PAGE_LIMIT, Receipt, Snapshot, Store, StoreError, WriterLease};

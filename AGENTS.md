@@ -71,6 +71,8 @@ the repository root:
 - Tests that need Postgres are ignored by default, so they show as not run rather than passed: `docker compose up -d`, then
   `MEMEX_TEST_DATABASE_URL=postgres://postgres:memex@127.0.0.1:55432/memex cargo test -p memexvault --release -- --ignored --test-threads=1 pg_`.
   The `pg_kill_postgres` test also needs `MEMEX_TEST_CONTAINER=memexvault-postgres-1` and kills that container repeatedly.
+- TLS to Postgres needs a second server: `scripts/pg-tls-certs.sh`, then `docker compose --profile tls up -d postgres-tls` (name the service, or the default one starts too), then
+  `MEMEX_TEST_DATABASE_URL=postgres://postgres:memex@127.0.0.1:55432/memex MEMEX_TEST_TLS_CERTS=$PWD/target/pg-tls cargo test -p memexvault --release --test postgres_tls -- --ignored --test-threads=1`. The certificates are throwaway and git-ignored.
 - The keyword index harness needs Postgres and the corpus from spec 004: set `MEMEX_TEST_DATABASE_URL`, `MEMEX_TEST_DATA` and `MEMEX_TEST_CORPUS`, then
   `cargo test -p memexvault --release --test lexical_harness -- --ignored --nocapture --exact lexical_bench_200k` or `lexical_kill_200_times`.
 - The vector index needs Postgres: `cargo test -p memexvault --release --test vector -- --ignored --test-threads=1 pg_`. `real_model_matches_the_spike_and_is_fast_enough` in that file also needs `MEMEX_TEST_E5` (`model.onnx` and `tokenizer.json`), and `MEMEX_TEST_CORPUS` and `MEMEX_TEST_VECTORS` from spec 004. The harness uses the same variables: `cargo test -p memexvault --release --test vector_harness -- --ignored --nocapture --exact vector_bench_200k` or `vector_kill_200_times`.
@@ -81,7 +83,14 @@ the repository root:
 
 The console's commands run from `web/`: `pnpm install`, `pnpm build`,
 `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm run licenses`, `pnpm run contrast`
-and `pnpm e2e`. Write down what was measured, not just that it was done.
+and `pnpm e2e`.
+
+The binary embeds `web/apps/console/dist` with `rust-embed`, so run `pnpm build` before `cargo build --release` to ship the console. Cargo notices a new build by itself, and a build without one serves a page that says so.
+`pnpm dev` proxies `/api` to `MEMEX_API_URL`, by default `http://127.0.0.1:8080`, the default `MEMEX_HTTP_BIND`. The proxy keeps everything on one origin, so sign-in works in development, and production needs no CORS.
+The browser session checks run against a real server: with `memexvault serve` running and its token from `bootstrap`,
+`MEMEX_E2E_URL=http://127.0.0.1:<port> MEMEX_E2E_TOKEN=<token> pnpm --filter @memex/console e2e:session`. The URL must use `127.0.0.1`, as the cross-site test uses `localhost` as the other site.
+
+Write down what was measured, not just that it was done.
 Run `check` before committing spec changes, and name the spec in the commit
 message (`spec #63: ...`). Older commits use `spec 063: ...`. Also run `wave-manager.py check` after changing waves or `Depends on` lines.
 

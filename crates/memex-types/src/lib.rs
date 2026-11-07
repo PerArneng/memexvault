@@ -24,7 +24,7 @@ pub use jobs::{JobAttempt, JobRow, JobState};
 pub use lexical::{
     AttrScope, AttrValue, DocKind, Generation, IndexDoc, IndexHealth, IndexOp, LexicalError, LexicalFilter, LexicalHit, LexicalQuery, LexicalResults, QueryTerm,
 };
-pub use registry::{Audit, Grant, Principal, PrincipalKind, Scope, TokenRow, VaultRow};
+pub use registry::{Audit, Grant, Principal, PrincipalKind, Scope, SessionRow, TokenRow, VaultRow};
 pub use rendition::{Anchor, PageClass, PageFacts, PageFlag, PageOutcome, PageRoute, ParsedDocument, Rect, RenditionRow, Word};
 pub use rows::{AssertionRow, ChangeSetRow, EdgeRow, EvidenceRow, Header, Mutation, PageRow, Row, RowKey, SegmentRow, SourceRow, Status, Table};
 pub use search::{

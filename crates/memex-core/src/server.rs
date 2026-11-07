@@ -5,6 +5,7 @@ pub use entities::{
 
 use crate::auth::{Caller, Decision, Operation, authorize};
 use crate::governance::{self, Author, NotReversible, PlanError};
+use crate::session::{LoginLimiter, SESSION_TTL_MS};
 use crate::vector::{EMBED_ATTEMPTS, EmbedDocRef, EmbedInput, EmbedRequest, check_query_text, embed_missing, embeddable};
 use crate::{
     ALLOWED_DPI, ChangeSetRecorded, PageImage, Rasterizer, Snapshot, StateRecorded, THUMBNAIL_DPI, UploadLimits, UploadOutcome, UploadRequest, jobs, rendition,
@@ -14,8 +15,8 @@ use crate::{ApplyError, BlobStore, BlobStoreError, Clock, Engine, Receipt, Regis
 use crate::{EMBED_JOB, EmbedJobError, Embedder, LexicalIndex, LexicalProjector, ProjectError, StepOutcome, VectorIndex, VectorProjector};
 use memex_types::{
     Audit, ChangeSetRow, ChangeSetState, Event, EventDraft, Grant, Header, JobRow, JobState, LexicalError, LexicalFilter, LexicalResults, Mutation, ObjectId,
-    Principal, PrincipalKind, Rect, RenditionRow, RiskDecision, Row, RowKey, SegmentRow, SourceRow, Status, Table, TokenRow, ValidatorResult, VaultId,
-    VaultRow,
+    Principal, PrincipalKind, Rect, RenditionRow, RiskDecision, Row, RowKey, SegmentRow, SessionRow, SourceRow, Status, Table, TokenRow, ValidatorResult,
+    VaultId, VaultRow,
 };
 use serde_json::Value;
 use serde_json::json;
@@ -51,7 +52,16 @@ impl Drop for AsOfSlot<'_> {
 }
 
 const TOKEN_PREFIX: &str = "mvx_";
+const SESSION_PREFIX: &str = "mxs_";
 const TOUCH_EVERY_MS: i64 = 60_000;
+
+/// A new browser session. `session_id` is shown once, in the cookie, and only its hash is stored.
+#[derive(Debug)]
+pub struct CreatedSession {
+    pub session_id: String,
+    pub caller: Caller,
+    pub max_age_s: i64,
+}
 
 /// The server's edges, grouped so its type stays readable.
 pub trait ServerEdges {
@@ -100,6 +110,10 @@ pub enum ServerError {
     UnsupportedMedia(String),
     /// Too much unfinished work. Try again later.
     Busy,
+    /// Too many failed sign-ins from this client.
+    RateLimited {
+        retry_after_s: u64,
+    },
     /// A backend is down or failed. Safe to retry.
     Unavailable(String),
     /// An index hasn't yet seen the event a reader asked for. Safe to retry.
@@ -123,6 +137,7 @@ impl fmt::Display for ServerError {
             Self::TooLarge { limit } => write!(f, "the upload is over the limit of {limit} bytes"),
             Self::UnsupportedMedia(m) => write!(f, "unsupported file type: {m}"),
             Self::Busy => f.write_str("too much unfinished work, so try again later"),
+            Self::RateLimited { retry_after_s } => write!(f, "too many failed sign-ins, so try again in {retry_after_s} seconds"),
             Self::Unavailable(m) => write!(f, "{m}"),
             Self::NotCaughtUp { min_seq, reached } => write!(f, "the search index hasn't reached event {min_seq} yet, and is at {reached:?}"),
             Self::AlreadyBootstrapped => f.write_str("this server already has principals"),
@@ -281,6 +296,8 @@ pub struct Server<E: ServerEdges> {
     reranker: E::Reranker,
     /// How many `as_of` searches are running. Each one holds the vault's past in memory.
     as_of_running: AtomicU64,
+    /// Lives in memory: a restart forgets it, and one server serves each database.
+    login_limiter: Mutex<LoginLimiter>,
     vector_projector: Mutex<VectorProjector>,
     leases: Mutex<HashMap<VaultId, WriterLease>>,
     /// Decisions read state and then commit, so they run one at a time per vault. The writer lease stops other processes.
@@ -325,6 +342,7 @@ impl<E: ServerEdges> Server<E> {
             embedder: search.embedder,
             reranker: search.reranker,
             as_of_running: AtomicU64::new(0),
+            login_limiter: Mutex::new(LoginLimiter::default()),
             vector_projector: Mutex::new(VectorProjector::default()),
             leases: Mutex::new(HashMap::new()),
             write_locks: Mutex::new(HashMap::new()),
@@ -467,8 +485,13 @@ impl<E: ServerEdges> Server<E> {
         if !raw.starts_with(TOKEN_PREFIX) || raw.len() > 256 {
             return Err(ServerError::Unauthenticated);
         }
-        let now = self.now();
         let row = self.registry.token_by_hash(&sha256_hex(raw))?.ok_or(ServerError::Unauthenticated)?;
+        self.caller_from_token(row)
+    }
+
+    /// The checks a token has to pass, for bearer tokens and sessions alike. A session therefore ends the moment its token is revoked or its principal disabled.
+    fn caller_from_token(&self, row: TokenRow) -> Result<Caller, ServerError> {
+        let now = self.now();
         if row.revoked_at_ms.is_some() || row.expires_at_ms.is_some_and(|e| now >= e) {
             return Err(ServerError::Unauthenticated);
         }
@@ -485,6 +508,72 @@ impl<E: ServerEdges> Server<E> {
             token_id: row.id,
             grants: row.grants,
         })
+    }
+
+    /// Exchanges a token for a browser session. `client` names who is asking, for the limit on failed attempts, and the limit holds even for a right token.
+    pub fn login(&self, raw_token: &str, client: &str) -> Result<CreatedSession, ServerError> {
+        let now = self.now();
+        self.limiter()
+            .check(client, now)
+            .map_err(|retry_after_s| ServerError::RateLimited { retry_after_s })?;
+        let caller = match self.authenticate(raw_token) {
+            Ok(c) => c,
+            Err(ServerError::Unauthenticated) => {
+                self.limiter().failed(client, now);
+                return Err(ServerError::Unauthenticated);
+            }
+            Err(e) => return Err(e),
+        };
+        self.registry.delete_expired_sessions(now)?;
+        let mut session_id = String::from(SESSION_PREFIX);
+        for _ in 0..4 {
+            let _ = write!(session_id, "{:016x}", self.seed.next_u64());
+        }
+        let row = SessionRow {
+            hash: sha256_hex(&session_id),
+            token_id: caller.token_id.clone(),
+            principal_id: caller.principal.id.clone(),
+            created_at_ms: now,
+            expires_at_ms: now + SESSION_TTL_MS,
+        };
+        self.registry
+            .insert_session(&row, &self.audit(&caller.principal.id, "session.create", &caller.token_id))?;
+        Ok(CreatedSession {
+            session_id,
+            caller,
+            max_age_s: SESSION_TTL_MS / 1000,
+        })
+    }
+
+    pub fn authenticate_session(&self, raw: &str) -> Result<Caller, ServerError> {
+        if !raw.starts_with(SESSION_PREFIX) || raw.len() > 256 {
+            return Err(ServerError::Unauthenticated);
+        }
+        let session = self.registry.session_by_hash(&sha256_hex(raw))?.ok_or(ServerError::Unauthenticated)?;
+        if self.now() >= session.expires_at_ms {
+            return Err(ServerError::Unauthenticated);
+        }
+        let token = self.registry.token(&session.token_id)?.ok_or(ServerError::Unauthenticated)?;
+        self.caller_from_token(token)
+    }
+
+    /// Ends a session. One that is unknown or already gone is fine, since the result is the same.
+    pub fn logout(&self, raw: &str) -> Result<(), ServerError> {
+        let hash = sha256_hex(raw);
+        let Some(session) = self.registry.session_by_hash(&hash)? else {
+            return Ok(());
+        };
+        match self
+            .registry
+            .delete_session(&hash, &self.audit(&session.principal_id, "session.end", &session.token_id))
+        {
+            Err(RegistryError::NotFound) => Ok(()),
+            other => Ok(other?),
+        }
+    }
+
+    fn limiter(&self) -> std::sync::MutexGuard<'_, LoginLimiter> {
+        self.login_limiter.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     pub fn create_vault(&self, caller: &Caller, name: &str) -> Result<VaultRow, ServerError> {

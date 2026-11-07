@@ -81,7 +81,8 @@ Postgres is the system of record and the one required external system.
   whole vault be a schema drop.
 - **Migrations** are versioned SQL embedded in the binary and run by an explicit `migrate` command. The server refuses to
   start on a schema version it doesn't know.
-- **Client.** The `postgres` crate, pure Rust with no `libpq`, so the binary needs no extra system library. See spec 006. No TLS yet, which suits the same-machine default (spec 059).
+- **Client.** The `postgres` crate, pure Rust with no `libpq`, so the binary needs no extra system library. See spec 006.
+- **TLS.** rustls, with no system library. The connection URL's `sslmode` is `disable`, `require` (encrypts but checks nothing) or `verify-full` (checks the certificate against the CA file in `sslrootcert`, and the host name, which must be in the certificate's subject alternative names). With no `sslmode`, a host on this machine gets `disable` and any other host gets `verify-full`, so it needs `sslrootcert` and never falls back to plaintext. See spec 059.
 - **Durability checks.** The server refuses to start if `fsync` or `synchronous_commit` is off. It can't see whether a flush reaches the drive. Docker Desktop's doesn't appear to, so it's for development. Native macOS needs `wal_sync_method=fsync_writethrough`. See specs 006 and 058.
 - **Group commit.** A commit per event reaches about 400 events/s and a batch of 10 about 3,500, so one writer per vault batches what's waiting.
 - **Secrets.** The connection URL arrives through `Settings` and is redacted from logs and status output.
@@ -302,7 +303,12 @@ from it.
 - **Errors** use the one format from spec 012.
 - **Writes** to knowledge objects are proposals, as in [Governance](#governance).
 - **Browsers** authenticate with a session cookie (spec 037). API and MCP clients use bearer tokens. Both resolve to the same principal and
-  scopes.
+  scopes. `POST /api/v1/session` exchanges a token for a session, `DELETE` ends it, and `/api/v1/whoami` answers for both.
+- **Sessions** last 12 hours, are stored as hashes in `memex_server.sessions`, and pass the token's checks on every request, so revoking the token or disabling the principal ends them at once.
+- **CSRF.** The cookie is `SameSite=Strict`, and any state-changing request a cookie would authorize, and signing in, needs an `x-memex-csrf` header. A bearer header decides alone when present, and needs no such header.
+- **Failed sign-ins** are limited to 10 a minute per peer address, in memory, and then return 429 with `Retry-After`, even for the right token. Behind a proxy all clients share one count.
+- **TLS** belongs to a proxy in front. It must send `X-Forwarded-Proto: https`, which is what makes the cookie `Secure`.
+- **Every response** carries a CSP with `default-src 'self'` and `frame-ancestors 'none'`, plus `nosniff`. Original files download as attachments with a `sandbox` CSP. Unknown paths outside `/api` return the console's `index.html`.
 
 ## Live activity
 

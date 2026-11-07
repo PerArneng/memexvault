@@ -1,5 +1,7 @@
 //! Frontend: axum. Handlers parse, call the core on a blocking thread, and format. No rules live here.
+mod browser;
 mod error;
 mod routes;
 
-pub use routes::{BODY_LIMIT, openapi, parse_range, router, serve};
+pub use browser::{CSRF_HEADER, ConsoleLookup, SESSION_COOKIE, embedded_asset};
+pub use routes::{BODY_LIMIT, openapi, parse_range, router, router_with_console, serve};

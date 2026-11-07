@@ -12,5 +12,25 @@ services:
     command: >
       postgres -c shared_buffers=2GB -c effective_cache_size=5GB -c max_connections=64
     shm_size: 2g
+  # A TLS test server, started only by name: `docker compose --profile tls up -d postgres-tls`, or compose starts the service above too.
+  # scripts/pg-tls-certs.sh writes the certificates first. Postgres insists on owning its key, so it gets a copy.
+  postgres-tls:
+    profiles: [tls]
+    image: pgvector/pgvector:0.8.7-pg18
+    environment:
+      POSTGRES_PASSWORD: memex
+      POSTGRES_DB: memex
+    ports:
+      - "127.0.0.1:55459:5432"
+    volumes:
+      - pgdata-tls:/var/lib/postgresql
+      - ./target/pg-tls:/certs:ro
+    entrypoint:
+      - sh
+      - -c
+      - >
+        install -o postgres -g postgres -m 600 /certs/server.key /tmp/server.key &&
+        exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/certs/server.crt -c ssl_key_file=/tmp/server.key
 volumes:
   pgdata:
+  pgdata-tls:
