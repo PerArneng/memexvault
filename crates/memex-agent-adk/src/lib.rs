@@ -1,6 +1,8 @@
 //! Edge: the only crate that depends on ADK-Rust. One schema-only call with no tools, in plain types, so no ADK type leaves this file.
 //!
 //! The binary wraps this behind `memex_core::AgentRunner`, so this crate doesn't depend on core.
+mod chat;
+
 use adk_agent::LlmAgentBuilder;
 use adk_core::{Agent, Content, ErrorCategory, FinishReason, Llm, Part, RunConfig, SessionId, StreamingMode, UserId};
 use adk_model::gemini::{GeminiModel, ThinkingConfig, ThinkingLevel};
@@ -35,6 +37,8 @@ pub struct AdkAgent {
     secret: Option<String>,
     counter: AtomicU64,
     native_schema: bool,
+    /// How often a running chat looks for a cancel.
+    chat_tick: Duration,
 }
 
 /// What Gemini's own `response_schema` takes. It refuses anything else with a 400, so the rest is left out of what's sent, and the full schema is still enforced on the reply by the caller.
@@ -149,6 +153,7 @@ impl AdkAgent {
             .build()
             .map_err(|e| e.to_string())?;
         Ok(Self {
+            chat_tick: Duration::from_millis(25),
             runtime,
             llm,
             model,

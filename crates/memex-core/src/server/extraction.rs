@@ -451,6 +451,7 @@ impl<E: ServerEdges> Server<E> {
                 machine: true,
                 extractor: &derivation.model,
                 prompt_version: &derivation.prompt_hash,
+                requested_by: None,
             };
             match self.propose_as(&by, vault, proposal, false) {
                 Ok(outcome) if outcome.replayed => {}

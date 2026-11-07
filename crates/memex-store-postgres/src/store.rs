@@ -2,7 +2,7 @@ use crate::migrate::{LATEST_SERVER_VERSION, LATEST_VAULT_VERSION, SERVER_MIGRATI
 use crate::net::net_mutations;
 use crate::tls::Target;
 use memex_types::{
-    AssertionRow, BlockKind, BlockRow, ChangeSetRow, DocKind, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, FilterValue,
+    AssertionRow, BlockKind, BlockRow, ChangeSetRow, ChatMessage, ChatReservation, ChatStored, ChatThread, ChatThreadKey, DocKind, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, FilterValue,
     Header, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Status, Table,
     ValueMatch, VaultId,
 };
@@ -393,7 +393,209 @@ impl PgStore {
         ] {
             client.batch_execute(&format!("VACUUM {schema}.{t}")).map_err(backend)?;
         }
+        // Plain VACUUM frees a dead row's space and leaves its bytes in the page until something overwrites them. A rewrite is what removes them. These tables are small, and erasure is rare, so the short exclusive lock is fine, and a run waiting on it just waits.
+        for t in ["chat_threads", "chat_messages", "chat_thread_sources"] {
+            client.batch_execute(&format!("VACUUM FULL {schema}.{t}")).map_err(backend)?;
+        }
         Ok(())
+    }
+
+    /// Runs one short piece of chat work on a pooled connection, and gives it straight back.
+    fn with_chat<T>(&self, vault: &VaultId, f: impl FnOnce(&mut Conn, &str) -> Result<T, postgres::Error>) -> Result<T, PgError> {
+        let mut conn = self.take_conn()?;
+        let schema = self.schema_of(vault, &mut conn.client)?;
+        let out = f(&mut conn, &schema).map_err(backend)?;
+        self.give_conn(conn);
+        Ok(out)
+    }
+
+    /// Whether it was new.
+    pub fn chat_create_thread(&self, vault: &VaultId, t: &ChatThread) -> Result<bool, PgError> {
+        self.with_chat(vault, |c, s| {
+            let sql = format!(
+                "INSERT INTO {s}.chat_threads (owner_id, id, title, created_at_ms, updated_at_ms, tokens) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING"
+            );
+            let st = c.statement(&sql)?;
+            Ok(c.client.execute(&st, &[&t.owner, &t.id, &t.title, &t.created_at_ms, &t.updated_at_ms, &(t.tokens as i64)])? == 1)
+        })
+    }
+
+    pub fn chat_thread(&self, vault: &VaultId, key: &ChatThreadKey) -> Result<Option<ChatThread>, PgError> {
+        self.with_chat(vault, |c, s| {
+            let sql = format!("SELECT owner_id, id, title, created_at_ms, updated_at_ms, tokens FROM {s}.chat_threads WHERE owner_id = $1 AND id = $2");
+            Ok(c.query_opt(&sql, &[&key.owner, &key.id])?.as_ref().map(chat_thread_of))
+        })
+    }
+
+    pub fn chat_threads(&self, vault: &VaultId, owner: &str, after: Option<(i64, &str)>, limit: usize) -> Result<Vec<ChatThread>, PgError> {
+        self.with_chat(vault, |c, s| {
+            let sql = format!(
+                "SELECT owner_id, id, title, created_at_ms, updated_at_ms, tokens FROM {s}.chat_threads WHERE owner_id = $1 AND ($2::bigint IS NULL OR (updated_at_ms, id) < ($2, $3)) ORDER BY updated_at_ms DESC, id DESC LIMIT $4"
+            );
+            let (ms, id) = (after.map(|a| a.0), after.map(|a| a.1));
+            Ok(c.query(&sql, &[&owner, &ms, &id, &(limit as i64)])?.iter().map(chat_thread_of).collect())
+        })
+    }
+
+    pub fn chat_rename_thread(&self, vault: &VaultId, key: &ChatThreadKey, title: &str, now_ms: i64) -> Result<bool, PgError> {
+        self.with_chat(vault, |c, s| {
+            let sql = format!("UPDATE {s}.chat_threads SET title = $3, updated_at_ms = $4 WHERE owner_id = $1 AND id = $2");
+            let st = c.statement(&sql)?;
+            Ok(c.client.execute(&st, &[&key.owner, &key.id, &title, &now_ms])? == 1)
+        })
+    }
+
+    pub fn chat_delete_thread(&self, vault: &VaultId, key: &ChatThreadKey) -> Result<bool, PgError> {
+        self.with_chat(vault, |c, s| {
+            let sql = format!("DELETE FROM {s}.chat_threads WHERE owner_id = $1 AND id = $2");
+            let st = c.statement(&sql)?;
+            Ok(c.client.execute(&st, &[&key.owner, &key.id])? == 1)
+        })
+    }
+
+    /// One transaction. Locking the thread's row orders writers to it, and stops a delete passing between the check and the insert. False if it has gone.
+    pub fn chat_append_messages(&self, vault: &VaultId, key: &ChatThreadKey, messages: &[ChatMessage], now_ms: i64) -> Result<bool, PgError> {
+        let values: Vec<Value> = messages
+            .iter()
+            .map(|m| serde_json::to_value(m).map_err(|e| PgError::Backend(e.to_string())))
+            .collect::<Result<_, _>>()?;
+        self.with_chat(vault, |c, s| {
+            let mut t = c.client.transaction()?;
+            let touched = t.execute(
+                &format!("UPDATE {s}.chat_threads SET updated_at_ms = $3 WHERE owner_id = $1 AND id = $2"),
+                &[&key.owner, &key.id, &now_ms],
+            )?;
+            if touched != 1 {
+                t.rollback()?;
+                return Ok(false);
+            }
+            let next: i64 = t
+                .query_one(
+                    &format!("SELECT coalesce(max(seq) + 1, 0) FROM {s}.chat_messages WHERE owner_id = $1 AND thread_id = $2"),
+                    &[&key.owner, &key.id],
+                )?
+                .get(0);
+            t.execute(
+                &format!(
+                    "INSERT INTO {s}.chat_messages (owner_id, thread_id, seq, message) SELECT $1, $2, $3 + (o - 1), m FROM unnest($4::jsonb[]) WITH ORDINALITY AS w(m, o)"
+                ),
+                &[&key.owner, &key.id, &next, &values],
+            )?;
+            t.commit()?;
+            Ok(true)
+        })
+    }
+
+    pub fn chat_messages(&self, vault: &VaultId, key: &ChatThreadKey, after: Option<u64>, limit: usize) -> Result<Vec<ChatStored>, PgError> {
+        self.with_chat(vault, |c, s| {
+            let sql = format!(
+                "SELECT seq, message FROM {s}.chat_messages WHERE owner_id = $1 AND thread_id = $2 AND ($3::bigint IS NULL OR seq > $3) ORDER BY seq LIMIT $4"
+            );
+            let after = after.map(|a| a as i64);
+            let rows = c.query(&sql, &[&key.owner, &key.id, &after, &(limit as i64)])?;
+            Ok(rows
+                .iter()
+                .map(|r| ChatStored {
+                    seq: r.get::<_, i64>(0) as u64,
+                    message: serde_json::from_value(r.get(1)).expect("a message this binary wrote"),
+                })
+                .collect())
+        })
+    }
+
+    /// False if the thread has gone. The foreign key is what says so, so it can't pass a delete.
+    pub fn chat_record_sources(&self, vault: &VaultId, key: &ChatThreadKey, sources: &[ObjectId]) -> Result<bool, PgError> {
+        let ids: Vec<&str> = sources.iter().map(|i| i.0.as_str()).collect();
+        let found = self.with_chat(vault, |c, s| {
+            let sql = format!(
+                "INSERT INTO {s}.chat_thread_sources (owner_id, thread_id, source_id) SELECT $1, $2, x FROM unnest($3::text[]) AS w(x) ON CONFLICT DO NOTHING"
+            );
+            let st = c.statement(&sql)?;
+            c.client.execute(&st, &[&key.owner, &key.id, &ids])
+        });
+        match found {
+            Ok(_) => Ok(true),
+            // 23503 is a foreign key violation: there's no such thread any more.
+            Err(PgError::Backend(m)) if m.starts_with("23503") => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn chat_sources(&self, vault: &VaultId, key: &ChatThreadKey) -> Result<Vec<ObjectId>, PgError> {
+        self.with_chat(vault, |c, s| {
+            let sql = format!("SELECT source_id FROM {s}.chat_thread_sources WHERE owner_id = $1 AND thread_id = $2 ORDER BY source_id");
+            Ok(c.query(&sql, &[&key.owner, &key.id])?.iter().map(|r| ObjectId(r.get(0))).collect())
+        })
+    }
+
+    pub fn chat_threads_citing(&self, vault: &VaultId, source: &ObjectId, limit: usize) -> Result<Vec<ChatThreadKey>, PgError> {
+        self.with_chat(vault, |c, s| {
+            let sql = format!("SELECT owner_id, thread_id FROM {s}.chat_thread_sources WHERE source_id = $1 ORDER BY owner_id, thread_id LIMIT $2");
+            Ok(c.query(&sql, &[&source.0, &(limit as i64)])?
+                .iter()
+                .map(|r| ChatThreadKey {
+                    owner: r.get(0),
+                    id: r.get(1),
+                })
+                .collect())
+        })
+    }
+
+    /// One transaction, so it charges both or neither. Conditional updates can't both take the last of a budget.
+    pub fn chat_reserve(&self, vault: &VaultId, key: &ChatThreadKey, day: i64, tokens: u64, thread_limit: u64, day_limit: u64) -> Result<ChatReservation, PgError> {
+        let (n, tl, dl) = (tokens as i64, thread_limit as i64, day_limit as i64);
+        self.with_chat(vault, |c, s| {
+            let mut t = c.client.transaction()?;
+            let exists = t
+                .query_opt(
+                    &format!("SELECT tokens FROM {s}.chat_threads WHERE owner_id = $1 AND id = $2 FOR UPDATE"),
+                    &[&key.owner, &key.id],
+                )?
+                .map(|r| r.get::<_, i64>(0));
+            let Some(spent) = exists else {
+                t.rollback()?;
+                return Ok(ChatReservation::ThreadGone);
+            };
+            if spent + n > tl {
+                t.rollback()?;
+                return Ok(ChatReservation::ThreadOver);
+            }
+            let charged = t.execute(
+                &format!(
+                    "INSERT INTO {s}.chat_spend (day, tokens) VALUES ($1, $2) ON CONFLICT (day) DO UPDATE SET tokens = {s}.chat_spend.tokens + $2 WHERE {s}.chat_spend.tokens + $2 <= $3"
+                ),
+                &[&day, &n, &dl],
+            )?;
+            if charged != 1 || n > dl {
+                t.rollback()?;
+                return Ok(ChatReservation::DayOver);
+            }
+            t.execute(
+                &format!("UPDATE {s}.chat_threads SET tokens = tokens + $3 WHERE owner_id = $1 AND id = $2"),
+                &[&key.owner, &key.id, &n],
+            )?;
+            t.commit()?;
+            Ok(ChatReservation::Reserved)
+        })
+    }
+
+    pub fn chat_settle(&self, vault: &VaultId, key: &ChatThreadKey, day: i64, delta: i64) -> Result<(), PgError> {
+        self.with_chat(vault, |c, s| {
+            let mut t = c.client.transaction()?;
+            t.execute(
+                &format!("UPDATE {s}.chat_threads SET tokens = greatest(tokens + $3, 0) WHERE owner_id = $1 AND id = $2"),
+                &[&key.owner, &key.id, &delta],
+            )?;
+            t.execute(&format!("UPDATE {s}.chat_spend SET tokens = greatest(tokens + $2, 0) WHERE day = $1"), &[&day, &delta])?;
+            t.commit()
+        })
+    }
+
+    pub fn chat_day_tokens(&self, vault: &VaultId, day: i64) -> Result<u64, PgError> {
+        self.with_chat(vault, |c, s| {
+            let sql = format!("SELECT tokens FROM {s}.chat_spend WHERE day = $1");
+            Ok(c.query_opt(&sql, &[&day])?.map_or(0, |r| r.get::<_, i64>(0) as u64))
+        })
     }
 
     /// Removes a vault's schema entirely. For tests and vault deletion.
@@ -431,6 +633,17 @@ fn migrate_vault(c: &mut Client, schema: String) -> Result<(), PgError> {
         t.commit().map_err(backend)?;
     }
     Ok(())
+}
+
+fn chat_thread_of(r: &postgres::Row) -> ChatThread {
+    ChatThread {
+        owner: r.get(0),
+        id: r.get(1),
+        title: r.get(2),
+        created_at_ms: r.get(3),
+        updated_at_ms: r.get(4),
+        tokens: r.get::<_, i64>(5) as u64,
+    }
 }
 
 fn status_text(s: Status) -> &'static str {
@@ -532,6 +745,7 @@ fn table_name(t: Table) -> &'static str {
         Table::AuditCheck => "audit_checks",
         Table::AuditState => "audit_state",
         Table::AuditPlanted => "audit_planted",
+        Table::ChatSettings => "chat_settings",
         Table::Block => "blocks",
         Table::Slug => "page_slugs",
         Table::Revision => "page_revisions",
@@ -879,6 +1093,7 @@ fn row_from(table: Table, r: &postgres::Row) -> Row {
             | Table::AuditCheck
             | Table::AuditState
             | Table::AuditPlanted
+            | Table::ChatSettings
             | Table::Block
             | Table::Slug
             | Table::Revision
@@ -930,6 +1145,7 @@ fn row_from(table: Table, r: &postgres::Row) -> Row {
         | Table::AuditCheck
         | Table::AuditState
         | Table::AuditPlanted
+        | Table::ChatSettings
         | Table::Block
         | Table::Slug
         | Table::Revision => {

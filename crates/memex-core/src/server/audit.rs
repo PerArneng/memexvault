@@ -127,7 +127,8 @@ fn claim_type(claim: &AssertionRow, entities: &HashMap<ObjectId, Row>) -> String
 fn combination_of(claim: &AssertionRow, changeset: Option<&ChangeSetRow>, item_type: &str) -> Option<AuditCombination> {
     let cs = changeset?;
     let origin = cs.origin.as_ref()?;
-    (claim.machine && cs.proposer_is_machine).then(|| AuditCombination {
+    // A chat's proposal earns nothing, and a person approved it, so it has no record for an audit to add to or take away from.
+    (claim.machine && cs.proposer_is_machine && cs.requested_by.is_none()).then(|| AuditCombination {
         extractor: origin.extractor.clone(),
         prompt_version: origin.prompt_version.clone(),
         item_type: item_type.into(),
@@ -1130,6 +1131,7 @@ impl<E: ServerEdges> Server<E> {
             machine: true,
             extractor: combination.map_or(AUDITOR, |c| c.extractor.as_str()),
             prompt_version: combination.map_or("", |c| c.prompt_version.as_str()),
+            requested_by: None,
         };
         self.propose_as(&by, vault, proposal, false).map_err(ExtractJobError::from)
     }

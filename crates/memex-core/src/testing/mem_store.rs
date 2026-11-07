@@ -1,9 +1,9 @@
 use crate::{CommitItem, PAGE_LIMIT, Receipt, Snapshot, Store, StoreError, WriterLease};
 use memex_types::{
-    AssertionRow, BlockKind, BlockRow, CLAIM_REF, ChangeSetRow, EdgeDirection, EdgeRow, Event, EvidenceRow, JobRow, JobState, Mutation, ObjectId, PageRow,
+    AssertionRow, BlockKind, BlockRow, CLAIM_REF, ChangeSetRow, ChatMessage, ChatReservation, ChatStored, ChatThread, ChatThreadKey, EdgeDirection, EdgeRow, Event, EvidenceRow, JobRow, JobState, Mutation, ObjectId, PageRow,
     RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SourceRow, Status, Table, VaultId, WIKI_LINK, slug_of_target,
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -23,8 +23,22 @@ pub struct CallCounts {
 }
 
 /// An in-memory Store with the same semantics as a real one. Snapshots share state until a commit copies it.
+/// What a vault's chat holds. It's off the log, as it is in a real store.
+#[derive(Debug, Clone, Default)]
+struct ChatState {
+    threads: BTreeMap<(String, String), ChatThread>,
+    messages: BTreeMap<(String, String), Vec<ChatMessage>>,
+    sources: BTreeMap<(String, String), BTreeSet<ObjectId>>,
+    days: BTreeMap<i64, u64>,
+}
+
+fn chat_key(key: &ChatThreadKey) -> (String, String) {
+    (key.owner.clone(), key.id.clone())
+}
+
 #[derive(Debug, Default)]
 pub struct MemStore {
+    chat: Mutex<HashMap<VaultId, ChatState>>,
     vaults: Mutex<HashMap<VaultId, Arc<VaultState>>>,
     leases: Mutex<HashMap<VaultId, u64>>,
     next_token: AtomicU64,
@@ -680,8 +694,153 @@ fn assertion_matches(a: &AssertionRow, hashes: &[String], pairs: &[(String, Stri
     a.header.status == Status::Active && (hashes.contains(&a.canonical_hash) || pairs.iter().any(|(s, p)| *s == a.subject && *p == a.predicate))
 }
 
+impl MemStore {
+    fn with_chat<T>(&self, vault: &VaultId, f: impl FnOnce(&mut ChatState) -> T) -> Result<T, StoreError> {
+        if !self.vaults.lock().expect("lock").contains_key(vault) {
+            return Err(StoreError::UnknownVault { vault: vault.clone() });
+        }
+        Ok(f(self.chat.lock().expect("lock").entry(vault.clone()).or_default()))
+    }
+}
+
 impl Store for MemStore {
     type Snap<'a> = MemSnapshot<'a>;
+
+    fn chat_create_thread(&self, vault: &VaultId, thread: &ChatThread) -> Result<bool, StoreError> {
+        self.with_chat(vault, |c| {
+            let key = (thread.owner.clone(), thread.id.clone());
+            if c.threads.contains_key(&key) {
+                return false;
+            }
+            c.threads.insert(key, thread.clone());
+            true
+        })
+    }
+
+    fn chat_thread(&self, vault: &VaultId, key: &ChatThreadKey) -> Result<Option<ChatThread>, StoreError> {
+        self.with_chat(vault, |c| c.threads.get(&chat_key(key)).cloned())
+    }
+
+    fn chat_threads(&self, vault: &VaultId, owner: &str, after: Option<(i64, &str)>, limit: usize) -> Result<Vec<ChatThread>, StoreError> {
+        self.with_chat(vault, |c| {
+            let mut mine: Vec<ChatThread> = c.threads.values().filter(|t| t.owner == owner).cloned().collect();
+            mine.sort_by(|a, b| (b.updated_at_ms, &b.id).cmp(&(a.updated_at_ms, &a.id)));
+            mine.into_iter()
+                .filter(|t| after.is_none_or(|(ms, id)| (t.updated_at_ms, t.id.as_str()) < (ms, id)))
+                .take(limit)
+                .collect()
+        })
+    }
+
+    fn chat_rename_thread(&self, vault: &VaultId, key: &ChatThreadKey, title: &str, now_ms: i64) -> Result<bool, StoreError> {
+        self.with_chat(vault, |c| match c.threads.get_mut(&chat_key(key)) {
+            Some(t) => {
+                t.title = title.to_string();
+                t.updated_at_ms = now_ms;
+                true
+            }
+            None => false,
+        })
+    }
+
+    fn chat_delete_thread(&self, vault: &VaultId, key: &ChatThreadKey) -> Result<bool, StoreError> {
+        self.with_chat(vault, |c| {
+            let k = chat_key(key);
+            c.messages.remove(&k);
+            c.sources.remove(&k);
+            c.threads.remove(&k).is_some()
+        })
+    }
+
+    fn chat_append_messages(&self, vault: &VaultId, key: &ChatThreadKey, messages: &[ChatMessage], now_ms: i64) -> Result<bool, StoreError> {
+        self.with_chat(vault, |c| {
+            let k = chat_key(key);
+            let Some(t) = c.threads.get_mut(&k) else { return false };
+            t.updated_at_ms = now_ms;
+            c.messages.entry(k).or_default().extend_from_slice(messages);
+            true
+        })
+    }
+
+    fn chat_messages(&self, vault: &VaultId, key: &ChatThreadKey, after: Option<u64>, limit: usize) -> Result<Vec<ChatStored>, StoreError> {
+        self.with_chat(vault, |c| {
+            c.messages
+                .get(&chat_key(key))
+                .map(|all| {
+                    all.iter()
+                        .enumerate()
+                        .map(|(i, m)| ChatStored {
+                            seq: i as u64,
+                            message: m.clone(),
+                        })
+                        .filter(|m| after.is_none_or(|a| m.seq > a))
+                        .take(limit)
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+    }
+
+    fn chat_record_sources(&self, vault: &VaultId, key: &ChatThreadKey, sources: &[ObjectId]) -> Result<bool, StoreError> {
+        self.with_chat(vault, |c| {
+            let k = chat_key(key);
+            if !c.threads.contains_key(&k) {
+                return false;
+            }
+            c.sources.entry(k).or_default().extend(sources.iter().cloned());
+            true
+        })
+    }
+
+    fn chat_sources(&self, vault: &VaultId, key: &ChatThreadKey) -> Result<Vec<ObjectId>, StoreError> {
+        self.with_chat(vault, |c| c.sources.get(&chat_key(key)).map(|s| s.iter().cloned().collect()).unwrap_or_default())
+    }
+
+    fn chat_threads_citing(&self, vault: &VaultId, source: &ObjectId, limit: usize) -> Result<Vec<ChatThreadKey>, StoreError> {
+        self.with_chat(vault, |c| {
+            c.sources
+                .iter()
+                .filter(|(_, s)| s.contains(source))
+                .map(|((owner, id), _)| ChatThreadKey {
+                    owner: owner.clone(),
+                    id: id.clone(),
+                })
+                .take(limit)
+                .collect()
+        })
+    }
+
+    fn chat_reserve(&self, vault: &VaultId, key: &ChatThreadKey, day: i64, tokens: u64, thread_limit: u64, day_limit: u64) -> Result<ChatReservation, StoreError> {
+        self.with_chat(vault, |c| {
+            let Some(t) = c.threads.get_mut(&chat_key(key)) else {
+                return ChatReservation::ThreadGone;
+            };
+            if t.tokens + tokens > thread_limit {
+                return ChatReservation::ThreadOver;
+            }
+            let spent = c.days.entry(day).or_default();
+            if *spent + tokens > day_limit {
+                return ChatReservation::DayOver;
+            }
+            t.tokens += tokens;
+            *spent += tokens;
+            ChatReservation::Reserved
+        })
+    }
+
+    fn chat_settle(&self, vault: &VaultId, key: &ChatThreadKey, day: i64, delta: i64) -> Result<(), StoreError> {
+        self.with_chat(vault, |c| {
+            if let Some(t) = c.threads.get_mut(&chat_key(key)) {
+                t.tokens = t.tokens.saturating_add_signed(delta);
+            }
+            let spent = c.days.entry(day).or_default();
+            *spent = spent.saturating_add_signed(delta);
+        })
+    }
+
+    fn chat_day_tokens(&self, vault: &VaultId, day: i64) -> Result<u64, StoreError> {
+        self.with_chat(vault, |c| c.days.get(&day).copied().unwrap_or(0))
+    }
 
     fn open_vault(&self, vault: &VaultId) -> Result<WriterLease, StoreError> {
         let mut leases = self.leases.lock().expect("lock");

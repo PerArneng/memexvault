@@ -203,6 +203,7 @@ pub fn error_code(e: &ServerError) -> &'static str {
         ServerError::TooLarge { .. } => "too_large",
         ServerError::UnsupportedMedia(_) => "unsupported_media",
         ServerError::Busy => "busy",
+        ServerError::ChatDisabled => "chat_disabled",
         ServerError::RateLimited { .. } => "rate_limited",
         ServerError::Unavailable(_) => "unavailable",
         ServerError::NotCaughtUp { .. } => "not_caught_up",

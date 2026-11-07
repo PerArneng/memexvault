@@ -45,6 +45,10 @@ impl memex_core::AgentRunner for AdkAgentRunner {
     fn run(&self, req: &memex_types::AgentRequest) -> Result<memex_types::AgentReply, memex_types::AgentError> {
         self.0.run(req)
     }
+
+    fn chat(&self, req: &memex_types::ChatRequest, host: std::sync::Arc<dyn memex_types::ChatHost>) -> memex_types::ChatEnd {
+        self.0.chat(req, host)
+    }
 }
 
 /// The endpoint settings name. Settings have already checked each provider has what it needs.
