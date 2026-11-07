@@ -98,7 +98,10 @@ fn sentence(n: usize) -> String {
 }
 
 fn long_text(first: &str) -> String {
-    format!("{first} {}", "Detta är en lång mening om ingenting särskilt som bara fyller ut stycket med ord. ".repeat(12))
+    format!(
+        "{first} {}",
+        "Detta är en lång mening om ingenting särskilt som bara fyller ut stycket med ord. ".repeat(12)
+    )
 }
 
 fn prompt_hash() -> String {
@@ -110,13 +113,18 @@ fn scripted_oracle(req: &AgentRequest) -> Result<AgentReply, AgentError> {
     let input: Value = serde_json::from_str(&req.input).unwrap();
     if req.schema_json.contains("not_entailed") {
         let claim = &input["claims"][0];
-        let holds = claim["quotes"][0].as_str().unwrap_or_default().contains(claim["value"].as_str().unwrap_or_default());
+        let holds = claim["quotes"][0]
+            .as_str()
+            .unwrap_or_default()
+            .contains(claim["value"].as_str().unwrap_or_default());
         return reply(json!({"verdict": if holds { "entailed" } else { "not_entailed" }, "reason": "scripted"}));
     }
     let text = input["segments"][0]["text"].as_str().unwrap_or_default();
     let first = text.split('.').next().unwrap_or_default();
     let (subject, _) = first.split_once(" byggdes").unwrap_or((first, ""));
-    reply(json!({"claims": [{"segment_id": "s1", "quote": format!("{first}."), "subject": subject, "predicate": "byggdes i", "value": "Stockholm"}], "entities": {}}))
+    reply(
+        json!({"claims": [{"segment_id": "s1", "quote": format!("{first}."), "subject": subject, "predicate": "byggdes i", "value": "Stockholm"}], "entities": {}}),
+    )
 }
 
 impl Rig {
@@ -129,9 +137,18 @@ impl Rig {
             metadata: json!({}),
             replaces: None,
         };
-        let source = self.s.upload(&self.admin, &self.v, req, UploadLimits::default(), &mut text.as_bytes()).unwrap().source.header.id;
+        let source = self
+            .s
+            .upload(&self.admin, &self.v, req, UploadLimits::default(), &mut text.as_bytes())
+            .unwrap()
+            .source
+            .header
+            .id;
         let job = self.s.claim_job(&self.v, RENDITION_JOB, "parser").unwrap().unwrap();
-        let input = RenditionInput::Plain { text, parser: "plain-1".into() };
+        let input = RenditionInput::Plain {
+            text,
+            parser: "plain-1".into(),
+        };
         let rows = self.s.build_rendition(&self.v, &source, input).unwrap();
         assert!(self.s.complete_job(&self.v, &job, rows).unwrap());
         let agent = ScriptedAgent::new(vec![reply(json!({
@@ -229,7 +246,12 @@ impl Rig {
             proposer: Some(memex_core::audit::AUDITOR.into()),
             ..ReviewFilter::default()
         };
-        self.s.review_queue(&self.admin, &self.v, &f, None, 10_000).unwrap().into_iter().map(|i| i.changeset).collect()
+        self.s
+            .review_queue(&self.admin, &self.v, &f, None, 10_000)
+            .unwrap()
+            .into_iter()
+            .map(|i| i.changeset)
+            .collect()
     }
 
     fn break_quote(&self, claim: &ObjectId) {
@@ -255,14 +277,20 @@ fn pg_audit_failure_revokes_requeues_and_a_person_decides() {
     let first = r.claims()[0].clone();
     r.break_quote(&first.header.id);
     let run = r.audit(1);
-    assert_eq!((run.state, run.failed, run.revoked.len(), run.siblings_requeued), (AuditRunState::Finished, 1, 1, 5));
+    assert_eq!(
+        (run.state, run.failed, run.revoked.len(), run.siblings_requeued),
+        (AuditRunState::Finished, 1, 1, 5)
+    );
     let table = r.s.auto_commit_table(&r.admin, &r.v, None, 10).unwrap();
     let entry = table.entries.iter().find(|e| e.row.item_type == "claim").unwrap();
     assert!(!entry.on);
     assert_eq!((entry.row.correct, entry.row.total_correct, entry.row.total_incorrect), (0, 10_000, 1));
     let items = r.audit_items();
     assert_eq!(items.len(), 6);
-    assert!(r.claims().iter().all(|c| c.header.status == Status::Active), "nothing has changed until a person acts");
+    assert!(
+        r.claims().iter().all(|c| c.header.status == Status::Active),
+        "nothing has changed until a person acts"
+    );
     // The queue filters reach them by the extractor they're about.
     let by_extractor = ReviewFilter {
         state: Some(ChangeSetState::Pending),
@@ -352,9 +380,8 @@ fn pg_audit_counts_and_hashes_agree_across_the_store_and_both_indexes() {
     assert_eq!(run.suspect + run.failed, 0);
     // A retired claim leaves both indexes, and the comparison agrees once they've caught up.
     let claim = r.claims().remove(0);
-    let cs = r
-        .s
-        .propose(
+    let cs =
+        r.s.propose(
             &r.admin,
             &r.v,
             memex_core::Proposal {
@@ -393,13 +420,17 @@ fn pg_audit_a_retired_claim_leaves_search_and_returns_on_a_revert() {
         let mut q = SearchRequest::new("Fartyget nummer");
         q.mode = mode;
         q.filter.kinds = vec![DocKind::Claim];
-        r.s.search(&r.admin, &r.v, &q).unwrap().items.iter().filter(|i| i.kind == ItemKind::Claim).count()
+        r.s.search(&r.admin, &r.v, &q)
+            .unwrap()
+            .items
+            .iter()
+            .filter(|i| i.kind == ItemKind::Claim)
+            .count()
     };
     assert_eq!(found(SearchMode::Lexical), 1);
     assert_eq!(found(SearchMode::Vector), 1);
-    let cs = r
-        .s
-        .propose(
+    let cs =
+        r.s.propose(
             &r.admin,
             &r.v,
             memex_core::Proposal {
@@ -535,6 +566,9 @@ fn live_planted_recall() {
     let report = r.s.audit_recall(&r.admin, &r.v).unwrap();
     print_recall(&format!("LIVE: {} {}", llm.provider, llm.model), &report);
     println!("{} calls, {} tokens, stop {:?}", run.llm_calls, run.usage.total(), run.stop);
-    assert_eq!(run.stop, None, "a stopped run didn't check everything, so its recall is an underestimate: raise the cap");
+    assert_eq!(
+        run.stop, None,
+        "a stopped run didn't check everything, so its recall is an underestimate: raise the cap"
+    );
     assert_eq!(report.target_met, Some(true), "{:?}", report.overall_recall);
 }

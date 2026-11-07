@@ -260,9 +260,12 @@ impl memex_core::VectorIndex for PgVectorIndex {
         kind: memex_types::DocKind,
         wanted: &[memex_types::ObjectId],
     ) -> Result<Option<memex_core::lexical::IndexContents>, memex_types::VectorError> {
-        Ok(self.0.reconcile(vault, kind.as_str(), wanted)?.map(|(count, xor, present)| memex_core::lexical::IndexContents {
-            digest: memex_types::IdDigest { count, xor },
-            present: present.into_iter().map(memex_types::ObjectId).collect(),
-        }))
+        Ok(self
+            .0
+            .reconcile(vault, kind.as_str(), wanted)?
+            .map(|(count, xor, present)| memex_core::lexical::IndexContents {
+                digest: memex_types::IdDigest { count, xor },
+                present: present.into_iter().map(memex_types::ObjectId).collect(),
+            }))
     }
 }

@@ -990,9 +990,8 @@ fn a_retired_claim_can_not_be_served_from_a_cached_search_and_returns_on_a_rever
     let hits = w.tier("query").hits;
     assert_eq!(claims(&w), 1);
     assert_eq!(w.tier("query").hits, hits + 1, "the second search came from the cache");
-    let cs = w
-        .s
-        .propose(
+    let cs =
+        w.s.propose(
             &w.c,
             &w.v,
             memex_core::Proposal {

@@ -10,7 +10,8 @@ use memex_types::{
     AgentError, AgentRequest, AgentUsage, AssertionRow, AuditCheckKind as Kind, AuditCheckResult, AuditCheckRow, AuditCheckStatus as St, AuditCombination,
     AuditLlmUse, AuditOutcome, AuditPlantedRow, AuditRunRow, AuditRunState, AuditSchedule, AuditStateRow, AuditStop, AuditTrigger, BlobHash, ChangeSetRow,
     ChangeSetState, DocKind, ExtractedItem, Generation, Grant, Header, IndexHealth, IndexOp, JobRow, JobState, Mutation, ObjectId, Op, PlantedKind, Principal,
-    PrincipalKind, ReviewFilter, Row, RowKey, Scope, SegmentRow, SiblingCursor, SourceRow, Status, Table, VaultFinding, VaultId, VectorHealth, entity_of_subject,
+    PrincipalKind, ReviewFilter, Row, RowKey, Scope, SegmentRow, SiblingCursor, SourceRow, Status, Table, VaultFinding, VaultId, VectorHealth,
+    entity_of_subject,
 };
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -48,6 +49,9 @@ pub struct AuditRunDetail {
     pub run: AuditRunRow,
     pub job_state: Option<JobState>,
 }
+
+/// A reply that met the schema, or why none did, and what the call spent.
+type CallAnswer = (Result<String, String>, AuditLlmUse);
 
 /// What's still to do for a claim about to finish: an earlier run's item, if this finding has one already.
 struct Filed {
@@ -150,7 +154,9 @@ fn candidates_in<S: Snapshot>(snap: &S, claims: &[AssertionRow]) -> Result<Vec<(
     let sources = rows_by_id(
         snap,
         Table::Source,
-        segments.values().filter_map(|r| if let Row::Segment(s) = r { Some(s.source_id.clone()) } else { None }),
+        segments
+            .values()
+            .filter_map(|r| if let Row::Segment(s) = r { Some(s.source_id.clone()) } else { None }),
     )?;
     let mut tiers: HashMap<&ObjectId, Vec<&str>> = HashMap::new();
     for e in &evidence {
@@ -171,7 +177,9 @@ fn candidates_in<S: Snapshot>(snap: &S, claims: &[AssertionRow]) -> Result<Vec<(
             let combination = combination_of(c, cs, &item_type);
             let candidate = Candidate {
                 id: c.header.id.clone(),
-                extractor: cs.and_then(|x| x.origin.as_ref()).map_or_else(|| c.header.creator.clone(), |o| o.extractor.clone()),
+                extractor: cs
+                    .and_then(|x| x.origin.as_ref())
+                    .map_or_else(|| c.header.creator.clone(), |o| o.extractor.clone()),
                 item_type,
                 auto_committed: cs.is_some_and(|x| x.decided_by.as_deref() == Some(review::AUTO_COMMIT)),
                 committed_at_ms: cs.and_then(|x| x.decided_at_ms).unwrap_or(0),
@@ -342,7 +350,8 @@ impl<E: ServerEdges> Server<E> {
         if !due.run {
             return Ok(None);
         }
-        let open = !snap.jobs(Some(AUDIT_JOB), Some(JobState::Queued), None, 1)?.is_empty() || !snap.jobs(Some(AUDIT_JOB), Some(JobState::Running), None, 1)?.is_empty();
+        let open = !snap.jobs(Some(AUDIT_JOB), Some(JobState::Queued), None, 1)?.is_empty()
+            || !snap.jobs(Some(AUDIT_JOB), Some(JobState::Running), None, 1)?.is_empty();
         drop(snap);
         state.next_run_at_ms = due.next;
         state.total_missed_slots += u64::from(due.missed) + u64::from(open);
@@ -524,7 +533,11 @@ impl<E: ServerEdges> Server<E> {
                 trust_tier: None,
             })
             .collect();
-        let order: HashMap<ObjectId, usize> = audit::sample(seed, &draws, draws.len()).into_iter().enumerate().map(|(i, p)| (p.id, i)).collect();
+        let order: HashMap<ObjectId, usize> = audit::sample(seed, &draws, draws.len())
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| (p.id, i))
+            .collect();
         claims.sort_by_key(|c| order[&c.header.id]);
         let ids: Vec<ObjectId> = claims.iter().map(|c| c.header.id.clone()).collect();
         let evidence = snap.evidence_of(&ids)?;
@@ -532,7 +545,9 @@ impl<E: ServerEdges> Server<E> {
         let sources = rows_by_id(
             &snap,
             Table::Source,
-            segments.values().filter_map(|r| if let Row::Segment(s) = r { Some(s.source_id.clone()) } else { None }),
+            segments
+                .values()
+                .filter_map(|r| if let Row::Segment(s) = r { Some(s.source_id.clone()) } else { None }),
         )?;
         let changesets = rows_by_id(&snap, Table::ChangeSet, claims.iter().map(|c| c.changeset_id.clone()))?;
         let health = self.lexical.health(vault, false)?;
@@ -706,7 +721,11 @@ impl<E: ServerEdges> Server<E> {
             self.take_sample(vault, job, &mut run)?;
         }
         let checks = self.load_checks(vault, &run)?;
-        let wanted: Vec<ObjectId> = checks.iter().filter(|c| c.outcome == AuditOutcome::Sampled).map(|c| c.claim_id.clone()).collect();
+        let wanted: Vec<ObjectId> = checks
+            .iter()
+            .filter(|c| c.outcome == AuditOutcome::Sampled)
+            .map(|c| c.claim_id.clone())
+            .collect();
         let index = self.reconcile_indexes(vault, &mut run, &wanted)?;
         let limits = *self.auditor.lock().expect("lock");
         let agent = agent.zip(limits);
@@ -845,8 +864,8 @@ impl<E: ServerEdges> Server<E> {
         match self.vector.health(vault).map_err(vector_failure)? {
             VectorHealth::Ready { watermark, .. } => {
                 let snap = self.engine.store().snapshot(vault)?;
-                let embedding =
-                    !snap.jobs(Some(EMBED_JOB), Some(JobState::Queued), None, 1)?.is_empty() || !snap.jobs(Some(EMBED_JOB), Some(JobState::Running), None, 1)?.is_empty();
+                let embedding = !snap.jobs(Some(EMBED_JOB), Some(JobState::Queued), None, 1)?.is_empty()
+                    || !snap.jobs(Some(EMBED_JOB), Some(JobState::Running), None, 1)?.is_empty();
                 let touched = Self::touched_since(&snap, watermark)?;
                 match touched {
                     _ if embedding => findings.push(inconclusive("vector index", "embedding jobs are still open".into())),
@@ -945,7 +964,9 @@ impl<E: ServerEdges> Server<E> {
         let changesets = rows_by_id(
             &snap,
             Table::ChangeSet,
-            claims.values().filter_map(|r| if let Row::Assertion(a) = r { Some(a.changeset_id.clone()) } else { None }),
+            claims
+                .values()
+                .filter_map(|r| if let Row::Assertion(a) = r { Some(a.changeset_id.clone()) } else { None }),
         )?;
         let evidence = if open.is_empty() { vec![] } else { snap.evidence_of(&open)? };
         let segments = rows_by_id(&snap, Table::Segment, evidence.iter().map(|e| e.segment_id.clone()))?;
@@ -1218,7 +1239,7 @@ impl<E: ServerEdges> Server<E> {
         limits: AuditLimits,
         call: (Kind, &str, &str, String),
         accept: &dyn Fn(&str) -> Result<(), String>,
-    ) -> Result<Option<(Result<String, String>, AuditLlmUse)>, ExtractJobError> {
+    ) -> Result<Option<CallAnswer>, ExtractJobError> {
         let (kind, instruction, schema_json, input) = call;
         let state = self.audit_state(vault).map_err(ExtractJobError::from)?;
         let day_spent = if state.day == audit::day_of(self.now()) { state.day_spent } else { 0 };
@@ -1258,7 +1279,15 @@ impl<E: ServerEdges> Server<E> {
         };
         let (used, budget) = (run.usage.total(), run.run_token_budget);
         let room = |spent: &AgentUsage| {
-            audit::call_room(budget, used + spent.total(), day_budget, day_spent + spent.total(), estimated, limits.output_tokens).ok()
+            audit::call_room(
+                budget,
+                used + spent.total(),
+                day_budget,
+                day_spent + spent.total(),
+                estimated,
+                limits.output_tokens,
+            )
+            .ok()
         };
         let outcome = run_with_retry(agent, &request, accept, &room);
         run.usage.add(&outcome.usage);
@@ -1448,7 +1477,10 @@ impl<E: ServerEdges> Server<E> {
             loop {
                 let page = snap.review_queue(&filter, after.as_ref(), PAGE_LIMIT)?;
                 let Some(last) = page.last().map(|c| c.header.id.clone()) else { break };
-                for cs in page.iter().filter(|c| c.decided_by.as_deref() == Some(review::AUTO_COMMIT) && c.reverted_by.is_none()) {
+                for cs in page
+                    .iter()
+                    .filter(|c| c.decided_by.as_deref() == Some(review::AUTO_COMMIT) && c.reverted_by.is_none())
+                {
                     let ids: Vec<ObjectId> = cs
                         .ops
                         .iter()

@@ -2,9 +2,9 @@ use crate::migrate::{LATEST_SERVER_VERSION, LATEST_VAULT_VERSION, SERVER_MIGRATI
 use crate::net::net_mutations;
 use crate::tls::Target;
 use memex_types::{
-    AssertionRow, BlockKind, BlockRow, ChangeSetRow, DocKind, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, FilterValue, Header, IdDigest,
-    JobRow, JobState, Mutation, ObjectId, PageRow, RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Status, Table, ValueMatch,
-    VaultId,
+    AssertionRow, BlockKind, BlockRow, ChangeSetRow, DocKind, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, FilterValue,
+    Header, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Status, Table,
+    ValueMatch, VaultId,
 };
 use postgres::{Client, Statement, types::ToSql};
 use serde_json::Value;
@@ -1012,7 +1012,8 @@ impl PgSnapshot<'_> {
                 "{s}.segments a LEFT JOIN {s}.renditions r ON r.id = a.rendition_id WHERE a.row->'segment'->'header'->>'status' = 'active' AND (a.rendition_id IS NULL OR (r.row->'rendition'->>'superseded_by' IS NULL AND r.row->'rendition'->'header'->>'status' = 'active'))"
             ),
         };
-        let sql = format!("SELECT count(*), coalesce(bit_xor(('x' || encode(substring(sha256(a.id::bytea) from 1 for 8), 'hex'))::bit(64)::bigint), 0) FROM {from}");
+        let sql =
+            format!("SELECT count(*), coalesce(bit_xor(('x' || encode(substring(sha256(a.id::bytea) from 1 for 8), 'hex'))::bit(64)::bigint), 0) FROM {from}");
         let row = self.with_statement(&sql, |c, st| c.query_one(st, &[]))?;
         Ok(IdDigest {
             count: row.get::<_, i64>(0) as u64,
@@ -1020,17 +1021,31 @@ impl PgSnapshot<'_> {
         })
     }
 
-    pub fn audit_checks(&self, run: &ObjectId, findings_only: bool, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::AuditCheckRow>, PgError> {
+    pub fn audit_checks(
+        &self,
+        run: &ObjectId,
+        findings_only: bool,
+        after: Option<&ObjectId>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::AuditCheckRow>, PgError> {
         let sql = format!(
             "SELECT row FROM {}.audit_checks WHERE run_id = $1 AND ($2::text IS NULL OR id > $2) AND (NOT $3 OR outcome IN ('suspect', 'failed')) ORDER BY id LIMIT $4",
             self.schema
         );
-        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&run.0, &after.map(|a| a.0.as_str()), &findings_only, &(limit as i64)]))?;
-        Ok(rows.iter().filter_map(|r| if let Row::AuditCheck(x) = json_row(r) { Some(x) } else { None }).collect())
+        let rows = self.with_statement(&sql, |c, st| {
+            c.query(st, &[&run.0, &after.map(|a| a.0.as_str()), &findings_only, &(limit as i64)])
+        })?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::AuditCheck(x) = json_row(r) { Some(x) } else { None })
+            .collect())
     }
 
     pub fn claim_counted_correct(&self, claim: &ObjectId) -> Result<bool, PgError> {
-        let sql = format!("SELECT EXISTS (SELECT 1 FROM {}.audit_checks WHERE claim_id = $1 AND (row->'audit_check'->>'counted_correct')::boolean)", self.schema);
+        let sql = format!(
+            "SELECT EXISTS (SELECT 1 FROM {}.audit_checks WHERE claim_id = $1 AND (row->'audit_check'->>'counted_correct')::boolean)",
+            self.schema
+        );
         Ok(self.with_statement(&sql, |c, st| c.query_one(st, &[&claim.0]))?.get(0))
     }
 

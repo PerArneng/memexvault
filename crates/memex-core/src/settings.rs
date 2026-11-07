@@ -548,7 +548,10 @@ mod tests {
             ("MEMEX_AUDIT_TIMEOUT_S", "9"),
         ])
         .unwrap();
-        assert_eq!((s.audit_model.as_deref(), s.audit.output_tokens, s.audit.timeout_ms), (Some("small"), 700, 9000));
+        assert_eq!(
+            (s.audit_model.as_deref(), s.audit.output_tokens, s.audit.timeout_ms),
+            (Some("small"), 700, 9000)
+        );
     }
 
     #[test]

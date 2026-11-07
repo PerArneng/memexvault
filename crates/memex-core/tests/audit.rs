@@ -7,8 +7,9 @@ use memex_core::{
 };
 use memex_types::{
     AgentError, AgentReply, AgentRequest, AgentUsage, AsOf, AuditCheckKind as Kind, AuditCheckRow, AuditCheckStatus as St, AuditOutcome, AuditRunRow,
-    AuditRunState, AuditSchedule, AuditStop, AuditTrigger, AutoCommitChangeKind, ChangeSetRow, ChangeSetState, DocKind, Epistemic, EvidenceInput, Grant, ItemKind,
-    JobRow, JobState, ObjectId, Op, PlantedKind, PrincipalKind, ReviewFilter, RiskDecision, Row, Scope, SearchMode, SearchRequest, Stance, Status, Table, VaultId,
+    AuditRunState, AuditSchedule, AuditStop, AuditTrigger, AutoCommitChangeKind, ChangeSetRow, ChangeSetState, DocKind, Epistemic, EvidenceInput, Grant,
+    ItemKind, JobRow, JobState, ObjectId, Op, PlantedKind, PrincipalKind, ReviewFilter, RiskDecision, Row, Scope, SearchMode, SearchRequest, Stance, Status,
+    Table, VaultId,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -222,7 +223,11 @@ impl World {
     }
 
     fn approve_pending(&self) {
-        for c in self.s.list_changesets(&self.admin, &self.v, Some(ChangeSetState::Pending), None, 10_000).unwrap() {
+        for c in self
+            .s
+            .list_changesets(&self.admin, &self.v, Some(ChangeSetState::Pending), None, 10_000)
+            .unwrap()
+        {
             self.s.approve(&self.admin, &self.v, &c.header.id, None).unwrap();
         }
     }
@@ -516,10 +521,21 @@ fn a_wrong_subject_is_caught_only_by_blind_reextraction_and_does_not_revoke_alon
     w.project();
     let run = w.audit(1, Some(&ScriptedAgent::answering(scripted_oracle)));
     assert_eq!((run.suspect, run.failed), (2, 0));
-    assert!(w.auto_commit_on(), "a disagreement alone says nothing against the extractor until a person agrees");
+    assert!(
+        w.auto_commit_on(),
+        "a disagreement alone says nothing against the extractor until a person agrees"
+    );
     let found = w.s.audit_run_checks(&w.admin, &w.v, &run.header.id, true, None, 10).unwrap();
-    assert!(found.iter().all(|c| c.checks.iter().any(|k| k.check == Kind::BlindReextraction && k.status == St::Fail)));
-    assert!(found.iter().all(|c| c.checks.iter().any(|k| k.check == Kind::Entailment && k.status == St::Pass)));
+    assert!(
+        found
+            .iter()
+            .all(|c| c.checks.iter().any(|k| k.check == Kind::BlindReextraction && k.status == St::Fail))
+    );
+    assert!(
+        found
+            .iter()
+            .all(|c| c.checks.iter().any(|k| k.check == Kind::Entailment && k.status == St::Pass))
+    );
 }
 
 #[test]
@@ -626,13 +642,7 @@ fn a_not_entailed_answer_revokes_like_a_failed_quote() {
     let w = world();
     w.earn_auto_commit();
     w.machine_claim(0);
-    let agent = ScriptedAgent::answering(|req| {
-        if is_entailment(req) {
-            verdict("not_entailed")
-        } else {
-            scripted_oracle(req)
-        }
-    });
+    let agent = ScriptedAgent::answering(|req| if is_entailment(req) { verdict("not_entailed") } else { scripted_oracle(req) });
     let run = w.audit(3, Some(&agent));
     assert_eq!((run.failed, run.revoked.len()), (1, 1));
     assert!(!w.auto_commit_on());
@@ -861,7 +871,11 @@ fn a_person_keeping_a_sibling_counts_as_correct_and_retiring_it_as_wrong() {
     w.s.approve(&w.admin, &w.v, &siblings[1].header.id, None).unwrap();
     assert_eq!((w.combination().row.correct, w.combination().row.incorrect), (1, 1), "retired");
     w.s.approve(&w.admin, &w.v, &finding.header.id, None).unwrap();
-    assert_eq!((w.combination().row.correct, w.combination().row.incorrect), (1, 1), "the audit already counted that one");
+    assert_eq!(
+        (w.combination().row.correct, w.combination().row.incorrect),
+        (1, 1),
+        "the audit already counted that one"
+    );
 }
 
 #[test]
@@ -954,9 +968,8 @@ fn a_retired_claim_leaves_every_reader_and_comes_back_on_a_revert() {
     w.approve_pending();
     let claim = w.claims()[0].clone();
     let id = claim.header.id.clone();
-    let (page_id, _) = w
-        .s
-        .propose_new_page(
+    let (page_id, _) =
+        w.s.propose_new_page(
             &w.admin,
             &w.v,
             NewPage {
@@ -987,7 +1000,11 @@ fn a_retired_claim_leaves_every_reader_and_comes_back_on_a_revert() {
     assert_eq!((row.header.status, row.superseded_by), (Status::Superseded, None), "the row is kept, marked");
     let after_seq = w.s.engine().store().snapshot(&w.v).unwrap().head().unwrap().unwrap();
     assert!(w.s.believed_at(&w.admin, &w.v, &claim.subject, after_seq).unwrap().is_empty());
-    assert_eq!(w.s.believed_at(&w.admin, &w.v, &claim.subject, before).unwrap().len(), 1, "what was believed then stays");
+    assert_eq!(
+        w.s.believed_at(&w.admin, &w.v, &claim.subject, before).unwrap().len(),
+        1,
+        "what was believed then stays"
+    );
     // The past still has it, as `as_of` replays the log.
     let as_of = |seq| {
         let mut q = SearchRequest::new("Fartyget nummer");
@@ -1084,13 +1101,21 @@ fn retiring_an_entity_s_claim_changes_its_field_and_card_and_a_revert_restores_t
     w.project();
     let name_of = || {
         let view = w.s.get_entity(&w.admin, &w.v, &entity).unwrap();
-        view.entity.fields.iter().find(|f| f.field == "name").map(|f| (f.assertion_id.clone(), f.value.clone()))
+        view.entity
+            .fields
+            .iter()
+            .find(|f| f.field == "name")
+            .map(|f| (f.assertion_id.clone(), f.value.clone()))
     };
     assert_eq!(name_of().unwrap().1, json!("Anna Lund"), "the newest stands");
     let newest = w.claims().into_iter().find(|c| c.header.id.0 == "newer").unwrap();
     let retirement = retire(&w, &newest);
     w.project();
-    assert_eq!(name_of().unwrap(), (ObjectId("older".into()), json!("Anna Berg")), "the field falls back to what still stands");
+    assert_eq!(
+        name_of().unwrap(),
+        (ObjectId("older".into()), json!("Anna Berg")),
+        "the field falls back to what still stands"
+    );
     let mut q = SearchRequest::new("Lund");
     q.mode = SearchMode::Lexical;
     q.filter.kinds = vec![DocKind::Entity];
@@ -1154,7 +1179,11 @@ fn retiring_the_only_claim_behind_a_required_field_leaves_the_entity_without_it(
     assert_eq!(made.changeset.unwrap().state, ChangeSetState::Committed);
     let claim = w.claims().remove(0);
     let retirement = retire(&w, &claim);
-    assert_eq!(retirement.state, ChangeSetState::Committed, "a claim found wrong can't be kept in place by its type's schema");
+    assert_eq!(
+        retirement.state,
+        ChangeSetState::Committed,
+        "a claim found wrong can't be kept in place by its type's schema"
+    );
     let view = w.s.get_entity(&w.admin, &w.v, &entity).unwrap();
     assert!(view.entity.fields.is_empty());
     w.s.revert(&w.admin, &w.v, &retirement.header.id, "it was right".into()).unwrap();
@@ -1361,13 +1390,17 @@ fn the_audit_agent_can_propose_and_nothing_else() {
     let direct = json!({"mutations": [{"put": Row::Assertion(changed)}]});
     forbidden(w.s.apply_as(&auditor, &w.v, "state.recorded", 1, direct).map(|_| ()), "direct write");
     forbidden(
-        w.s.apply_as(&auditor, &w.v, "page.created", 1, json!({"id": "p", "title": "t", "body": "b"})).map(|_| ()),
+        w.s.apply_as(&auditor, &w.v, "page.created", 1, json!({"id": "p", "title": "t", "body": "b"}))
+            .map(|_| ()),
         "direct page",
     );
     assert_eq!(w.claims()[0].value, claim.value, "the row is as it was");
     let other = w.s.create_vault(&w.admin, "other").unwrap().id;
     let hidden = w.s.trigger_audit(&auditor, &other, TriggerAudit::default()).unwrap_err();
-    assert!(matches!(hidden, ServerError::NotFound), "another vault doesn't exist as far as it can tell: {hidden}");
+    assert!(
+        matches!(hidden, ServerError::NotFound),
+        "another vault doesn't exist as far as it can tell: {hidden}"
+    );
 }
 
 #[test]
@@ -1601,11 +1634,7 @@ fn counts_and_hashes_match_on_a_settled_index_and_show_what_went_missing() {
     w.s.plant_audit_errors(&w.admin, &w.v, 1, 1, &[PlantedKind::IndexMissing]).unwrap();
     w.project();
     let drifted = w.audit(2, None);
-    let claims = drifted
-        .vault_findings
-        .iter()
-        .find(|f| f.detail.starts_with("keyword index claims"))
-        .unwrap();
+    let claims = drifted.vault_findings.iter().find(|f| f.detail.starts_with("keyword index claims")).unwrap();
     assert_eq!(claims.status, St::Fail, "{}", claims.detail);
     assert!(claims.detail.contains("the store has 5 and the index 4"), "{}", claims.detail);
     assert_eq!(drifted.failed, 0, "no claim is wrong");
@@ -1634,7 +1663,12 @@ fn an_index_behind_on_things_that_do_not_matter_can_still_be_compared() {
     w.audit(1, None);
     let run = w.audit(2, None);
     let claims = run.vault_findings.iter().find(|f| f.detail.starts_with("keyword index claims")).unwrap();
-    assert_eq!(claims.status, St::Pass, "an audit's own events don't touch anything an index holds: {}", claims.detail);
+    assert_eq!(
+        claims.status,
+        St::Pass,
+        "an audit's own events don't touch anything an index holds: {}",
+        claims.detail
+    );
 }
 
 #[test]
@@ -1676,7 +1710,11 @@ fn a_run_is_in_the_log_and_replays_to_the_same_state() {
     let lease = copy.open_vault(&w.v).unwrap();
     let events = memex_core::all_events(&w.s.engine().store().snapshot(&w.v).unwrap()).unwrap();
     memex_core::replay(events, &copy, &lease).unwrap();
-    assert_eq!(memex_core::dump_store(&copy.snapshot(&w.v).unwrap()).unwrap().sha256, dump, "with no LLM called");
+    assert_eq!(
+        memex_core::dump_store(&copy.snapshot(&w.v).unwrap()).unwrap().sha256,
+        dump,
+        "with no LLM called"
+    );
     let snap = copy.snapshot(&w.v).unwrap();
     assert!(!snap.rows(Table::AuditRun, None).unwrap().is_empty());
     assert!(!snap.rows(Table::AuditCheck, None).unwrap().is_empty());

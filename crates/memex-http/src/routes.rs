@@ -1,7 +1,7 @@
+mod audit;
 mod entities;
 mod extraction;
 mod pages;
-mod audit;
 mod review;
 
 use crate::browser::{self, ConsoleLookup};

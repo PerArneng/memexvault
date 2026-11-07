@@ -1,7 +1,7 @@
 use memex_types::{
-    AssertionRow, AuditCheckRow, AuditOutcome, BlockRow, ChangeSetRow, DerivationRow, DocKind, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow,
-    FieldFilter, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, QueueCount, RenditionRow, ReviewFilter, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Table, ValueMatch,
-    VaultId,
+    AssertionRow, AuditCheckRow, AuditOutcome, BlockRow, ChangeSetRow, DerivationRow, DocKind, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event,
+    EvidenceRow, FieldFilter, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, QueueCount, RenditionRow, ReviewFilter, RevisionRow, Row, RowKey,
+    SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
 };
 use std::fmt;
 
@@ -167,7 +167,10 @@ pub trait Snapshot {
             let page = self.rows(table, after.as_ref())?;
             let Some(last) = page.last() else { return Ok(digest) };
             after = Some(last.header().id.clone());
-            let segments: Vec<SegmentRow> = page.iter().filter_map(|r| if let Row::Segment(s) = r { Some(s.clone()) } else { None }).collect();
+            let segments: Vec<SegmentRow> = page
+                .iter()
+                .filter_map(|r| if let Row::Segment(s) = r { Some(s.clone()) } else { None })
+                .collect();
             let stale = crate::lexical::stale_renditions(self, &segments)?;
             for r in &page {
                 let wanted = match r {
@@ -188,7 +191,10 @@ pub trait Snapshot {
             let page = self.rows(Table::AuditCheck, cursor.as_ref())?;
             let Some(last) = page.last() else { return Ok(false) };
             cursor = Some(last.header().id.clone());
-            if page.iter().any(|r| matches!(r, Row::AuditCheck(c) if &c.claim_id == claim && c.counted_correct)) {
+            if page
+                .iter()
+                .any(|r| matches!(r, Row::AuditCheck(c) if &c.claim_id == claim && c.counted_correct))
+            {
                 return Ok(true);
             }
         }

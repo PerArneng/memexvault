@@ -1,9 +1,8 @@
 //! The audit agent's pure parts: sampling, the schedule, budgets, the checks that cost no tokens, what the LLM checks are shown, and the recall report.
 use crate::extraction;
 use memex_types::{
-    AssertionRow, AuditCheckKind as Kind, AuditCheckResult, AuditCheckRow, AuditCheckStatus as St, AuditOutcome, AuditPlantedRow, AuditRunRow,
-    AuditSchedule, AuditStop, Epistemic, EvidenceInput, EvidenceRow, ExtractedItem, IdDigest, ObjectId, Op, PlantedKind, RenditionRow, SegmentRow, SourceRow,
-    Status,
+    AssertionRow, AuditCheckKind as Kind, AuditCheckResult, AuditCheckRow, AuditCheckStatus as St, AuditOutcome, AuditPlantedRow, AuditRunRow, AuditSchedule,
+    AuditStop, Epistemic, EvidenceInput, EvidenceRow, ExtractedItem, IdDigest, ObjectId, Op, PlantedKind, RenditionRow, SegmentRow, SourceRow, Status,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -177,7 +176,12 @@ pub fn sample(seed: u64, candidates: &[Candidate], size: usize) -> Vec<Picked> {
     let mut keyed: Vec<(f64, &ObjectId, f64)> = candidates
         .iter()
         .map(|c| {
-            let w = weight(c, newest, by_extractor[c.extractor.as_str()] as f64 / total, by_type[c.item_type.as_str()] as f64 / total);
+            let w = weight(
+                c,
+                newest,
+                by_extractor[c.extractor.as_str()] as f64 / total,
+                by_type[c.item_type.as_str()] as f64 / total,
+            );
             (unit_draw(seed, &c.id).ln() / w, &c.id, w)
         })
         .collect();
@@ -256,7 +260,10 @@ pub fn evidence_checks(claim: &AssertionRow, facts: &[EvidenceFacts]) -> Vec<Aud
         if e.anchor_broken {
             relocation.push(("anchor_broken", format!("re-anchoring evidence {} failed", e.header.id)));
         } else if f.rendition.as_ref().is_some_and(|r| r.superseded_by.is_some()) {
-            relocation.push(("rendition_replaced", format!("segment {} is on a rendition that has been replaced", e.segment_id)));
+            relocation.push((
+                "rendition_replaced",
+                format!("segment {} is on a rendition that has been replaced", e.segment_id),
+            ));
         } else if !crate::governance::quote_in_text(&e.quote, &segment.text) {
             relocation.push((QUOTE_MISSING, format!("the quote isn't in segment {}", e.segment_id)));
         } else if !anchor_holds(e, segment) {
@@ -428,7 +435,9 @@ pub fn shows_claim_wrong(checks: &[AuditCheckResult]) -> bool {
 
 /// Whether the LLM checks can say anything: there's a quote that holds to show them.
 pub fn llm_can_check(checks: &[AuditCheckResult]) -> bool {
-    !checks.iter().any(|c| c.status == St::Fail && matches!(c.check, Kind::QuoteRelocation | Kind::LinkRot))
+    !checks
+        .iter()
+        .any(|c| c.status == St::Fail && matches!(c.check, Kind::QuoteRelocation | Kind::LinkRot))
 }
 
 /// What the results come to. A pass needs every check that ran to pass.
@@ -444,8 +453,7 @@ pub fn outcome_of(checks: &[AuditCheckResult]) -> AuditOutcome {
 
 /// Whether the audit vouches for this claim, which is what a correct sample means. A quote that's where it says proves nothing: the validators saw to that when it was proposed, so counting it would earn auto-commit from nothing. It takes an LLM's entailment.
 pub fn vouches_for_claim(checks: &[AuditCheckResult]) -> bool {
-    !checks.iter().any(|c| c.status == St::Fail)
-        && checks.iter().any(|c| c.check == Kind::Entailment && c.status == St::Pass)
+    !checks.iter().any(|c| c.status == St::Fail) && checks.iter().any(|c| c.check == Kind::Entailment && c.status == St::Pass)
 }
 
 /// Whether a finding has anything a person can decide by retiring the claim. An index that lost a document needs a rebuild, and the claim is fine.
@@ -718,11 +726,17 @@ mod tests {
 
     #[test]
     fn a_rare_extractor_a_rare_type_and_low_trust_are_picked_more_than_their_share() {
-        let all: Vec<Candidate> = (0..4000).map(|i| candidate(i, if i < 40 { "rare" } else { "common" }, "claim", false, 0, "trusted")).collect();
+        let all: Vec<Candidate> = (0..4000)
+            .map(|i| candidate(i, if i < 40 { "rare" } else { "common" }, "claim", false, 0, "trusted"))
+            .collect();
         assert!(share_of(&sample(5, &all, 400), &all, |c| c.extractor == "rare") > 0.03);
-        let all: Vec<Candidate> = (0..4000).map(|i| candidate(i, "m", if i < 40 { "entity:X" } else { "claim" }, false, 0, "trusted")).collect();
+        let all: Vec<Candidate> = (0..4000)
+            .map(|i| candidate(i, "m", if i < 40 { "entity:X" } else { "claim" }, false, 0, "trusted"))
+            .collect();
         assert!(share_of(&sample(5, &all, 400), &all, |c| c.item_type == "entity:X") > 0.03);
-        let all: Vec<Candidate> = (0..4000).map(|i| candidate(i, "m", "claim", false, 0, if i < 400 { crate::UNTRUSTED } else { "trusted" })).collect();
+        let all: Vec<Candidate> = (0..4000)
+            .map(|i| candidate(i, "m", "claim", false, 0, if i < 400 { crate::UNTRUSTED } else { "trusted" }))
+            .collect();
         assert!(share_of(&sample(5, &all, 400), &all, |c| c.trust_tier.as_deref() == Some(crate::UNTRUSTED)) > 0.15);
     }
 
@@ -746,10 +760,38 @@ mod tests {
     #[test]
     fn a_schedule_runs_when_due_and_counts_what_it_missed_without_catching_up() {
         let s = schedule(1000);
-        assert_eq!(due(&s, Some(5000), 4999), Due { run: false, missed: 0, next: Some(5000) });
-        assert_eq!(due(&s, Some(5000), 5000), Due { run: true, missed: 0, next: Some(6000) });
-        assert_eq!(due(&s, Some(5000), 5999), Due { run: true, missed: 0, next: Some(6000) });
-        assert_eq!(due(&s, Some(5000), 8500), Due { run: true, missed: 3, next: Some(9000) });
+        assert_eq!(
+            due(&s, Some(5000), 4999),
+            Due {
+                run: false,
+                missed: 0,
+                next: Some(5000)
+            }
+        );
+        assert_eq!(
+            due(&s, Some(5000), 5000),
+            Due {
+                run: true,
+                missed: 0,
+                next: Some(6000)
+            }
+        );
+        assert_eq!(
+            due(&s, Some(5000), 5999),
+            Due {
+                run: true,
+                missed: 0,
+                next: Some(6000)
+            }
+        );
+        assert_eq!(
+            due(&s, Some(5000), 8500),
+            Due {
+                run: true,
+                missed: 3,
+                next: Some(9000)
+            }
+        );
     }
 
     #[test]
@@ -867,16 +909,31 @@ mod tests {
     fn a_quote_that_is_where_it_says_vouches_for_nothing_without_an_entailment() {
         let quote_only = [check(Kind::QuoteRelocation, St::Pass, None), check(Kind::LinkRot, St::Pass, None)];
         assert_eq!(outcome_of(&quote_only), AuditOutcome::Passed);
-        assert!(!vouches_for_claim(&quote_only), "the validators already checked the quote, so this would earn auto-commit from nothing");
-        assert!(vouches_for_claim(&[check(Kind::QuoteRelocation, St::Pass, None), check(Kind::Entailment, St::Pass, None)]));
+        assert!(
+            !vouches_for_claim(&quote_only),
+            "the validators already checked the quote, so this would earn auto-commit from nothing"
+        );
+        assert!(vouches_for_claim(&[
+            check(Kind::QuoteRelocation, St::Pass, None),
+            check(Kind::Entailment, St::Pass, None)
+        ]));
         assert!(!vouches_for_claim(&[check(Kind::Entailment, St::Inconclusive, None)]));
-        assert!(!vouches_for_claim(&[check(Kind::Entailment, St::Pass, None), check(Kind::BlindReextraction, St::Fail, None)]));
+        assert!(!vouches_for_claim(&[
+            check(Kind::Entailment, St::Pass, None),
+            check(Kind::BlindReextraction, St::Fail, None)
+        ]));
     }
 
     #[test]
     fn an_approval_counts_against_the_extractor_only_for_what_nothing_counted_yet() {
-        assert!(!approval_counts_against(&[check(Kind::QuoteRelocation, St::Fail, Some(QUOTE_MISSING))]), "counted already");
-        assert!(!approval_counts_against(&[check(Kind::Staleness, St::Fail, None)]), "time passing isn't its fault");
+        assert!(
+            !approval_counts_against(&[check(Kind::QuoteRelocation, St::Fail, Some(QUOTE_MISSING))]),
+            "counted already"
+        );
+        assert!(
+            !approval_counts_against(&[check(Kind::Staleness, St::Fail, None)]),
+            "time passing isn't its fault"
+        );
         assert!(!approval_counts_against(&[check(Kind::LinkRot, St::Fail, None)]));
         assert!(approval_counts_against(&[check(Kind::BlindReextraction, St::Fail, None)]));
     }

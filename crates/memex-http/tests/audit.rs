@@ -63,7 +63,14 @@ fn world() -> World {
     };
     let reader = token("reader", PrincipalKind::Human, Scope::Read);
     let agent = token("agent", PrincipalKind::Agent, Scope::Propose);
-    World { s, root, admin, reader, agent, v }
+    World {
+        s,
+        root,
+        admin,
+        reader,
+        agent,
+        v,
+    }
 }
 
 async fn call(w: &World, method: &str, path: &str, token: &str, body: Option<Value>) -> (StatusCode, Value) {
@@ -93,7 +100,13 @@ impl World {
             metadata: json!({}),
             replaces: None,
         };
-        let source = self.s.upload(&self.admin, &self.v, req, UploadLimits::default(), &mut text.as_bytes()).unwrap().source.header.id;
+        let source = self
+            .s
+            .upload(&self.admin, &self.v, req, UploadLimits::default(), &mut text.as_bytes())
+            .unwrap()
+            .source
+            .header
+            .id;
         let job = self.s.claim_job(&self.v, RENDITION_JOB, "p").unwrap().unwrap();
         let rows = self
             .s
@@ -182,7 +195,14 @@ async fn a_run_through_the_route_samples_the_same_as_a_scheduled_run_with_that_s
     let sample = detail["sample"].as_array().unwrap().clone();
     assert_eq!(sample.len(), 10);
 
-    let (status, started) = call(&w, "POST", &format!("{}/runs", w.base()), &w.root, Some(json!({"seed": seed, "sample_size": 10}))).await;
+    let (status, started) = call(
+        &w,
+        "POST",
+        &format!("{}/runs", w.base()),
+        &w.root,
+        Some(json!({"seed": seed, "sample_size": 10})),
+    )
+    .await;
     assert_eq!(status, StatusCode::ACCEPTED, "{started}");
     assert_eq!(started["trigger"], "on_demand");
     assert_eq!(started["state"], "queued");
@@ -191,7 +211,14 @@ async fn a_run_through_the_route_samples_the_same_as_a_scheduled_run_with_that_s
     assert_eq!(by_route["sample"].as_array().unwrap(), &sample, "the same claims, in the same order");
     assert_eq!(by_route["run"]["seed"], json!(seed));
 
-    let (_, other) = call(&w, "POST", &format!("{}/runs", w.base()), &w.root, Some(json!({"seed": "1", "sample_size": 10}))).await;
+    let (_, other) = call(
+        &w,
+        "POST",
+        &format!("{}/runs", w.base()),
+        &w.root,
+        Some(json!({"seed": "1", "sample_size": 10})),
+    )
+    .await;
     w.run_next_job();
     let (_, other) = call(&w, "GET", &format!("{}/runs/{}", w.base(), other["id"].as_str().unwrap()), &w.reader, None).await;
     assert_ne!(other["sample"].as_array().unwrap(), &sample, "and another seed differs");
@@ -199,7 +226,14 @@ async fn a_run_through_the_route_samples_the_same_as_a_scheduled_run_with_that_s
     let (_, list) = call(&w, "GET", &format!("{}/runs?limit=2", w.base()), &w.reader, None).await;
     assert_eq!(list["items"].as_array().unwrap().len(), 2);
     assert!(list["next_cursor"].is_string());
-    let (_, rest) = call(&w, "GET", &format!("{}/runs?limit=2&cursor={}", w.base(), list["next_cursor"].as_str().unwrap()), &w.reader, None).await;
+    let (_, rest) = call(
+        &w,
+        "GET",
+        &format!("{}/runs?limit=2&cursor={}", w.base(), list["next_cursor"].as_str().unwrap()),
+        &w.reader,
+        None,
+    )
+    .await;
     assert_eq!(rest["items"].as_array().unwrap().len(), 1);
 }
 
@@ -211,7 +245,8 @@ async fn findings_come_with_each_check_s_result_and_their_review_item() {
     let mut e = snap.evidence_of(&[ObjectId("claim-001".into())]).unwrap().remove(0);
     drop(snap);
     e.quote = "något annat".into();
-    w.s.apply_as(&w.admin, &w.v, "state.recorded", 1, json!({"mutations": [{"put": {"evidence": e}}]})).unwrap();
+    w.s.apply_as(&w.admin, &w.v, "state.recorded", 1, json!({"mutations": [{"put": {"evidence": e}}]}))
+        .unwrap();
     let (_, started) = call(&w, "POST", &format!("{}/runs", w.base()), &w.root, Some(json!({"seed": "5"}))).await;
     w.run_next_job();
     let run = started["id"].as_str().unwrap();
@@ -308,7 +343,10 @@ async fn schedule_and_budget_read_back_and_a_bad_request_is_refused() {
     assert_eq!(on["next_run_at_ms"], json!(w.s.engine().clock().now_ms() + 60_000));
     assert_eq!(on["ttl_days"]["byggdes i"], 30);
     let (_, budget) = call(&w, "GET", &format!("{}/budget", w.base()), &w.reader, None).await;
-    assert_eq!((budget["run_token_budget"].as_u64(), budget["day_token_budget"].as_u64()), (Some(1000), Some(5000)));
+    assert_eq!(
+        (budget["run_token_budget"].as_u64(), budget["day_token_budget"].as_u64()),
+        (Some(1000), Some(5000))
+    );
     assert_eq!((budget["day_spent"].as_u64(), budget["day_remaining"].as_u64()), (Some(0), Some(5000)));
     for bad in [
         json!({"enabled": true, "interval_ms": 1, "sample_size": 1, "run_token_budget": 0, "day_token_budget": 0}),
@@ -335,7 +373,14 @@ async fn planted_errors_and_their_report_over_http() {
     w.claims(6);
     let (status, _) = call(&w, "POST", &format!("{}/test-vault", w.base()), &w.root, None).await;
     assert_eq!(status, StatusCode::CONFLICT, "it isn't empty any more");
-    let (status, body) = call(&w, "POST", &format!("{}/planted", w.base()), &w.root, Some(json!({"seed": "1", "per_kind": 1, "kinds": ["nonsense"]}))).await;
+    let (status, body) = call(
+        &w,
+        "POST",
+        &format!("{}/planted", w.base()),
+        &w.root,
+        Some(json!({"seed": "1", "per_kind": 1, "kinds": ["nonsense"]})),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     let (status, body) = call(
         &w,
@@ -364,7 +409,16 @@ async fn planted_errors_and_their_report_over_http() {
 #[test]
 fn the_openapi_document_has_the_audit_routes() {
     let doc = serde_json::to_value(openapi()).unwrap();
-    for path in ["runs", "runs/{run}", "runs/{run}/checks", "schedule", "budget", "recall", "test-vault", "planted"] {
+    for path in [
+        "runs",
+        "runs/{run}",
+        "runs/{run}/checks",
+        "schedule",
+        "budget",
+        "recall",
+        "test-vault",
+        "planted",
+    ] {
         assert!(doc["paths"].get(format!("/api/v1/vaults/{{id}}/audit/{path}")).is_some(), "{path}");
     }
 }

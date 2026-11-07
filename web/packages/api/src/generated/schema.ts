@@ -853,6 +853,522 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vaults/{id}/audit/budget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditBudgetDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/planted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Corrupts claims in a test vault and tags them, tagging what's left clean, to measure what audits catch. It's refused on any other vault. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PlantBody"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlantedDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/recall": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What planted errors came to, per kind and in two groups: kinds the deterministic checks catch, and kinds only LLM checks can. Scripted answers say nothing about a model, so `target_met` stays null until a real model's run. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RecallReportDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Runs in creation order, with their seeds, what each found and what it spent. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number;
+                    /** @description `created`, the default. */
+                    sort?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditRunPage"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Starts a run now. A seed makes it repeatable: the same seed on the same state samples the same claims as any other run with that seed, scheduled or not. It may spend tokens, so it needs admin scope. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TriggerAuditBody"];
+                };
+            };
+            responses: {
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditRunDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/runs/{run}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One run, with its seed and its sample in rank order. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    run: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditRunDetailDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/runs/{run}/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What was found about each sampled claim, in rank order, with each check's result and the review item it led to. `findings=true` leaves out what passed. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number;
+                    /** @description `created`, the default. */
+                    sort?: string;
+                    /** @description Only what didn't pass. */
+                    findings?: boolean;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                    run: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditCheckPage"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditScheduleDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        /** Replaces the schedule, which is off until someone turns it on. The first run comes one interval from now. */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AuditScheduleBody"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditScheduleDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/test-vault": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Marks an empty vault as one errors can be planted in. It can't be undone. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/vaults/{id}/changes": {
         parameters: {
             query?: never;
@@ -5079,6 +5595,160 @@ export interface components {
         AssertionList: {
             items: Record<string, never>[];
         };
+        AuditBudgetDto: {
+            /**
+             * Format: int64
+             * @description Whole days since the epoch, in UTC.
+             */
+            day: number;
+            /** Format: int64 */
+            day_remaining: number;
+            /** Format: int64 */
+            day_spent: number;
+            /** Format: int64 */
+            day_token_budget: number;
+            /** Format: int64 */
+            run_token_budget: number;
+        };
+        /** @description One sampled claim and what was found about it. A finding is one of these whose outcome isn't `passed`. */
+        AuditCheckDto: {
+            auto_committed: boolean;
+            /** @description The review item a person decides this on. */
+            changeset_id?: string | null;
+            checks: components["schemas"]["AuditCheckResultDto"][];
+            claim_id: string;
+            combination?: components["schemas"]["AuditCombinationDto"] | null;
+            counted_correct: boolean;
+            /** Format: int64 */
+            finished_at_ms?: number | null;
+            id: string;
+            /** @description `sampled`, `passed`, `suspect` or `failed`. */
+            outcome: string;
+            /** Format: int32 */
+            rank: number;
+            run_id: string;
+            /** Format: int64 */
+            weight_micro: number;
+        };
+        AuditCheckPage: {
+            items: components["schemas"]["AuditCheckDto"][];
+            next_cursor?: string | null;
+        };
+        AuditCheckResultDto: {
+            cause?: string | null;
+            check: string;
+            /** @description May hold a document's or a model's words, so show it as plain text. */
+            detail: string;
+            model?: string | null;
+            prompt_hash?: string | null;
+            /** @description `pass`, `fail` or `inconclusive`. */
+            status: string;
+            tokens?: components["schemas"]["TokenUsageDto"] | null;
+        };
+        AuditCombinationDto: {
+            extractor: string;
+            item_type: string;
+            prompt_version: string;
+        };
+        AuditRunDetailDto: {
+            run: components["schemas"]["AuditRunDto"];
+            /** @description The claims it sampled, in rank order. The checks route has what was found about each. */
+            sample: string[];
+        };
+        AuditRunDto: {
+            /** Format: int64 */
+            created_at_ms: number;
+            /** Format: int32 */
+            failed: number;
+            /** Format: int64 */
+            finished_at_ms?: number | null;
+            id: string;
+            /** Format: int32 */
+            llm_calls: number;
+            /** Format: int32 */
+            llm_skipped: number;
+            /** Format: int32 */
+            missed_slots: number;
+            model?: string | null;
+            /** Format: int32 */
+            passed: number;
+            /** Format: int64 */
+            population: number;
+            requested_by: string;
+            /** @description Combinations this run took auto-commit from. */
+            revoked: string[];
+            /** Format: int64 */
+            run_token_budget: number;
+            /** Format: int32 */
+            sample_size: number;
+            /** Format: int32 */
+            sampled: number;
+            /** @description A decimal number, as text. */
+            seed: string;
+            /**
+             * Format: int64
+             * @description Claims of revoked combinations still to go back to review. Later runs carry on with them.
+             */
+            siblings_remaining: number;
+            /** Format: int32 */
+            siblings_requeued: number;
+            /** Format: int64 */
+            started_at_ms?: number | null;
+            /** @description `queued`, `running`, `finished`, or `failed` if its job gave up. */
+            state: string;
+            /** Format: int64 */
+            state_seq?: number | null;
+            /** @description Why its LLM checks ended early: `run_budget`, `day_budget`, `llm_unavailable` or `llm_refused`. Running out of budget isn't a failure. */
+            stop?: string | null;
+            stop_detail?: string | null;
+            /** Format: int32 */
+            suspect: number;
+            tokens: components["schemas"]["TokenUsageDto"];
+            /** @description `scheduled` or `on_demand`. */
+            trigger: string;
+            vault_findings: components["schemas"]["VaultFindingDto"][];
+        };
+        AuditRunPage: {
+            items: components["schemas"]["AuditRunDto"][];
+            next_cursor?: string | null;
+        };
+        /** @description How often to audit, how much, and what it may spend. */
+        AuditScheduleBody: {
+            /** Format: int64 */
+            day_token_budget: number;
+            enabled: boolean;
+            /** Format: int64 */
+            interval_ms: number;
+            /** Format: int64 */
+            run_token_budget: number;
+            /** Format: int32 */
+            sample_size: number;
+            /** @description Days until claims of each predicate go stale. */
+            ttl_days?: {
+                [key: string]: number;
+            };
+        };
+        AuditScheduleDto: {
+            /** Format: int64 */
+            day_token_budget: number;
+            enabled: boolean;
+            /** Format: int64 */
+            interval_ms: number;
+            /** Format: int64 */
+            next_run_at_ms?: number | null;
+            /** Format: int64 */
+            run_token_budget: number;
+            /** Format: int32 */
+            sample_size: number;
+            /**
+             * Format: int64
+             * @description Slots passed over since it began, because the server was away or a run was still open.
+             */
+            total_missed_slots: number;
+            ttl_days: {
+                [key: string]: number;
+            };
+        };
         AutoCommitChangeDto: {
             /** Format: int64 */
             at_ms: number;
@@ -5620,6 +6290,16 @@ export interface components {
             scope: components["schemas"]["ScopeDto"];
             vault_id: string;
         };
+        GroupRecallDto: {
+            /** Format: int64 */
+            audited: number;
+            /** Format: int64 */
+            caught: number;
+            /** Format: int64 */
+            planted: number;
+            /** Format: double */
+            recall?: number | null;
+        };
         HealthDto: {
             status: string;
         };
@@ -5663,6 +6343,19 @@ export interface components {
         JobPage: {
             items: components["schemas"]["JobDto"][];
             next_cursor?: string | null;
+        };
+        KindRecallDto: {
+            /** Format: int64 */
+            audited: number;
+            /** Format: int64 */
+            caught: number;
+            kind: string;
+            /** @description Only an LLM check can catch this kind. */
+            needs_llm: boolean;
+            /** Format: int64 */
+            planted: number;
+            /** Format: double */
+            recall?: number | null;
         };
         LexicalHitDto: {
             id: string;
@@ -5929,6 +6622,22 @@ export interface components {
             items: components["schemas"]["PageSummaryDto"][];
             next_cursor?: string | null;
         };
+        PlantBody: {
+            /** @description Kinds to plant, and every kind if left out. */
+            kinds?: string[] | null;
+            /** Format: int32 */
+            per_kind: number;
+            /** @description A decimal number, as text. */
+            seed: string;
+        };
+        PlantedCountDto: {
+            kind: string;
+            /** Format: int64 */
+            planted: number;
+        };
+        PlantedDto: {
+            kinds: components["schemas"]["PlantedCountDto"][];
+        };
         PrincipalDto: {
             /** Format: int64 */
             created_at_ms: number;
@@ -5988,6 +6697,33 @@ export interface components {
         };
         ReasonBody: {
             reason?: string | null;
+        };
+        /** @description What planted errors in this vault came to. Keep the two groups apart: the deterministic one is measured, and the LLM one means something only when `llm_evidence` is `model`. */
+        RecallReportDto: {
+            /** Format: int64 */
+            clean_audited: number;
+            deterministic: components["schemas"]["GroupRecallDto"];
+            /** Format: int64 */
+            false_positives_deterministic: number;
+            /** Format: int64 */
+            false_positives_llm: number;
+            kinds: components["schemas"]["KindRecallDto"][];
+            /** @description `none`, `scripted` or `model`. Scripted answers prove the mechanism and say nothing about a model. */
+            llm_evidence: string;
+            llm_models: string[];
+            llm_only: components["schemas"]["GroupRecallDto"];
+            /** Format: int64 */
+            overall_caught: number;
+            /** Format: int64 */
+            overall_planted: number;
+            /** Format: double */
+            overall_recall?: number | null;
+            /** Format: double */
+            target: number;
+            /** @description Null until it can be judged: every kind planted, with answers from a real model. */
+            target_met?: boolean | null;
+            /** @description Too few planted errors to trust the figure. */
+            too_small: boolean;
         };
         RectDto: {
             /** Format: int32 */
@@ -6255,6 +6991,15 @@ export interface components {
             /** Format: int64 */
             thinking_tokens: number;
         };
+        /** @description What to run. Anything left out comes from the schedule. The same seed on the same state gives the same sample. */
+        TriggerAuditBody: {
+            /** Format: int64 */
+            run_token_budget?: number | null;
+            /** Format: int32 */
+            sample_size?: number | null;
+            /** @description A decimal number, as text, since it can be too large for a JSON number to carry safely. */
+            seed?: string | null;
+        };
         TypePreviewBody: {
             schema: Record<string, never>;
         };
@@ -6302,6 +7047,12 @@ export interface components {
             created_by: string;
             id: string;
             name: string;
+        };
+        VaultFindingDto: {
+            check: string;
+            detail: string;
+            /** @description `pass`, `fail` or `inconclusive`. */
+            status: string;
         };
         VaultPage: {
             items: components["schemas"]["VaultDto"][];

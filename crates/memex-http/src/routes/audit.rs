@@ -14,7 +14,18 @@ use utoipa::OpenApi;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_runs, trigger_run, get_run, run_checks, get_schedule, put_schedule, get_budget, get_recall, mark_test_vault, plant_errors),
+    paths(
+        list_runs,
+        trigger_run,
+        get_run,
+        run_checks,
+        get_schedule,
+        put_schedule,
+        get_budget,
+        get_recall,
+        mark_test_vault,
+        plant_errors
+    ),
     components(schemas(
         memex_api::TriggerAuditBody,
         memex_api::VaultFindingDto,
@@ -270,7 +281,12 @@ where
 
 /// Marks an empty vault as one errors can be planted in. It can't be undone.
 #[utoipa::path(post, path = "/api/v1/vaults/{id}/audit/test-vault", tag = "audit", params(("id" = String, Path)), responses((status = 204), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]
-async fn mark_test_vault<E>(State(server): State<App<E>>, Extension(rid): Extension<RequestId>, headers: HeaderMap, Path(id): Path<String>) -> Result<StatusCode, ApiError>
+async fn mark_test_vault<E>(
+    State(server): State<App<E>>,
+    Extension(rid): Extension<RequestId>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError>
 where
     E: ServerEdges + Send + Sync + 'static,
     Server<E>: Send + Sync,

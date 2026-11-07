@@ -105,9 +105,16 @@ impl MemLexical {
 }
 
 impl LexicalIndex for MemLexical {
-    fn reconcile(&self, vault: &VaultId, kind: memex_types::DocKind, wanted: &[memex_types::ObjectId]) -> Result<Option<crate::lexical::IndexContents>, LexicalError> {
+    fn reconcile(
+        &self,
+        vault: &VaultId,
+        kind: memex_types::DocKind,
+        wanted: &[memex_types::ObjectId],
+    ) -> Result<Option<crate::lexical::IndexContents>, LexicalError> {
         let vaults = self.vaults.lock().expect("lock");
-        let Some(live) = vaults.get(vault).and_then(|v| v.live.as_ref()) else { return Ok(None) };
+        let Some(live) = vaults.get(vault).and_then(|v| v.live.as_ref()) else {
+            return Ok(None);
+        };
         let mut out = crate::lexical::IndexContents::default();
         for (id, doc) in live.committed.iter().filter(|(_, d)| d.kind == kind) {
             crate::audit::add_to_digest(&mut out.digest, id);

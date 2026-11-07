@@ -524,7 +524,13 @@ impl<E: ServerEdges> Server<E> {
     fn retraction_evidence<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Vec<ReviewEvidence>, ServerError> {
         let targets: Vec<ObjectId> = ops
             .iter()
-            .filter_map(|op| if let Op::RetractAssertion { target, .. } = op { Some(target.clone()) } else { None })
+            .filter_map(|op| {
+                if let Op::RetractAssertion { target, .. } = op {
+                    Some(target.clone())
+                } else {
+                    None
+                }
+            })
             .collect();
         if targets.is_empty() {
             return Ok(vec![]);

@@ -1352,7 +1352,12 @@ impl memex_core::ServerEdges for AuditEdges {
 
 fn load_average() -> String {
     let out = std::process::Command::new("uptime").output().expect("uptime");
-    String::from_utf8_lossy(&out.stdout).rsplit("load averages:").next().unwrap_or("?").trim().to_string()
+    String::from_utf8_lossy(&out.stdout)
+        .rsplit("load averages:")
+        .next()
+        .unwrap_or("?")
+        .trim()
+        .to_string()
 }
 
 fn measure_for(r: &Arc<Rig>, requests: &Arc<Vec<SearchRequest>>, clients: usize, how_long: Duration) -> Vec<f64> {
@@ -1382,7 +1387,11 @@ fn measure_for(r: &Arc<Rig>, requests: &Arc<Vec<SearchRequest>>, clients: usize,
 fn audit_search_latency() {
     use memex_core::{AUDIT_JOB, Server, TriggerAudit};
     let total = number("MEMEX_AUDIT_SEGMENTS", 200_000);
-    let vault = if total == 200_000 { "t-golden".to_string() } else { format!("t-golden-{}k", total / 1000) };
+    let vault = if total == 200_000 {
+        "t-golden".to_string()
+    } else {
+        format!("t-golden-{}k", total / 1000)
+    };
     let rounds = number("MEMEX_AUDIT_PAIRS", 6);
     let seconds = number("MEMEX_AUDIT_ROUND_S", 30) as u64;
     let first = rig(&vault);
@@ -1499,6 +1508,9 @@ fn audit_search_latency() {
         );
     }
     let median = pct(&mut ratios, 0.5);
-    println!("median ratio {median:.2}, and the rule is at most 1.5: {}", if median <= 1.5 { "PASS" } else { "MISS" });
+    println!(
+        "median ratio {median:.2}, and the rule is at most 1.5: {}",
+        if median <= 1.5 { "PASS" } else { "MISS" }
+    );
     assert!(median <= 1.5, "a miss stays a miss: {median:.2}");
 }

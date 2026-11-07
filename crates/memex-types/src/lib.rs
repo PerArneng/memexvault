@@ -18,11 +18,11 @@ mod rows;
 mod search;
 mod vector;
 
-pub use audit::{
-    AuditCheckKind, AuditCheckResult, AuditCheckRow, AuditCheckStatus, AuditCombination, AuditLlmUse, AuditOutcome, AuditPlantedRow, AuditRunRow, AuditRunState, AuditSchedule,
-    AuditStateRow, AuditStop, AuditTrigger, IdDigest, PlantedKind, SiblingCursor, VaultFinding,
-};
 pub use agent::{AgentBudget, AgentError, AgentReply, AgentRequest, AgentUsage};
+pub use audit::{
+    AuditCheckKind, AuditCheckResult, AuditCheckRow, AuditCheckStatus, AuditCombination, AuditLlmUse, AuditOutcome, AuditPlantedRow, AuditRunRow,
+    AuditRunState, AuditSchedule, AuditStateRow, AuditStop, AuditTrigger, IdDigest, PlantedKind, SiblingCursor, VaultFinding,
+};
 pub use blob::{BlobHash, BlobHashError};
 pub use cache::CacheTierStats;
 pub use entity::{

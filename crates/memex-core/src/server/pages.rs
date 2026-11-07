@@ -4,8 +4,8 @@ use super::{Caller, Operation, Proposal, ProposalOutcome, Server, ServerEdges, S
 use crate::page::{self, BlockChange, PageDocument};
 use crate::{EntityClaim, Snapshot, Store};
 use memex_types::{
-    AssertionRow, BlockRow, CLAIM_REF, EdgeDirection, EdgeRow, ObjectId, Op, PageRow, RevisionBlock, RevisionRow, Row, RowKey, Status, Table, VaultId, WIKI_LINK,
-    revision_id, slug_of_target, slug_target,
+    AssertionRow, BlockRow, CLAIM_REF, EdgeDirection, EdgeRow, ObjectId, Op, PageRow, RevisionBlock, RevisionRow, Row, RowKey, Status, Table, VaultId,
+    WIKI_LINK, revision_id, slug_of_target, slug_target,
 };
 use std::collections::{BTreeSet, HashMap};
 
