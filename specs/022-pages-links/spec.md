@@ -94,7 +94,7 @@ How far to trust this:
 - **Block identity:** an unchanged block keeps its id even if moved, and an edited one keeps the id of the block in its place.
 - **Two reverts.** `RevertPage` adds a revision holding an old one, and is the page feature. A ChangeSet revert undoes the rows, including the revision, and refuses if anything has changed since.
 - **One change per page per ChangeSet,** which keeps a version equal to a revision.
-- **Duplicate titles** are a 409 when they'd make the same slug, unless a slug is given. Two existing tests shared a title and now don't.
+- **Duplicate titles** are a 409 when they'd make the same slug, unless a slug is given. Three existing tests shared a title and now don't.
 - **Diffs are by block,** not by line, since a line diff on a large page has a quadratic cost and blocks have ids.
 - **Search:** a block's document has its nearest heading and not the page title, so a rename re-embeds only the page's own document. Link syntax and claim references aren't indexed. Pages and blocks have no source, so a source or trust filter leaves them out, and their one citation says it has no anchor.
 - **Import** creates a page, or with `base_version` edits the page holding its slug. It changes only the body, and refuses a file with a different title rather than dropping it.
