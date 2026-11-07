@@ -200,6 +200,16 @@ pub fn item_types<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Vec<String>, Stor
                 },
                 _ => "claim".to_string(),
             },
+            Op::RetractAssertion { target, .. } => match snap.get(&RowKey {
+                table: Table::Assertion,
+                id: target.clone(),
+            })? {
+                Some(Row::Assertion(a)) => match entity_of_subject(&a.subject) {
+                    Some(id) => entity_label(entity_type_of(snap, ops, id.0.as_str())?),
+                    None => "claim".to_string(),
+                },
+                _ => "claim".to_string(),
+            },
             Op::CreateEntity { type_name, .. } => format!("entity:{type_name}"),
             Op::SetEntityAliases { id, .. } | Op::SplitEntity { id, .. } => entity_label(entity_type_of(snap, ops, &id.0)?),
             Op::MergeEntities { target, .. } => entity_label(entity_type_of(snap, ops, &target.0)?),

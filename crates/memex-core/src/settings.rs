@@ -85,6 +85,9 @@ pub struct Settings {
     /// The model the reviewer agent calls, on the same LLM. Without one, queued items wait for people with no verdict, and no extra tokens are spent.
     pub reviewer_model: Option<String>,
     pub review: crate::review::ReviewLimits,
+    /// The model the audit's LLM checks call, on the same LLM. Without one, audits run only their deterministic checks, and no tokens are spent.
+    pub audit_model: Option<String>,
+    pub audit: crate::audit::AuditLimits,
     /// What a combination's Wilson bound has to reach to earn auto-commit, in thousandths.
     pub auto_commit_threshold_permille: u16,
 }
@@ -132,6 +135,8 @@ impl Default for Settings {
             caches: CacheSettings::default(),
             reviewer_model: None,
             review: crate::review::ReviewLimits::default(),
+            audit_model: None,
+            audit: crate::audit::AuditLimits::default(),
             auto_commit_threshold_permille: (crate::review::DEFAULT_THRESHOLD * 1000.0) as u16,
         }
     }
@@ -157,6 +162,8 @@ impl fmt::Debug for Settings {
             .field("caches", &self.caches)
             .field("reviewer_model", &self.reviewer_model)
             .field("review", &self.review)
+            .field("audit_model", &self.audit_model)
+            .field("audit", &self.audit)
             .field("auto_commit_threshold_permille", &self.auto_commit_threshold_permille)
             .finish()
     }
@@ -312,6 +319,15 @@ impl Settings {
             s.review.output_tokens as usize,
         )? as u32;
         s.review.timeout_ms = count("MEMEX_REVIEW_TIMEOUT_S", text("MEMEX_REVIEW_TIMEOUT_S")?, (s.review.timeout_ms / 1000) as usize)? as u64 * 1000;
+        s.audit_model = text("MEMEX_AUDIT_MODEL")?;
+        if s.audit_model.is_some() && s.llm.is_none() {
+            return Err(SettingsError::Missing {
+                name: "MEMEX_LLM_PROVIDER",
+                because: "with MEMEX_AUDIT_MODEL".into(),
+            });
+        }
+        s.audit.output_tokens = count("MEMEX_AUDIT_OUTPUT_TOKENS", text("MEMEX_AUDIT_OUTPUT_TOKENS")?, s.audit.output_tokens as usize)? as u32;
+        s.audit.timeout_ms = count("MEMEX_AUDIT_TIMEOUT_S", text("MEMEX_AUDIT_TIMEOUT_S")?, (s.audit.timeout_ms / 1000) as usize)? as u64 * 1000;
         if let Some(v) = text("MEMEX_AUTO_COMMIT_THRESHOLD")? {
             // Zero would let a combination with one lucky sample through, and rounding must not turn a small number into it.
             let permille = v
@@ -516,6 +532,25 @@ mod tests {
                 object_bytes: 2 << 20,
                 disk_bytes: 0
             }
+        );
+    }
+
+    #[test]
+    fn the_audit_s_llm_checks_are_off_by_default_and_need_an_llm() {
+        assert_eq!(from(&[]).unwrap().audit_model, None);
+        assert!(matches!(from(&[("MEMEX_AUDIT_MODEL", "m")]), Err(SettingsError::Missing { .. })));
+        let s = from(&[
+            ("MEMEX_LLM_PROVIDER", "openai"),
+            ("MEMEX_LLM_MODEL", "m"),
+            ("MEMEX_LLM_BASE_URL", "http://h/v1"),
+            ("MEMEX_AUDIT_MODEL", "small"),
+            ("MEMEX_AUDIT_OUTPUT_TOKENS", "700"),
+            ("MEMEX_AUDIT_TIMEOUT_S", "9"),
+        ])
+        .unwrap();
+        assert_eq!(
+            (s.audit_model.as_deref(), s.audit.output_tokens, s.audit.timeout_ms),
+            (Some("small"), 700, 9000)
         );
     }
 

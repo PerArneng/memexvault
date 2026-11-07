@@ -44,6 +44,10 @@ pub trait VectorIndex {
     /// Idempotent per model and hash.
     fn store_embeddings(&self, vault: &VaultId, model: &str, rows: &[(String, Vec<f32>)]) -> Result<(), VectorError>;
     fn delete_vault(&self, vault: &VaultId) -> Result<(), VectorError>;
+    /// A count and digest of the live generation's documents of this kind, and which of `wanted` it holds, for an audit to compare with the store. None if this backend can't say.
+    fn reconcile(&self, _vault: &VaultId, _kind: DocKind, _wanted: &[ObjectId]) -> Result<Option<crate::lexical::IndexContents>, VectorError> {
+        Ok(None)
+    }
 }
 
 pub const EMBED_JOB: &str = "embed";

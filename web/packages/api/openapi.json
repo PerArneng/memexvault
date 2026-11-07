@@ -15,6 +15,522 @@
         ],
         "type": "object"
       },
+      "AuditBudgetDto": {
+        "properties": {
+          "day": {
+            "description": "Whole days since the epoch, in UTC.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "day_remaining": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "day_spent": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "day_token_budget": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "run_token_budget": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_token_budget",
+          "day_token_budget",
+          "day",
+          "day_spent",
+          "day_remaining"
+        ],
+        "type": "object"
+      },
+      "AuditCheckDto": {
+        "description": "One sampled claim and what was found about it. A finding is one of these whose outcome isn't `passed`.",
+        "properties": {
+          "auto_committed": {
+            "type": "boolean"
+          },
+          "changeset_id": {
+            "description": "The review item a person decides this on.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/AuditCheckResultDto"
+            },
+            "type": "array"
+          },
+          "claim_id": {
+            "type": "string"
+          },
+          "combination": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AuditCombinationDto",
+                "description": "None for a person's claim."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "counted_correct": {
+            "type": "boolean"
+          },
+          "finished_at_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "outcome": {
+            "description": "`sampled`, `passed`, `suspect` or `failed`.",
+            "type": "string"
+          },
+          "rank": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "weight_micro": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "rank",
+          "claim_id",
+          "weight_micro",
+          "auto_committed",
+          "outcome",
+          "checks",
+          "counted_correct"
+        ],
+        "type": "object"
+      },
+      "AuditCheckPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditCheckDto"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "AuditCheckResultDto": {
+        "properties": {
+          "cause": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "check": {
+            "type": "string"
+          },
+          "detail": {
+            "description": "May hold a document's or a model's words, so show it as plain text.",
+            "type": "string"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "`pass`, `fail` or `inconclusive`.",
+            "type": "string"
+          },
+          "tokens": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TokenUsageDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "check",
+          "status",
+          "detail"
+        ],
+        "type": "object"
+      },
+      "AuditCombinationDto": {
+        "properties": {
+          "extractor": {
+            "type": "string"
+          },
+          "item_type": {
+            "type": "string"
+          },
+          "prompt_version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "extractor",
+          "prompt_version",
+          "item_type"
+        ],
+        "type": "object"
+      },
+      "AuditRunDetailDto": {
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/AuditRunDto"
+          },
+          "sample": {
+            "description": "The claims it sampled, in rank order. The checks route has what was found about each.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "run",
+          "sample"
+        ],
+        "type": "object"
+      },
+      "AuditRunDto": {
+        "properties": {
+          "created_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "failed": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "finished_at_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "llm_calls": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "llm_skipped": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "missed_slots": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "passed": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "population": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requested_by": {
+            "type": "string"
+          },
+          "revoked": {
+            "description": "Combinations this run took auto-commit from.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "run_token_budget": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sample_size": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sampled": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "seed": {
+            "description": "A decimal number, as text.",
+            "type": "string"
+          },
+          "siblings_remaining": {
+            "description": "Claims of revoked combinations still to go back to review. Later runs carry on with them.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "siblings_requeued": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "started_at_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "state": {
+            "description": "`queued`, `running`, `finished`, or `failed` if its job gave up.",
+            "type": "string"
+          },
+          "state_seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "stop": {
+            "description": "Why its LLM checks ended early: `run_budget`, `day_budget`, `llm_unavailable` or `llm_refused`. Running out of budget isn't a failure.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stop_detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "suspect": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/TokenUsageDto"
+          },
+          "trigger": {
+            "description": "`scheduled` or `on_demand`.",
+            "type": "string"
+          },
+          "vault_findings": {
+            "items": {
+              "$ref": "#/components/schemas/VaultFindingDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "seed",
+          "trigger",
+          "requested_by",
+          "state",
+          "sample_size",
+          "population",
+          "sampled",
+          "run_token_budget",
+          "tokens",
+          "llm_calls",
+          "passed",
+          "suspect",
+          "failed",
+          "llm_skipped",
+          "revoked",
+          "siblings_requeued",
+          "siblings_remaining",
+          "missed_slots",
+          "vault_findings",
+          "created_at_ms"
+        ],
+        "type": "object"
+      },
+      "AuditRunPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditRunDto"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "AuditScheduleBody": {
+        "description": "How often to audit, how much, and what it may spend.",
+        "properties": {
+          "day_token_budget": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "run_token_budget": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sample_size": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ttl_days": {
+            "additionalProperties": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "description": "Days until claims of each predicate go stale.",
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "enabled",
+          "interval_ms",
+          "sample_size",
+          "run_token_budget",
+          "day_token_budget"
+        ],
+        "type": "object"
+      },
+      "AuditScheduleDto": {
+        "properties": {
+          "day_token_budget": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "next_run_at_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "run_token_budget": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sample_size": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total_missed_slots": {
+            "description": "Slots passed over since it began, because the server was away or a run was still open.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ttl_days": {
+            "additionalProperties": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "enabled",
+          "interval_ms",
+          "sample_size",
+          "run_token_budget",
+          "day_token_budget",
+          "ttl_days",
+          "total_missed_slots"
+        ],
+        "type": "object"
+      },
       "AutoCommitChangeDto": {
         "properties": {
           "at_ms": {
@@ -2066,6 +2582,38 @@
         ],
         "type": "object"
       },
+      "GroupRecallDto": {
+        "properties": {
+          "audited": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "caught": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "planted": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recall": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "planted",
+          "audited",
+          "caught"
+        ],
+        "type": "object"
+      },
       "HealthDto": {
         "properties": {
           "status": {
@@ -2218,6 +2766,47 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "KindRecallDto": {
+        "properties": {
+          "audited": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "caught": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "needs_llm": {
+            "description": "Only an LLM check can catch this kind.",
+            "type": "boolean"
+          },
+          "planted": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recall": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "needs_llm",
+          "planted",
+          "audited",
+          "caught"
         ],
         "type": "object"
       },
@@ -3128,6 +3717,65 @@
         ],
         "type": "object"
       },
+      "PlantBody": {
+        "properties": {
+          "kinds": {
+            "description": "Kinds to plant, and every kind if left out.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "per_kind": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "seed": {
+            "description": "A decimal number, as text.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seed",
+          "per_kind"
+        ],
+        "type": "object"
+      },
+      "PlantedCountDto": {
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "planted": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "planted"
+        ],
+        "type": "object"
+      },
+      "PlantedDto": {
+        "properties": {
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/PlantedCountDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "kinds"
+        ],
+        "type": "object"
+      },
       "PrincipalDto": {
         "properties": {
           "created_at_ms": {
@@ -3363,6 +4011,95 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "RecallReportDto": {
+        "description": "What planted errors in this vault came to. Keep the two groups apart: the deterministic one is measured, and the LLM one means something only when `llm_evidence` is `model`.",
+        "properties": {
+          "clean_audited": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "deterministic": {
+            "$ref": "#/components/schemas/GroupRecallDto"
+          },
+          "false_positives_deterministic": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "false_positives_llm": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kinds": {
+            "items": {
+              "$ref": "#/components/schemas/KindRecallDto"
+            },
+            "type": "array"
+          },
+          "llm_evidence": {
+            "description": "`none`, `scripted` or `model`. Scripted answers prove the mechanism and say nothing about a model.",
+            "type": "string"
+          },
+          "llm_models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "llm_only": {
+            "$ref": "#/components/schemas/GroupRecallDto"
+          },
+          "overall_caught": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "overall_planted": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "overall_recall": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "target": {
+            "format": "double",
+            "type": "number"
+          },
+          "target_met": {
+            "description": "Null until it can be judged: every kind planted, with answers from a real model.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "too_small": {
+            "description": "Too few planted errors to trust the figure.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kinds",
+          "deterministic",
+          "llm_only",
+          "overall_planted",
+          "overall_caught",
+          "llm_evidence",
+          "llm_models",
+          "clean_audited",
+          "false_positives_deterministic",
+          "false_positives_llm",
+          "target",
+          "too_small"
+        ],
         "type": "object"
       },
       "RectDto": {
@@ -4352,6 +5089,35 @@
         ],
         "type": "object"
       },
+      "TriggerAuditBody": {
+        "description": "What to run. Anything left out comes from the schedule. The same seed on the same state gives the same sample.",
+        "properties": {
+          "run_token_budget": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sample_size": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "seed": {
+            "description": "A decimal number, as text, since it can be too large for a JSON number to carry safely.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "TypePreviewBody": {
         "properties": {
           "schema": {
@@ -4523,6 +5289,26 @@
           "name",
           "created_by",
           "created_at_ms"
+        ],
+        "type": "object"
+      },
+      "VaultFindingDto": {
+        "properties": {
+          "check": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "status": {
+            "description": "`pass`, `fail` or `inconclusive`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "check",
+          "status",
+          "detail"
         ],
         "type": "object"
       },
@@ -5482,6 +6268,576 @@
         },
         "tags": [
           "provenance"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/audit/budget": {
+      "get": {
+        "operationId": "get_budget",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditBudgetDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/audit/planted": {
+      "post": {
+        "operationId": "plant_errors",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlantBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlantedDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Corrupts claims in a test vault and tags them, tagging what's left clean, to measure what audits catch. It's refused on any other vault.",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/audit/recall": {
+      "get": {
+        "operationId": "get_recall",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecallReportDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "What planted errors came to, per kind and in two groups: kinds the deterministic checks catch, and kinds only LLM checks can. Scripted answers say nothing about a model, so `target_met` stays null until a real model's run.",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/audit/runs": {
+      "get": {
+        "operationId": "list_runs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "From `next_cursor` of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 200. The default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`created`, the default.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditRunPage"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Runs in creation order, with their seeds, what each found and what it spent.",
+        "tags": [
+          "audit"
+        ]
+      },
+      "post": {
+        "operationId": "trigger_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerAuditBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditRunDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Starts a run now. A seed makes it repeatable: the same seed on the same state samples the same claims as any other run with that seed, scheduled or not. It may spend tokens, so it needs admin scope.",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/audit/runs/{run}": {
+      "get": {
+        "operationId": "get_run",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditRunDetailDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "One run, with its seed and its sample in rank order.",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/audit/runs/{run}/checks": {
+      "get": {
+        "operationId": "run_checks",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "From `next_cursor` of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 200. The default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`created`, the default.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only what didn't pass.",
+            "in": "query",
+            "name": "findings",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditCheckPage"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "What was found about each sampled claim, in rank order, with each check's result and the review item it led to. `findings=true` leaves out what passed.",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/audit/schedule": {
+      "get": {
+        "operationId": "get_schedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditScheduleDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "audit"
+        ]
+      },
+      "put": {
+        "operationId": "put_schedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuditScheduleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditScheduleDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Replaces the schedule, which is off until someone turns it on. The first run comes one interval from now.",
+        "tags": [
+          "audit"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/audit/test-vault": {
+      "post": {
+        "operationId": "mark_test_vault",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Marks an empty vault as one errors can be planted in. It can't be undone.",
+        "tags": [
+          "audit"
         ]
       }
     },

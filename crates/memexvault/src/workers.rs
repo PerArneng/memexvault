@@ -174,6 +174,39 @@ where
     }
 }
 
+/// Runs an audit. With no agent it still runs the deterministic checks, and nothing leaves the server.
+pub struct AuditHandler<E: ServerEdges, A> {
+    pub server: Arc<Server<E>>,
+    pub agent: Option<A>,
+}
+
+impl<E, A> JobHandler for AuditHandler<E, A>
+where
+    E: ServerEdges,
+    Server<E>: Send + Sync,
+    A: memex_core::AgentRunner + Send + Sync,
+{
+    fn run(&self, vault: &VaultId, job: &JobRow) -> Result<Vec<Mutation>, JobFailure> {
+        self.server.run_audit_job(vault, job, self.agent.as_ref()).map_err(job_failure)
+    }
+}
+
+/// Starts each vault's scheduled audits when the clock says so. Its own thread, as nothing else here should wait on it.
+pub fn start_audit_scheduler<E>(server: Arc<Server<E>>, stop: Arc<AtomicBool>) -> JoinHandle<()>
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
+    std::thread::spawn(move || {
+        while !stop.load(Ordering::Relaxed) {
+            if let Err(e) = server.audit_tick_all() {
+                tracing::warn!(error = %e, "can't check the audit schedules");
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    })
+}
+
 /// Keeps every vault's vector index following its log. It has its own thread, since building a graph can take a while and keyword search shouldn't lag behind that.
 pub fn start_vector_projector<E>(server: Arc<Server<E>>, stop: Arc<AtomicBool>) -> JoinHandle<()>
 where

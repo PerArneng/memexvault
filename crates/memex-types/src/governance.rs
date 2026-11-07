@@ -55,6 +55,14 @@ pub enum Op {
         base_version: u32,
         replacement: Box<Op>,
     },
+    /// Retires a claim with nothing in its place. Always reviewed, and only a person can approve it. It's how a finding reaches a person, and a revert brings the claim back.
+    RetractAssertion {
+        target: ObjectId,
+        base_version: u32,
+        /// Whether a person approving this counts against the claim's combination. An audit that has already counted the failure, or found something that isn't the extractor's doing, sets this false.
+        #[serde(default)]
+        counts_against: bool,
+    },
     CreatePage {
         id: ObjectId,
         title: String,

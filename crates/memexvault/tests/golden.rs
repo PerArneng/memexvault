@@ -940,6 +940,10 @@ fn latency_with_claims() {
 
 /// One claim per so many passages, citing it, so a search has evidence to read as well.
 fn add_claims(vault: &str) {
+    add_claims_up_to(vault, 200_000);
+}
+
+fn add_claims_up_to(vault: &str, total: usize) {
     let r = rig(vault);
     if r.store
         .snapshot(&r.v)
@@ -957,7 +961,7 @@ fn add_claims(vault: &str) {
     let vectors = passage_vectors();
     let lease = r.store.open_vault(&r.v).expect("open");
     let engine = Engine::new(PostgresStore(r.pg.clone()), SystemClock::default());
-    let lines: Vec<usize> = (0..200_000).step_by(CLAIM_EVERY).collect();
+    let lines: Vec<usize> = (0..total).step_by(CLAIM_EVERY).collect();
     for chunk in lines.chunks(500) {
         let (mut rows, mut embeddings) = (vec![], vec![]);
         for &line in chunk {
@@ -1293,4 +1297,220 @@ fn golden_rig_smoke() {
     println!("{:?}", r.embedder.active());
     r.pg.drop_vault(&r.v).expect("drop");
     r.lexical.delete_vault(&r.v).expect("drop");
+}
+
+/// Bytes that are always there. The audit reads only whether a source's bytes exist, and the harness's sources were written with no blobs behind them.
+struct EveryBlobThere;
+
+impl memex_core::BlobStore for EveryBlobThere {
+    type Reader = std::io::Empty;
+
+    fn put(&self, _: &VaultId, _: &mut dyn std::io::Read) -> Result<memex_core::BlobStored, memex_core::BlobStoreError> {
+        Err(memex_core::BlobStoreError::Io("this harness doesn't store blobs".into()))
+    }
+
+    fn read(&self, _: &VaultId, _: &memex_types::BlobHash, _: u64, _: Option<u64>) -> Result<std::io::Empty, memex_core::BlobStoreError> {
+        Ok(std::io::empty())
+    }
+
+    fn delete(&self, _: &VaultId, _: &memex_types::BlobHash) -> Result<(), memex_core::BlobStoreError> {
+        Ok(())
+    }
+
+    fn list(&self, _: &VaultId, _: Option<&memex_types::BlobHash>, _: usize) -> Result<Vec<memex_core::BlobInfo>, memex_core::BlobStoreError> {
+        Ok(vec![])
+    }
+
+    fn purge_incomplete(&self, _: &VaultId) -> Result<u64, memex_core::BlobStoreError> {
+        Ok(0)
+    }
+
+    fn delete_vault(&self, _: &VaultId) -> Result<(), memex_core::BlobStoreError> {
+        Ok(())
+    }
+
+    fn verify(&self, _: &VaultId, _: &memex_types::BlobHash) -> Result<memex_core::Verified, memex_core::BlobStoreError> {
+        Ok(memex_core::Verified::Ok)
+    }
+}
+
+struct AuditEdges;
+
+impl memex_core::ServerEdges for AuditEdges {
+    type Caches = memex_core::NoCaches;
+    type Registry = memex_core::testing::MemRegistry;
+    type Store = PostgresStore;
+    type Blobs = EveryBlobThere;
+    type Clock = SystemClock;
+    type Seed = memexvault::edges::SystemSeed;
+    type Rasterizer = memex_core::testing::FakeRasterizer;
+    type Lexical = TantivyIndex;
+    type Vector = PgVectorIndex;
+    type Embedder = FakeEmbedder;
+    type Reranker = memex_core::testing::FakeReranker;
+}
+
+fn load_average() -> String {
+    let out = std::process::Command::new("uptime").output().expect("uptime");
+    String::from_utf8_lossy(&out.stdout)
+        .rsplit("load averages:")
+        .next()
+        .unwrap_or("?")
+        .trim()
+        .to_string()
+}
+
+fn measure_for(r: &Arc<Rig>, requests: &Arc<Vec<SearchRequest>>, clients: usize, how_long: Duration) -> Vec<f64> {
+    let next = Arc::new(AtomicUsize::new(0));
+    let until = Instant::now() + how_long;
+    let threads: Vec<_> = (0..clients)
+        .map(|_| {
+            let (r, requests, next) = (r.clone(), requests.clone(), next.clone());
+            std::thread::spawn(move || {
+                let mut out = vec![];
+                while Instant::now() < until {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    let t = Instant::now();
+                    run(&r, &requests[i % requests.len()]).expect("search");
+                    out.push(t.elapsed().as_secs_f64() * 1000.0);
+                }
+                out
+            })
+        })
+        .collect();
+    threads.into_iter().flat_map(|t| t.join().expect("client")).collect()
+}
+
+/// Spec 026's item 6, by the pass rule in its spec: six pairs of 30-second rounds, idle then with audits looping, at `MEMEX_AUDIT_SEGMENTS` (by default 200000). No LLM is called, and a real model's calls would only wait on the network.
+#[test]
+#[ignore = "needs Postgres, spec 004's data and the models, and takes many minutes"]
+fn audit_search_latency() {
+    use memex_core::{AUDIT_JOB, Server, TriggerAudit};
+    let total = number("MEMEX_AUDIT_SEGMENTS", 200_000);
+    let vault = if total == 200_000 {
+        "t-golden".to_string()
+    } else {
+        format!("t-golden-{}k", total / 1000)
+    };
+    let rounds = number("MEMEX_AUDIT_PAIRS", 6);
+    let seconds = number("MEMEX_AUDIT_ROUND_S", 30) as u64;
+    let first = rig(&vault);
+    ensure_loaded(&first, total);
+    wait_for_ready(&first);
+    drop(first);
+    add_claims_up_to(&vault, total);
+    let r = Arc::new(rig(&vault));
+    project(&r);
+    let dir = env("MEMEX_TEST_DATA");
+    // The rig reads through its own handles, and this server holds the vault's writer lease as a real one would.
+    let pg = r.pg.clone();
+    let s = Arc::new(Server::<AuditEdges>::new(
+        memex_core::testing::MemRegistry::new(),
+        PostgresStore(pg.clone()),
+        EveryBlobThere,
+        SystemClock::default(),
+        memexvault::edges::SystemSeed,
+        memex_core::SearchEdges {
+            lexical: TantivyIndex(TantivyLexical::new(&dir)),
+            vector: PgVectorIndex(PgVectors::new(pg)),
+            embedder: FakeEmbedder::new(MODEL, DIM as u32),
+            reranker: memex_core::testing::FakeReranker::default(),
+        },
+    ));
+    let admin = s.authenticate(&s.bootstrap("harness").unwrap().token).unwrap();
+    memex_core::Registry::insert_vault(
+        s.registry(),
+        &memex_types::VaultRow {
+            id: r.v.clone(),
+            name: vault.clone(),
+            created_by: admin.principal.id.clone(),
+            created_at_ms: 0,
+        },
+        &memex_types::Audit {
+            actor: "harness".into(),
+            time_ms: 0,
+            action: "vault.create".into(),
+            target: vault.clone(),
+        },
+    )
+    .expect("the vault in the registry");
+    // One run by itself first, to see what an audit costs and that this vault gives it nothing to report. Sources written with fake hashes would look like dead links.
+    let audit_once = |seed: u64| -> memex_types::AuditRunRow {
+        let run = s
+            .trigger_audit(
+                &admin,
+                &r.v,
+                TriggerAudit {
+                    seed: Some(seed),
+                    sample_size: Some(200),
+                    run_token_budget: Some(0),
+                },
+            )
+            .expect("trigger");
+        let job = s.claim_job(&r.v, AUDIT_JOB, "harness").expect("claim").expect("a job");
+        let rows = s.run_audit_job(&r.v, &job, None::<&memex_core::testing::ScriptedAgent>).expect("the audit");
+        assert!(s.complete_job(&r.v, &job, rows).expect("complete"));
+        s.get_audit_run(&admin, &r.v, &run.header.id).expect("run").run
+    };
+    let t = Instant::now();
+    let probe = audit_once(1);
+    println!(
+        "one audit alone: {:.1} s, population {}, sampled {}, passed {}, suspect {}, failed {}",
+        t.elapsed().as_secs_f64(),
+        probe.population,
+        probe.sampled,
+        probe.passed,
+        probe.suspect,
+        probe.failed
+    );
+    for f in &probe.vault_findings {
+        println!("  {} {}: {}", f.check.as_str(), f.status.as_str(), f.detail);
+    }
+    let plain = Arc::new(plain_requests());
+    measure(&r, &plain, 4, 1);
+    println!("(one warming pass done)");
+    let mut ratios = vec![];
+    for pair in 0..rounds {
+        let before = load_average();
+        let mut idle = measure_for(&r, &plain, 4, Duration::from_secs(seconds));
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let audits = {
+            let (s, admin, v, stop) = (s.clone(), admin.clone(), r.v.clone(), stop.clone());
+            std::thread::spawn(move || {
+                let (mut done, mut seed) = (0u32, 1000 + pair as u64 * 100);
+                while !stop.load(Ordering::Relaxed) {
+                    seed += 1;
+                    let wanted = TriggerAudit {
+                        seed: Some(seed),
+                        sample_size: Some(200),
+                        run_token_budget: Some(0),
+                    };
+                    s.trigger_audit(&admin, &v, wanted).expect("trigger");
+                    let job = s.claim_job(&v, AUDIT_JOB, "harness").expect("claim").expect("a job");
+                    let rows = s.run_audit_job(&v, &job, None::<&memex_core::testing::ScriptedAgent>).expect("the audit");
+                    assert!(s.complete_job(&v, &job, rows).expect("complete"));
+                    done += 1;
+                }
+                done
+            })
+        };
+        let mut busy = measure_for(&r, &plain, 4, Duration::from_secs(seconds));
+        stop.store(true, Ordering::Relaxed);
+        let done = audits.join().expect("audits");
+        let (a, b) = (pct(&mut idle, 0.95), pct(&mut busy, 0.95));
+        ratios.push(b / a);
+        println!(
+            "pair {pair}: idle p95 {a:8.1} ms (n={}), audits p95 {b:8.1} ms (n={}), ratio {:.2}, {done} audits ran, load before {before}, after {}",
+            idle.len(),
+            busy.len(),
+            b / a,
+            load_average()
+        );
+    }
+    let median = pct(&mut ratios, 0.5);
+    println!(
+        "median ratio {median:.2}, and the rule is at most 1.5: {}",
+        if median <= 1.5 { "PASS" } else { "MISS" }
+    );
+    assert!(median <= 1.5, "a miss stays a miss: {median:.2}");
 }

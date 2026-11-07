@@ -189,6 +189,18 @@ impl Snapshot for PostgresSnapshot<'_> {
         self.inner.sections_of(sections, limit).map_err(|e| translate(&self.vault, e))
     }
 
+    fn id_digest(&self, kind: memex_types::DocKind) -> Result<memex_types::IdDigest, StoreError> {
+        self.inner.id_digest(kind).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn audit_checks(&self, run: &ObjectId, findings_only: bool, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::AuditCheckRow>, StoreError> {
+        self.inner.audit_checks(run, findings_only, after, limit).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn claim_counted_correct(&self, claim: &ObjectId) -> Result<bool, StoreError> {
+        self.inner.claim_counted_correct(claim).map_err(|e| translate(&self.vault, e))
+    }
+
     fn head(&self) -> Result<Option<u64>, StoreError> {
         self.inner.head().map_err(|e| translate(&self.vault, e))
     }

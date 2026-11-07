@@ -78,7 +78,7 @@ fn rendition_of_job(job: &JobRow) -> Result<(ObjectId, ObjectId), ExtractJobErro
     }
 }
 
-fn all_types<S: Snapshot>(snap: &S) -> Result<Vec<EntityTypeRow>, crate::StoreError> {
+pub(super) fn all_types<S: Snapshot>(snap: &S) -> Result<Vec<EntityTypeRow>, crate::StoreError> {
     let (mut types, mut after): (Vec<EntityTypeRow>, Option<String>) = (vec![], None);
     loop {
         let page = entity::list_types(snap, after.as_deref(), RESULT_LIMIT)?;

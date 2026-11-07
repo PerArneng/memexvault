@@ -294,6 +294,30 @@ pub const VAULT_MIGRATIONS: &[&str] = &[
     );
     INSERT INTO {s}.cache_generation (generation) VALUES (0);
 ",
+    // Spec 026: the audit agent's runs, what each checked, its schedule and spending, and the tags on planted errors.
+    "
+    CREATE TABLE {s}.audit_runs (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL
+    );
+    CREATE TABLE {s}.audit_checks (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL,
+        run_id text COLLATE \"C\" NOT NULL,
+        claim_id text COLLATE \"C\" NOT NULL,
+        outcome text NOT NULL
+    );
+    CREATE INDEX ON {s}.audit_checks (run_id, id);
+    CREATE INDEX ON {s}.audit_checks (claim_id);
+    CREATE TABLE {s}.audit_state (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL
+    );
+    CREATE TABLE {s}.audit_planted (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL
+    );
+",
 ];
 
 pub const LATEST_SERVER_VERSION: i32 = SERVER_MIGRATIONS.len() as i32;

@@ -747,6 +747,28 @@ impl TantivyLexical {
         result
     }
 
+    /// Calls `each` with every id of this kind in the live generation, for comparing with the store. False with no live generation.
+    pub fn for_each_id(&self, vault: &VaultId, kind: DocKind, mut each: impl FnMut(&str)) -> Result<bool, LexicalError> {
+        let (live,) = self.with_vault(vault, |v, _| Ok((v.live.clone(),)))?;
+        let Some(live) = live else { return Ok(false) };
+        let searcher = live.reader.searcher();
+        let (mut id, mut found) = (String::new(), String::new());
+        for reader in searcher.segment_readers() {
+            let fast = reader.fast_fields();
+            let missing = || LexicalError::Corrupt("a fast field is missing".into());
+            let ids = fast.str("id").map_err(corrupt_or_backend)?.ok_or_else(missing)?;
+            let kinds = fast.str("kind").map_err(corrupt_or_backend)?.ok_or_else(missing)?;
+            for doc in reader.doc_ids_alive() {
+                read_str(&kinds, doc, &mut found)?;
+                if found == kind.as_str() {
+                    read_str(&ids, doc, &mut id)?;
+                    each(&id);
+                }
+            }
+        }
+        Ok(true)
+    }
+
     pub fn delete_vault(&self, vault: &VaultId) -> Result<(), LexicalError> {
         safe_vault(vault)?;
         if let Some(v) = self.vaults.lock().expect("lock").remove(vault) {

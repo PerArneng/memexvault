@@ -1,7 +1,7 @@
 use memex_types::{
-    AssertionRow, BlockRow, ChangeSetRow, DerivationRow, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, JobRow, JobState,
-    Mutation, ObjectId, PageRow, QueueCount, RenditionRow, ReviewFilter, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Table, ValueMatch,
-    VaultId,
+    AssertionRow, AuditCheckRow, AuditOutcome, BlockRow, ChangeSetRow, DerivationRow, DocKind, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event,
+    EvidenceRow, FieldFilter, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, QueueCount, RenditionRow, ReviewFilter, RevisionRow, Row, RowKey,
+    SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
 };
 use std::fmt;
 
@@ -158,6 +158,67 @@ pub trait Snapshot {
     fn pending_count(&self) -> Result<u64, StoreError>;
     /// Pending ChangeSets whose evidence cites this rendition, in id order, after the given id, at most `limit`. One store call.
     fn pending_citing_rendition(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<ChangeSetRow>, StoreError>;
+    /// A count and digest of what an index should hold of this kind: claims that stand, and segments on a current rendition. A backend can work it out without moving the rows.
+    fn id_digest(&self, kind: DocKind) -> Result<IdDigest, StoreError> {
+        let mut digest = IdDigest::default();
+        let table = if kind == DocKind::Claim { Table::Assertion } else { Table::Segment };
+        let mut after: Option<ObjectId> = None;
+        loop {
+            let page = self.rows(table, after.as_ref())?;
+            let Some(last) = page.last() else { return Ok(digest) };
+            after = Some(last.header().id.clone());
+            let segments: Vec<SegmentRow> = page
+                .iter()
+                .filter_map(|r| if let Row::Segment(s) = r { Some(s.clone()) } else { None })
+                .collect();
+            let stale = crate::lexical::stale_renditions(self, &segments)?;
+            for r in &page {
+                let wanted = match r {
+                    Row::Assertion(a) => crate::audit::is_candidate(a),
+                    Row::Segment(s) => crate::lexical::segment_is_current(s, &stale),
+                    _ => false,
+                };
+                if wanted {
+                    crate::audit::add_to_digest(&mut digest, &r.header().id.0);
+                }
+            }
+        }
+    }
+    /// Whether any audit has already given this claim a correct sample.
+    fn claim_counted_correct(&self, claim: &ObjectId) -> Result<bool, StoreError> {
+        let mut cursor = None;
+        loop {
+            let page = self.rows(Table::AuditCheck, cursor.as_ref())?;
+            let Some(last) = page.last() else { return Ok(false) };
+            cursor = Some(last.header().id.clone());
+            if page
+                .iter()
+                .any(|r| matches!(r, Row::AuditCheck(c) if &c.claim_id == claim && c.counted_correct))
+            {
+                return Ok(true);
+            }
+        }
+    }
+    /// A run's checks in id order, which is rank order, after the given id. With `findings_only`, those that didn't pass.
+    fn audit_checks(&self, run: &ObjectId, findings_only: bool, after: Option<&ObjectId>, limit: usize) -> Result<Vec<AuditCheckRow>, StoreError> {
+        let (mut out, mut cursor) = (vec![], after.cloned());
+        loop {
+            let page = self.rows(Table::AuditCheck, cursor.as_ref())?;
+            let Some(last) = page.last() else { return Ok(out) };
+            cursor = Some(last.header().id.clone());
+            for r in page {
+                if let Row::AuditCheck(c) = r
+                    && &c.run_id == run
+                    && (!findings_only || matches!(c.outcome, AuditOutcome::Suspect | AuditOutcome::Failed))
+                {
+                    out.push(c);
+                    if out.len() == limit {
+                        return Ok(out);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// The system of record. Synchronous, so pure crates stay free of an async runtime.
