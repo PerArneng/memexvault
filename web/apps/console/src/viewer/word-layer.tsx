@@ -13,7 +13,7 @@ export const WordLayer = ({ words, angle, zoom }: { readonly words: readonly Pag
   const context = useMemo(() => document.createElement("canvas").getContext("2d"), []);
   if (context !== null) context.font = `${String(MEASURE_PX)}px ${FONT_FAMILY}`;
   return (
-    <div data-word-layer={true} className="absolute inset-0 overflow-hidden selection:bg-accent/40">
+    <div data-word-layer={true} className="absolute inset-0 overflow-hidden text-transparent selection:bg-accent/40">
       {words.map((word, index) => {
         const placed = wordPlacement(word.rect, angle, word.quad, zoom);
         const fontSize = placed.thickness * FONT_TO_BOX;
@@ -21,6 +21,7 @@ export const WordLayer = ({ words, angle, zoom }: { readonly words: readonly Pag
         const stretch = natural > 0 ? placed.length / natural : 1;
         return (
           // React sets these through the CSSOM, which the CSP allows. Text only, so anything in a word stays text.
+          // The trailing space is what separates words when they're copied. A space between spans would collapse, and the fixed width keeps this one out of the box.
           <span
             key={index}
             data-word={word.text}
@@ -28,13 +29,14 @@ export const WordLayer = ({ words, angle, zoom }: { readonly words: readonly Pag
             style={{
               left: placed.left,
               top: placed.top,
+              width: natural > 0 ? natural : undefined,
               fontFamily: FONT_FAMILY,
               fontSize,
               lineHeight: `${String(placed.thickness)}px`,
               transform: `rotate(${String(placed.angle)}deg) scaleX(${String(stretch)})`,
             }}
           >
-            {word.text}
+            {`${word.text} `}
           </span>
         );
       })}

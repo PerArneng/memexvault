@@ -84,7 +84,7 @@ export const TrustTierPanel = ({ vault, source, identity, onClose }: { readonly 
         </Callout>
       )}
       <div className="flex gap-2">
-        {allowed && <Button variant="primary" disabled={busy || tier === source.trustTier} onClick={() => void apply()}>Change to {tier}</Button>}
+        {allowed && <Button variant="primary" disabled={busy || tier === source.trustTier || result?.outcome.kind === "pending"} onClick={() => void apply()}>Change to {tier}</Button>}
         <Button variant="ghost" onClick={onClose}>Close</Button>
       </div>
     </section>

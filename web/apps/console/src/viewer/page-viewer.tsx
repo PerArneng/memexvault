@@ -128,7 +128,7 @@ const PageCell = ({ fact, top, left, zoom, dpi, url, settled, highlights, words,
               key={index}
               data-highlight={fact.index}
               aria-hidden={true}
-              className="pointer-events-none absolute bg-warning/35 outline-1 outline-warning"
+              className="pointer-events-none absolute bg-warning/40"
               style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
             />
           ))}
