@@ -2,7 +2,7 @@ import { vaultId } from "@memex/types";
 import { describe, expect, it } from "vitest";
 import { createEngine } from "./engine";
 import { DEFAULT_SETTINGS } from "./settings";
-import { fakeApi, httpFailure, identityWith, manualClock, memoryPreferences, UNREACHABLE, vaultNamed } from "./testing";
+import { countingIds, fakeApi, httpFailure, identityWith, manualClock, memoryDraftStorage, memoryPreferences, UNREACHABLE, vaultNamed } from "./testing";
 import type { FakeApiSeed } from "./testing";
 
 const a = vaultId("a");
@@ -11,7 +11,7 @@ const pat = identityWith([{ vault: a, scope: "read" }]);
 const setup = (seed: FakeApiSeed = {}) => {
   const clock = manualClock(1000);
   const api = fakeApi({ tokens: { good: pat }, vaults: [vaultNamed("a"), vaultNamed("b")], ...seed });
-  const engine = createEngine({ clock, settings: DEFAULT_SETTINGS, api, preferences: memoryPreferences() });
+  const engine = createEngine({ clock, settings: DEFAULT_SETTINGS, api, preferences: memoryPreferences(), drafts: memoryDraftStorage(), ids: countingIds() });
   return { api, clock, engine };
 };
 

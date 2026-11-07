@@ -138,7 +138,7 @@ const Shell = () => {
         ) : place.section === null ? (
           <Skeleton className="h-24 w-full" />
         ) : (
-          <SectionScreen identity={identity} vault={place.vault} sectionName={place.section} objectId={place.rest[0]} />
+          <SectionScreen identity={identity} vault={place.vault} sectionName={place.section} rest={place.rest} />
         )}
       </main>
       <Palette open={paletteOpen} onOpenChange={setPaletteOpen} identity={identity} vault={vault} vaults={vaults} onSignOut={startSignOut} />

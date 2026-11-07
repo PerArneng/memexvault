@@ -48,4 +48,17 @@ export const QUERY_KEYS = {
   vaults: ["vaults"] as const,
   vault: (id: string) => ["vault", id] as const,
   objects: (id: string) => ["objects", id] as const,
+  /** Everything about one vault's pages, so a write can refresh all of it. */
+  wiki: (vault: string) => ["wiki", vault] as const,
+  wikiPages: (vault: string) => ["wiki", vault, "pages"] as const,
+  wikiPage: (vault: string, id: string, revision: number | null) => ["wiki", vault, "page", id, revision] as const,
+  wikiBacklinks: (vault: string, id: string) => ["wiki", vault, "backlinks", id] as const,
+  wikiLinks: (vault: string, id: string) => ["wiki", vault, "links", id] as const,
+  wikiUnresolved: (vault: string) => ["wiki", vault, "unresolved"] as const,
+  wikiRevisions: (vault: string, id: string) => ["wiki", vault, "revisions", id] as const,
+  wikiDiff: (vault: string, id: string, from: number, to: number) => ["wiki", vault, "diff", id, from, to] as const,
+  wikiSlug: (vault: string, slug: string) => ["wiki", vault, "slug", slug] as const,
+  wikiClaim: (vault: string, id: string) => ["wiki", vault, "claim", id] as const,
+  // A changeset's author never changes, so this one can stay cached across writes.
+  wikiAttribution: (vault: string, changeset: string) => ["attribution", vault, changeset] as const,
 };
