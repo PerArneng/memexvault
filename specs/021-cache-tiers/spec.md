@@ -44,7 +44,7 @@ Built, with one target missed. Item 2's cached p95 is over 1 ms at 200k on this 
 - `Reranker::model` and `Rasterizer::renderer`, both required, and `ServerEdges::Caches`.
 - `Server::bump_cache_generation`, for spec 030 to call, and `GET /api/v1/caches`, for server admins.
 - Settings `MEMEX_CACHE_{QUERY,INFERENCE,OBJECT,DISK}_BYTES`, by default 256 MiB, 64 MiB, 256 MiB and 2 GiB. 0 turns a tier off. Anything else must be from 1 MiB up to 256 GiB, or 64 TiB for disk, or startup refuses it.
-- Vault migration 10: `cache_generation`.
+- Vault migration 11: `cache_generation`. It was 10 until spec 25 landed first.
 
 **Verification.** Timings are from a machine shared with three other workers, with a load average of 12 to 50.
 

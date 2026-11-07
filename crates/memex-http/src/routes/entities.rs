@@ -7,7 +7,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use memex_api::{ErrorBody, ListParams, ProposalQuery, ProposalResult, page_of};
-use memex_core::{EntityClaim, EntityEdit, FieldInput, NewEntity, ProposalOutcome, Server, ServerEdges, SplitRequest};
+use memex_core::{EntityEdit, FieldInput, NewEntity, ProposalOutcome, Server, ServerEdges, SplitRequest};
 use memex_types::{ObjectId, VaultId};
 use utoipa::OpenApi;
 
@@ -88,18 +88,7 @@ pub(super) fn text_of<T: serde::Serialize>(value: &T) -> String {
 }
 
 pub(super) fn result_of(out: ProposalOutcome) -> ProposalResult {
-    ProposalResult {
-        changeset: out.changeset.map(Into::into),
-        validators: out.validators.iter().filter_map(|v| serde_json::to_value(v).ok()).collect(),
-        risk: text_of(&out.risk),
-        contradictions: out
-            .contradictions
-            .into_iter()
-            .map(|(a, b)| memex_api::ContradictionDto { claim: a.0, other: b.0 })
-            .collect(),
-        replayed: out.replayed,
-        dry_run: out.dry_run,
-    }
+    memex_api::proposal_result(out)
 }
 
 fn field_inputs(fields: Vec<memex_api::FieldInputDto>, rid: &RequestId) -> Result<Vec<FieldInput>, ApiError> {
@@ -283,19 +272,7 @@ where
         s.resolve_mention(c, &VaultId(id), &p.mention, p.type_name.as_deref(), limit)
     })
     .await?;
-    Ok(Json(memex_api::ResolveResult {
-        candidates: r
-            .candidates
-            .into_iter()
-            .map(|c| memex_api::CandidateDto {
-                entity: c.entity.into(),
-                matched_on: c.matched_on,
-                exact: c.exact,
-                score: c.score,
-            })
-            .collect(),
-        degraded: r.degraded,
-    }))
+    Ok(Json(memex_api::resolve_result(r)))
 }
 
 #[utoipa::path(get, path = "/api/v1/vaults/{id}/entities/same-as", tag = "entities", params(("id" = String, Path), memex_api::SameAsParams), responses((status = 200, body = memex_api::SameAsPage), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody)))]
@@ -344,33 +321,7 @@ where
     Server<E>: Send + Sync,
 {
     let view = authed(server, headers, &rid, move |s, c| s.get_entity(c, &VaultId(id), &ObjectId(eid))).await?;
-    let e = view.entity;
-    let mut claims = view.claims;
-    let mut lookup = |id: &ObjectId| -> Option<memex_api::ClaimParts> {
-        let EntityClaim { assertion, evidence } = claims.remove(id)?;
-        Some(memex_api::ClaimParts {
-            epistemic: text_of(&assertion.epistemic),
-            machine: assertion.machine,
-            creator: assertion.header.creator,
-            changeset_id: assertion.changeset_id.0,
-            evidence: evidence
-                .into_iter()
-                .map(|x| memex_api::FieldEvidenceDto::new(x.evidence, x.segment, x.source))
-                .collect(),
-        })
-    };
-    Ok(Json(memex_api::EntityDetailDto {
-        id: e.header.id.0,
-        type_name: e.type_name,
-        type_version: e.type_version,
-        version: e.header.version,
-        aliases: e.aliases,
-        merged_from: e.merged_from.into_iter().map(|m| m.0).collect(),
-        redirected_from: view.redirected_from.map(|r| r.0),
-        changeset_id: e.changeset_id.0,
-        updated_at_ms: e.updated_at_ms,
-        fields: e.fields.into_iter().map(|f| memex_api::EntityFieldDto::new(f, &mut lookup)).collect(),
-    }))
+    Ok(Json(memex_api::entity_detail(view)))
 }
 
 #[utoipa::path(post, path = "/api/v1/vaults/{id}/entities/{eid}/edit", tag = "entities", params(("id" = String, Path), ("eid" = String, Path), ProposalQuery), request_body = memex_api::EntityEditBody, responses((status = 200, body = ProposalResult), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]

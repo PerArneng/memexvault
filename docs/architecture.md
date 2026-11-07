@@ -48,7 +48,7 @@ network dependency. Without the LLM endpoint, search, reading and upload still w
 crates/
   memex-types/        pure: ids, anchors, events
   memex-core/         pure: traits, Engine, reducers, validators, risk, planner, RRF, evidence assembly, page parser, type registry
-  memex-api/          pure: DTOs, evidence package
+  memex-api/          pure: DTOs, evidence package, and the mapping from core's results that HTTP and MCP share
   memex-store-postgres/ edge: Store on PostgreSQL
   memex-blob-fs/      edge: content-addressed blob folders
   memex-lexical/      edge: tantivy
@@ -60,7 +60,7 @@ crates/
   memex-agent-adk/    edge: the only crate that depends on ADK-Rust
   memex-cache/        edge: RAM and disk caches
   memex-http/         frontend: axum, with routes through search so far, and serves the embedded web console from spec 037
-  memex-mcp/          frontend: rmcp
+  memex-mcp/          frontend: rmcp, eight tools and two resources on the same facade and DTOs as HTTP (spec 029)
   memexvault/         binary: the single composition root and the trait wrappers
 ```
 
@@ -240,10 +240,10 @@ flowchart LR
 ```
 
 - **Validators:** schema, scope, quote verification, dedup and contradiction.
-- **Always human-reviewed:** merges, deletes, breaking schema changes, edits to verified claims, and promoting untrusted
-  sources.
+- **Always human-reviewed:** merges, deletes, breaking schema changes, edits to verified claims, promoting untrusted
+  sources, and a claim arriving as `verified` from a machine or citing an untrusted source. Only a person can approve or revert these, whatever scope an agent holds.
 - **Auto-commit starts off.** A combination of extractor, prompt version and type earns it when the Wilson lower bound
-  of its audited precision clears a threshold. An LLM's self-reported confidence never counts.
+  of its audited precision clears a threshold. An LLM's self-reported confidence never counts. See [Review gate](#review-gate).
 - **Contradictions are preserved.** Both claims stay, linked and surfaced with their sources.
 - **Reversible:** every ChangeSet has a computed inverse, and a revert is itself a ChangeSet.
 
@@ -262,6 +262,19 @@ Spec 024. A job per Rendition sends batches of segments to the LLM, and what's v
 - **Identity resolution** names existing entities sharing an identity value as candidates, in the Derivation and the proposal's rationale. It never merges.
 - **Long calls.** The holder extends its job lease before each call, by twice the call's time limit plus 30 s, as a call can outlast the usual 60 s lease.
 
+### Review gate
+
+Spec 025. Everything pending is the queue, in `/vaults/{id}/review`, with filters, counts and batches.
+
+- **The reviewer agent** runs as a job per queued machine proposal with claims, off unless `MEMEX_REVIEW_MODEL` is set. It sees each claim and its quote and nothing else, has no tools, holds no token, and writes only its own verdict. A verdict is advice for a person: it commits nothing, rejects nothing and never counts as a sample. An outage leaves the job waiting and the item in the queue, where people can still decide it.
+- **Samples** are a person's decisions on a machine's proposal: approved counts as correct, and rejected, edited or a reverted auto-commit as wrong. Audits add theirs through `record_audit_samples`. An agent's decision, a verdict, an always-review change and clearing a stale proposal all count for nothing.
+- **A combination** is the model behind an extraction, or otherwise the proposing principal, with the prompt hash and the item type (`claim`, `entity:<type>`, `page`, `link`, `source`). A ChangeSet needs every type it touches earned. The prompt hash covers the type registry, so a new entity type is a new prompt, and every combination earns again from nothing.
+- **On or off** is worked out from the counts and the threshold on each read, so it can't drift from them. Falling below turns it off, and good samples can bring it back. A manual disable starts the counts again, keeping totals for the record, and there's no way to turn one on by hand.
+- **Never auto-commits, however much is earned:** a machine's claim citing any source below `trusted`, so both `untrusted` and `unverified`, or one with no source row to show its tier, invisible characters, or a page flagged for hidden text. The user decided the bar is `trusted`. So auto-commit only ever applies to sources a person has marked `trusted` or `verified`, and everything else waits for a person however good its combination's record. An agent can't get a source there itself: it can't upload at those tiers, and its request to raise a source needs a person's approval. This limits where a planted instruction can act, and nothing judges the text itself.
+- **The remaining limit:** a planted sentence in plain view, in a source a person marked `trusted`, looks like any other claim once its combination has earned it. It commits as `asserted`, can touch nothing else, and it's the audit's to find.
+- **Decisions.** Every one has who, when and why: a person, `auto-commit` with its counts and bound, `validators`, or `pipeline`. Asking for the same decision again changes nothing, while someone else's decision on the same item is a conflict that names them. An edit keeps what was proposed on the row, and only a person can make one.
+- **A replaced rendition.** Evidence must cite a document's current rendition, so a proposal on an old one can't be approved. The new rendition's extraction run retires extraction's pending proposals on old ones, without counting against the extractor, and proposes what's still there. Other proposals stay, for a person to clear.
+
 ### Audit agent
 
 Runs on a schedule with an injected seed and a token budget. It samples by extractor, type, age and trust, weighted
@@ -277,7 +290,7 @@ instead of trying to detect bad text:
 - Extraction runs with no tools and schema-only output.
 - Reviewers see only the claim and its quote.
 - Agents can't fetch URLs.
-- Untrusted sources can't reach `verified` automatically.
+- Untrusted sources can't reach `verified` automatically, and a machine's claims from any source below `trusted` can't auto-commit.
 - Invisible Unicode and text-layer content that OCR can't see gets flagged.
 - Evidence packages expose trust tier and epistemic status.
 - Tool descriptions are never built from vault content.
@@ -339,6 +352,19 @@ from it.
 - **Failed sign-ins** are limited to 10 a minute per peer address, in memory, and then return 429 with `Retry-After`, even for the right token. Behind a proxy all clients share one count.
 - **TLS** belongs to a proxy in front. It must send `X-Forwarded-Proto: https`, which is what makes the cookie `Secure`.
 - **Every response** carries a CSP with `default-src 'self'` and `frame-ancestors 'none'`, plus `nosniff`. Original files download as attachments with a `sandbox` CSP. Unknown paths outside `/api` return the console's `index.html`.
+
+## MCP
+
+Spec 029. Tools are `search`, `get`, `neighborhood`, `resolve`, `propose`, `ingest`, `changes` and `provenance`, each calling the facade HTTP calls and answering with its DTOs. `detail=detailed` is exactly the HTTP body, and `concise`, the default, drops fields a model rarely needs. Page and source text are resources at `memex://vaults/{vault}/pages/{id}` and `.../sources/{id}`, and `memex://vaults` lists what the token sees.
+
+- **Transports.** Streamable HTTP at `/api/v1/mcp`, stateless and in JSON, so the server holds nothing per client, with a bearer token checked on every request. Cookies aren't accepted. `MEMEX_MCP_ALLOWED_HOSTS` names the hosts it answers to, by default only this machine's, which stops DNS rebinding, so a proxy's host name has to be added. `memexvault mcp` is stdio with `MEMEX_MCP_TOKEN`, checked at every call. It's the whole server, workers included, for one local client, and since a vault has one writer it refuses to start beside `serve`.
+- **Definitions are static.** `tools.json` is compiled in and a test pins its hash, so nothing in a vault can reach what an agent reads before it asks for anything. The list is 1,238 tokens with `cl100k_base`, against a limit of 2,000.
+- **Results are data.** Every answer is `{notice, trust_tiers, data}`, and a document's text sits inside a JSON string under `data`.
+- **Size.** An answer is at most 64 KiB, with a cursor for the rest. A list keeps what fits, and an item too large for any page is named with its short fields and passed over, as a text is never cut. Search budgets are clamped to a quarter of that many tokens. A long page comes as its blocks, and resources come in slices that name the next.
+- **`vault`** can go unnamed when the token sees exactly one. Otherwise the error lists what it sees, and only that.
+- **`ingest`** takes up to 8 MiB in a request. Larger files go through the upload route, which streams.
+- **Errors** are tool results in the API's format, with the same codes and messages. Unknown tools and impossible resources are protocol errors.
+- **`neighborhood`** is `GET /vaults/{id}/objects/{oid}/neighborhood`: one hop, both ways, through any slug a page has had. Kinds default to `wiki_link`, `claim_ref` and `contradicts`, and a caller names any others, since the store reads edges by kind.
 
 ## Live activity
 

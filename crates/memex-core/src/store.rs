@@ -1,6 +1,7 @@
 use memex_types::{
     AssertionRow, BlockRow, ChangeSetRow, DerivationRow, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, JobRow, JobState,
-    Mutation, ObjectId, PageRow, RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
+    Mutation, ObjectId, PageRow, QueueCount, RenditionRow, ReviewFilter, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Table, ValueMatch,
+    VaultId,
 };
 use std::fmt;
 
@@ -149,6 +150,14 @@ pub trait Snapshot {
     ) -> Result<Vec<EdgeRow>, StoreError>;
     /// Wiki links whose slug no page holds and claim references whose claim doesn't exist, in id order, after the given id. One store call.
     fn unresolved_links(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<EdgeRow>, StoreError>;
+    /// ChangeSets passing the filter, in id order, after the given id, at most `limit`. One store call.
+    fn review_queue(&self, filter: &ReviewFilter, after: Option<&ObjectId>, limit: usize) -> Result<Vec<ChangeSetRow>, StoreError>;
+    /// Pending ChangeSets counted by extractor, prompt version, type and verdict. One store call.
+    fn review_counts(&self) -> Result<Vec<QueueCount>, StoreError>;
+    /// How many ChangeSets are pending. One store call.
+    fn pending_count(&self) -> Result<u64, StoreError>;
+    /// Pending ChangeSets whose evidence cites this rendition, in id order, after the given id, at most `limit`. One store call.
+    fn pending_citing_rendition(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<ChangeSetRow>, StoreError>;
 }
 
 /// The system of record. Synchronous, so pure crates stay free of an async runtime.

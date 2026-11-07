@@ -1,6 +1,7 @@
 mod entities;
 mod extraction;
 mod pages;
+mod review;
 
 use crate::browser::{self, ConsoleLookup};
 use crate::error::ApiError;
@@ -157,6 +158,7 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     let mut doc = ApiDoc::openapi();
     doc.merge(entities::EntityDoc::openapi());
     doc.merge(extraction::ExtractionDoc::openapi());
+    doc.merge(review::ReviewDoc::openapi());
     doc.merge(pages::PageDoc::openapi());
     doc
 }
@@ -171,6 +173,15 @@ where
 
 /// `console` finds the console's files by path. Tests pass their own, so they don't depend on what `web/` has built.
 pub fn router_with_console<E>(server: App<E>, console: ConsoleLookup) -> Router
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
+    router_with(server, console, Router::new())
+}
+
+/// `extra` holds routes another frontend serves, such as MCP. They get the same request id, log line and security headers as the API, and the composition root decides what goes in it.
+pub fn router_with<E>(server: App<E>, console: ConsoleLookup, extra: Router<App<E>>) -> Router
 where
     E: ServerEdges + Send + Sync + 'static,
     Server<E>: Send + Sync,
@@ -230,9 +241,11 @@ where
         .route("/tokens/{id}", axum::routing::delete(revoke_token::<E>));
     let api = entities::add_routes::<E>(api);
     let api = extraction::add_routes::<E>(api);
+    let api = review::add_routes::<E>(api);
     let api = pages::add_routes::<E>(api);
     Router::new()
         .nest("/api/v1", api)
+        .merge(extra)
         .fallback(move |Extension(rid): Extension<RequestId>, req: Request| browser::console_or_not_found(console, rid, req))
         .method_not_allowed_fallback(method_not_allowed)
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
@@ -598,21 +611,7 @@ where
         idempotency_key: b.idempotency_key,
     };
     let out = authed(server, headers, &rid, move |s, c| s.propose(c, &VaultId(id), p, dry)).await?;
-    Ok(Json(memex_api::ProposalResult {
-        changeset: out.changeset.map(Into::into),
-        validators: out.validators.iter().filter_map(|v| serde_json::to_value(v).ok()).collect(),
-        risk: serde_json::to_value(out.risk)
-            .ok()
-            .and_then(|v| v.as_str().map(str::to_string))
-            .unwrap_or_default(),
-        contradictions: out
-            .contradictions
-            .into_iter()
-            .map(|(a, b)| memex_api::ContradictionDto { claim: a.0, other: b.0 })
-            .collect(),
-        replayed: out.replayed,
-        dry_run: out.dry_run,
-    }))
+    Ok(Json(memex_api::proposal_result(out)))
 }
 
 #[utoipa::path(get, path = "/api/v1/vaults/{id}/changesets", tag = "governance", params(("id" = String, Path), ListParams, memex_api::StateFilter), responses((status = 200, body = memex_api::ChangeSetPage), (status = 404, body = ErrorBody)))]
@@ -869,16 +868,7 @@ where
     })
     .await?;
     let status = if out.existing { StatusCode::OK } else { StatusCode::CREATED };
-    let job_id = out.job.map(|j| j.header.id.0);
-    Ok((
-        status,
-        Json(memex_api::UploadResult {
-            source: out.source.into(),
-            job_id,
-            existing: out.existing,
-        }),
-    )
-        .into_response())
+    Ok((status, Json(memex_api::upload_result(out))).into_response())
 }
 
 #[utoipa::path(get, path = "/api/v1/vaults/{id}/upload-limits", tag = "sources", params(("id" = String, Path)), responses((status = 200, body = memex_api::UploadLimitsDto), (status = 404, body = ErrorBody)))]
@@ -1276,21 +1266,6 @@ where
     Ok(Json(memex_api::FlaggedPagePage { items, next_cursor }))
 }
 
-fn rects_of(a: Option<&memex_types::Anchor>) -> Vec<memex_api::RectDto> {
-    a.map_or(vec![], |a| {
-        a.rects
-            .iter()
-            .map(|(page, r)| memex_api::RectDto {
-                page: *page,
-                x0: r.x0,
-                y0: r.y0,
-                x1: r.x1,
-                y1: r.y1,
-            })
-            .collect()
-    })
-}
-
 #[utoipa::path(get, path = "/api/v1/vaults/{id}/assertions/{aid}/lineage", tag = "provenance", params(("id" = String, Path), ("aid" = String, Path)), responses((status = 200, body = memex_api::LineageDto), (status = 404, body = ErrorBody)))]
 async fn get_lineage<E>(
     State(server): State<App<E>>,
@@ -1303,34 +1278,7 @@ where
     Server<E>: Send + Sync,
 {
     let l = authed(server, headers, &rid, move |s, c| s.lineage(c, &VaultId(id), &memex_types::ObjectId(aid))).await?;
-    let text = |v: serde_json::Value| v.as_str().map(str::to_string).unwrap_or_default();
-    Ok(Json(memex_api::LineageDto {
-        changeset_id: l.assertion.changeset_id.0.clone(),
-        assertion: serde_json::to_value(&l.assertion).unwrap_or(serde_json::Value::Null),
-        proposer: l.changeset.as_ref().map(|c| c.proposer.clone()),
-        proposer_is_machine: l.changeset.as_ref().map(|c| c.proposer_is_machine),
-        decided_by: l.changeset.as_ref().and_then(|c| c.decided_by.clone()),
-        rationale: l.changeset.as_ref().map(|c| c.rationale.clone()),
-        evidence: l
-            .evidence
-            .into_iter()
-            .map(|e| memex_api::EvidenceLineageDto {
-                rects: rects_of(e.anchor.as_ref()),
-                evidence_id: e.evidence.header.id.0,
-                quote: e.evidence.quote,
-                stance: text(serde_json::to_value(e.evidence.stance).unwrap_or(serde_json::Value::Null)),
-                segment_id: e.segment.header.id.0,
-                rendition_id: e.rendition.header.id.0,
-                parser: e.rendition.parser,
-                source_id: e.source.header.id.0,
-                source_name: e.source.name,
-                source_sha256: e.source.sha256,
-                trust_tier: e.source.trust_tier,
-                superseded: e.superseded,
-                broken: e.broken,
-            })
-            .collect(),
-    }))
+    Ok(Json(memex_api::lineage_dto(l)))
 }
 
 #[utoipa::path(get, path = "/api/v1/vaults/{id}/assertions/{aid}/evidence/{eid}/highlight", tag = "provenance", params(("id" = String, Path), ("aid" = String, Path), ("eid" = String, Path)), responses((status = 200, body = memex_api::HighlightDto), (status = 404, body = ErrorBody)))]
@@ -1358,7 +1306,7 @@ where
             page_width: facts.as_ref().map_or(0, |f| f.width),
             page_height: facts.as_ref().map_or(0, |f| f.height),
             broken: e.broken,
-            rects: rects_of(e.anchor.as_ref()),
+            rects: memex_api::rects_of(e.anchor.as_ref()),
         })
     })
     .await?;
@@ -1592,9 +1540,26 @@ where
     E: ServerEdges + Send + Sync + 'static,
     Server<E>: Send + Sync,
 {
+    serve_with(server, Router::new(), bind, shutdown).await
+}
+
+/// As `serve`, with another frontend's routes beside the API.
+pub async fn serve_with<E>(
+    server: App<E>,
+    extra: Router<App<E>>,
+    bind: &str,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()>
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!(addr = %listener.local_addr()?, "listening");
-    axum::serve(listener, router(server).into_make_service_with_connect_info::<std::net::SocketAddr>())
-        .with_graceful_shutdown(shutdown)
-        .await
+    axum::serve(
+        listener,
+        router_with(server, browser::embedded_asset, extra).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown)
+    .await
 }

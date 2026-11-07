@@ -76,7 +76,7 @@ All vault content is untrusted, including document text, OCR output, entity fiel
 - No `dangerouslySetInnerHTML`. An ESLint rule enforces this.
 - Markdown goes through one sanitizing component, with raw HTML disabled.
 - No remote images or media in rendered content. This also stops data leaking out through image URLs.
-- The server sends a strict CSP with `default-src 'self'`, so the build inlines nothing (`assetsInlineLimit: 0`). Radix's modal scroll lock adds a `<style>` element, which the CSP blocks. See spec 037.
+- The server sends a strict CSP with `default-src 'self'`, so the build inlines nothing (`assetsInlineLimit: 0`). Radix's modal scroll lock adds a `<style>` element, which the CSP blocks, and `Select` adds a second one, so prefer `Menu` until that's decided. See specs 037 and 040.
 - The console signs in through `POST /api/v1/session`, and sends `x-memex-csrf` on every state-changing request. Page script can't read the session cookie.
 - External links are visibly marked and open with `noopener`.
 - Trust tier and epistemic status are shown wherever claims appear.
@@ -87,6 +87,9 @@ All vault content is untrusted, including document text, OCR output, entity fiel
 - Everything works by keyboard, with visible focus. Contrast meets WCAG AA.
 - URLs hold screen state, so any view can be linked to and reloaded.
 - Screens can be built against `FakeApi`, but a spec isn't done until it passes against the real API.
+- `QueryView` is the one way a screen shows loading, empty, error and offline. `accessTo` in `core` decides what a URL may show, so a direct link gets the same answer as the navigation.
+- The API types are generated from the committed `packages/api/openapi.json`. `pnpm api:check` fails on drift from the server's document, and `pnpm typecheck` on drift from the committed one.
+- The sign-in route's initial JavaScript stays at or under 200 kB gzip. `pnpm budget` checks it, and anything only a signed-in user needs goes in the lazy `shell/` chunk.
 
 ## Packages
 

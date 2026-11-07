@@ -618,7 +618,8 @@ fn people_commit_and_agents_wait_through_the_risk_function() {
         Err(ServerError::StaleVersion { .. })
     ));
     // Earned auto-commit counts for an agent's edit, but a delete always waits.
-    w.s.set_machine_auto_commit(true);
+    w.s.record_audit_samples(&w.v, &w.agent.principal.id, "", "page", 100, 0, "test", "earned for this test")
+        .unwrap();
     assert_eq!(
         w.s.propose_page_edit(&w.agent, &w.v, &agent_page, 2, "earned".into(), "r".into(), "ae2".into(), false)
             .unwrap()
@@ -719,6 +720,63 @@ fn fused(id: &str, kind: DocKind, score: f32) -> Fused {
         vector_rank: None,
         vector_score: None,
     }
+}
+
+#[test]
+fn a_neighborhood_shows_links_both_ways_through_old_slugs_and_names_broken_ones() {
+    let w = world();
+    let target = w.create("Target", "the target");
+    let citing = w.create("Citing", "cites [[Target]] and [[Nowhere]]");
+    let kinds = [WIKI_LINK, "contradicts"];
+    let at = |id: &ObjectId| w.s.neighborhood(&w.reader, &w.v, id, &kinds, None, 50).unwrap();
+    let out = at(&citing);
+    assert_eq!(out.len(), 2);
+    assert!(out.iter().all(|n| n.direction == "out" && n.from == citing));
+    let found = out.iter().find(|n| n.neighbor.is_some()).unwrap();
+    assert_eq!(found.neighbor.as_ref(), Some(&target));
+    assert_eq!(found.title.as_deref(), Some("Target"));
+    let broken = out.iter().find(|n| n.neighbor.is_none()).unwrap();
+    assert_eq!(broken.to, slug_target("nowhere"));
+    let back = at(&target);
+    assert_eq!(back.len(), 1);
+    assert_eq!((back[0].direction, &back[0].from), ("in", &citing));
+    assert_eq!(back[0].title.as_deref(), Some("Citing"));
+    // A link written to an old slug still arrives after a rename.
+    w.rename(&target, 1, "Moved").unwrap();
+    assert_eq!(at(&target).len(), 1, "through the old slug");
+    assert_eq!(at(&citing).iter().find(|n| n.neighbor.is_some()).unwrap().title.as_deref(), Some("Moved"));
+    // Pages come back in id order with a cursor, and a kind not asked for stays out.
+    let one = w.s.neighborhood(&w.reader, &w.v, &citing, &kinds, None, 1).unwrap();
+    let rest = w.s.neighborhood(&w.reader, &w.v, &citing, &kinds, Some(&one[0].edge_id), 1).unwrap();
+    assert_ne!(one[0].edge_id, rest[0].edge_id);
+    assert!(w.s.neighborhood(&w.reader, &w.v, &citing, &["claim_ref"], None, 50).unwrap().is_empty());
+    // Nothing there, and nothing for someone who can't see the vault.
+    assert!(matches!(
+        w.s.neighborhood(&w.reader, &w.v, &ObjectId("nope".into()), &kinds, None, 50),
+        Err(ServerError::NotFound)
+    ));
+    let stranger = Caller {
+        grants: vec![],
+        ..w.reader.clone()
+    };
+    assert!(matches!(
+        w.s.neighborhood(&stranger, &w.v, &citing, &kinds, None, 50),
+        Err(ServerError::NotFound)
+    ));
+}
+
+#[test]
+fn a_neighborhood_reads_with_few_store_calls() {
+    let w = world();
+    let hub = w.create("Hub", "just the hub");
+    for i in 0..30 {
+        w.create(&format!("Spoke {i}"), "links to [[Hub]]");
+    }
+    let reads = || w.s.engine().store().counts().reads.load(std::sync::atomic::Ordering::Relaxed);
+    let before = reads();
+    let out = w.s.neighborhood(&w.reader, &w.v, &hub, &[WIKI_LINK], None, 100).unwrap();
+    assert_eq!(out.len(), 30);
+    assert!(reads() - before <= 5, "{} reads", reads() - before);
 }
 
 #[test]

@@ -14,8 +14,8 @@ pub struct Author {
     pub machine: bool,
 }
 
-/// The always-review rules, in one table. Merges, deletes, breaking schema changes, edits to verified claims and promoting untrusted sources always get a human.
-pub const ALWAYS_REVIEW: [OpKind; 7] = [
+/// The always-review rules, in one table. Merges, deletes, breaking schema changes, edits to verified claims, promoting untrusted sources and verifying what they say always get a human, and only a person can approve them.
+pub const ALWAYS_REVIEW: [OpKind; 8] = [
     OpKind::Delete,
     OpKind::MergeEntities,
     OpKind::SplitEntity,
@@ -23,6 +23,7 @@ pub const ALWAYS_REVIEW: [OpKind; 7] = [
     OpKind::EditVerifiedClaim,
     OpKind::PromoteUntrustedSource,
     OpKind::RemoveLink,
+    OpKind::ClaimVerified,
 ];
 
 /// Pure. A machine's auto-commit is off unless spec 025's audit earned it, and self-reported confidence isn't an input here at all.
@@ -35,6 +36,10 @@ pub fn risk(kinds: &[OpKind], author: Author, machine_earned_auto_commit: bool, 
     }
     // An agent's type never goes live without review, however much auto-commit it has earned for claims.
     if author.machine && kinds.contains(&OpKind::AdditiveSchemaChange) {
+        return RiskDecision::Review;
+    }
+    // Nor does an agent get to decide which sources its own claims can auto-commit from.
+    if author.machine && kinds.contains(&OpKind::RaiseSourceTrust) {
         return RiskDecision::Review;
     }
     if author.machine && !machine_earned_auto_commit {
@@ -125,6 +130,34 @@ pub fn validate_schema(ops: &[Op], rationale: &str, idempotency_key: &str) -> Va
         }
     }
     pass(name)
+}
+
+/// Evidence must cite the document as it stands. A rendition that has been replaced says nothing about what the document says now, and its anchors wouldn't move with the rest. A segment that belongs to no rendition has nothing to go stale.
+pub fn validate_current_rendition<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<ValidatorResult, StoreError> {
+    let name = "current_rendition";
+    let places = crate::review::evidence_places(snap, ops)?;
+    let keys: Vec<RowKey> = places
+        .rendition_ids
+        .iter()
+        .map(|id| RowKey {
+            table: Table::Rendition,
+            id: id.clone(),
+        })
+        .collect();
+    if keys.is_empty() {
+        return Ok(pass(name));
+    }
+    for row in snap.get_many(&keys)?.into_iter().flatten() {
+        if let Row::Rendition(r) = row
+            && r.superseded_by.is_some()
+        {
+            return Ok(fail(
+                name,
+                format!("rendition {} has been replaced, as its document was processed again", r.header.id),
+            ));
+        }
+    }
+    Ok(pass(name))
 }
 
 /// A machine's claim must cite something. Pure.
@@ -534,6 +567,9 @@ pub fn kinds_of<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Vec<OpKind>, StoreE
                 id: id.clone(),
             })? {
                 Some(Row::Source(s)) if s.trust_tier == crate::UNTRUSTED && trust_tier != crate::UNTRUSTED => OpKind::PromoteUntrustedSource,
+                Some(Row::Source(s)) if !crate::sources::at_least_trusted(&s.trust_tier) && crate::sources::at_least_trusted(trust_tier) => {
+                    OpKind::RaiseSourceTrust
+                }
                 _ => OpKind::EditSource,
             },
             Op::SetSourceMetadata { .. } => OpKind::EditSource,
@@ -543,6 +579,13 @@ pub fn kinds_of<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Vec<OpKind>, StoreE
             Op::MergeEntities { .. } => OpKind::MergeEntities,
             Op::SplitEntity { .. } => OpKind::SplitEntity,
         });
+        let claim = match op {
+            Op::SupersedeAssertion { replacement, .. } => replacement.as_ref(),
+            other => other,
+        };
+        if crate::review::verified_without_standing(snap, claim)? {
+            out.push(OpKind::ClaimVerified);
+        }
     }
     Ok(out)
 }

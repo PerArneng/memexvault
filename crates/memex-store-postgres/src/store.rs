@@ -384,6 +384,8 @@ impl PgStore {
             "blocks",
             "page_slugs",
             "page_revisions",
+            "review_verdicts",
+            "auto_commit",
         ] {
             client.batch_execute(&format!("VACUUM {schema}.{t}")).map_err(backend)?;
         }
@@ -520,6 +522,8 @@ fn table_name(t: Table) -> &'static str {
         Table::Entity => "entities",
         Table::Derivation => "derivations",
         Table::Extraction => "extractions",
+        Table::ReviewVerdict => "review_verdicts",
+        Table::AutoCommit => "auto_commit",
         Table::Block => "blocks",
         Table::Slug => "page_slugs",
         Table::Revision => "page_revisions",
@@ -590,8 +594,19 @@ fn upsert_json_row(t: &mut postgres::Transaction<'_>, cache: &mut Statements, sc
         Row::ChangeSet(x) => exec(
             t,
             cache,
-            &format!("INSERT INTO {schema}.changesets (id, row, state, idempotency_key, proposer) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET row = excluded.row, state = excluded.state"),
-            &[&id, &json, &format!("{:?}", x.state).to_lowercase(), &x.idempotency_key, &x.proposer],
+            &format!("INSERT INTO {schema}.changesets (id, row, state, idempotency_key, proposer, extractor, prompt_version, item_types, source_ids, rendition_ids) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (id) DO UPDATE SET row = excluded.row, state = excluded.state, extractor = excluded.extractor, prompt_version = excluded.prompt_version, item_types = excluded.item_types, source_ids = excluded.source_ids, rendition_ids = excluded.rendition_ids"),
+            &[
+                &id,
+                &json,
+                &format!("{:?}", x.state).to_lowercase(),
+                &x.idempotency_key,
+                &x.proposer,
+                &x.origin.as_ref().map(|o| o.extractor.as_str()),
+                &x.origin.as_ref().map(|o| o.prompt_version.as_str()),
+                &x.origin.as_ref().map(|o| o.item_types.clone()),
+                &x.origin.as_ref().map(|o| o.source_ids.iter().map(|i| i.0.clone()).collect::<Vec<String>>()),
+                &x.origin.as_ref().map(|o| o.rendition_ids.iter().map(|i| i.0.clone()).collect::<Vec<String>>()),
+            ],
         ),
         Row::EntityType(x) => exec(
             t,
@@ -610,6 +625,18 @@ fn upsert_json_row(t: &mut postgres::Transaction<'_>, cache: &mut Statements, sc
             t,
             cache,
             &format!("INSERT INTO {schema}.extractions (id, row) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET row = excluded.row"),
+            &[&id, &json],
+        ),
+        Row::ReviewVerdict(x) => exec(
+            t,
+            cache,
+            &format!("INSERT INTO {schema}.review_verdicts (id, row, verdict) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET row = excluded.row, verdict = excluded.verdict"),
+            &[&id, &json, &x.verdict.as_str()],
+        ),
+        Row::AutoCommit(_) => exec(
+            t,
+            cache,
+            &format!("INSERT INTO {schema}.auto_commit (id, row) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET row = excluded.row"),
             &[&id, &json],
         ),
         Row::Block(x) => exec(
@@ -814,6 +841,8 @@ fn row_from(table: Table, r: &postgres::Row) -> Row {
             | Table::Entity
             | Table::Derivation
             | Table::Extraction
+            | Table::ReviewVerdict
+            | Table::AutoCommit
             | Table::Block
             | Table::Slug
             | Table::Revision
@@ -859,6 +888,8 @@ fn row_from(table: Table, r: &postgres::Row) -> Row {
         | Table::Entity
         | Table::Derivation
         | Table::Extraction
+        | Table::ReviewVerdict
+        | Table::AutoCommit
         | Table::Block
         | Table::Slug
         | Table::Revision => {
@@ -1175,6 +1206,95 @@ impl PgSnapshot<'_> {
         let sql = format!("SELECT row FROM {}.changesets WHERE idempotency_key = $1", self.schema);
         let row = self.with_statement(&sql, |c, st| c.query_opt(st, &[&key]))?;
         Ok(row.map(|r| json_row(&r)).and_then(|r| if let Row::ChangeSet(c) = r { Some(c) } else { None }))
+    }
+
+    pub fn review_queue(&self, filter: &memex_types::ReviewFilter, after: Option<&ObjectId>, limit: usize) -> Result<Vec<ChangeSetRow>, PgError> {
+        let sql = format!(
+            "SELECT c.row FROM {s}.changesets c LEFT JOIN {s}.review_verdicts v ON v.id = c.id
+             WHERE ($1::text IS NULL OR c.state = $1)
+               AND ($2::text IS NULL OR c.extractor = $2)
+               AND ($3::text IS NULL OR c.prompt_version = $3)
+               AND ($4::text IS NULL OR $4 = ANY(c.item_types))
+               AND ($5::text IS NULL OR $5 = ANY(c.source_ids))
+               AND ($6::text IS NULL OR c.proposer = $6)
+               AND ($7::text IS NULL OR v.verdict = $7 OR ($7 = 'none' AND v.id IS NULL))
+               AND ($8::text IS NULL OR c.id > $8)
+             ORDER BY c.id LIMIT $9",
+            s = self.schema
+        );
+        let state = filter.state.map(|s| format!("{s:?}").to_lowercase());
+        let verdict = filter.verdict.map(|v| match v {
+            memex_types::VerdictFilter::Is(x) => x.as_str(),
+            memex_types::VerdictFilter::None => "none",
+        });
+        let rows = self.with_statement(&sql, |c, st| {
+            c.query(
+                st,
+                &[
+                    &state,
+                    &filter.extractor,
+                    &filter.prompt_version,
+                    &filter.item_type,
+                    &filter.source_id.as_ref().map(|i| i.0.as_str()),
+                    &filter.proposer,
+                    &verdict,
+                    &after.map(|a| a.0.as_str()),
+                    &(limit as i64),
+                ],
+            )
+        })?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::ChangeSet(x) = json_row(r) { Some(x) } else { None })
+            .collect())
+    }
+
+    pub fn review_counts(&self) -> Result<Vec<memex_types::QueueCount>, PgError> {
+        let sql = format!(
+            "SELECT coalesce(c.extractor, '') AS extractor, coalesce(c.prompt_version, '') AS prompt_version, t AS item_type, v.verdict, count(*) AS n
+             FROM {s}.changesets c
+             LEFT JOIN {s}.review_verdicts v ON v.id = c.id
+             CROSS JOIN LATERAL unnest(coalesce(nullif(c.item_types, '{{}}'), ARRAY['unknown'])) AS t
+             WHERE c.state = 'pending'
+             GROUP BY 1, 2, 3, 4
+             ORDER BY 1, 2, 3, 4",
+            s = self.schema
+        );
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[]))?;
+        Ok(rows
+            .iter()
+            .map(|r| memex_types::QueueCount {
+                extractor: r.get("extractor"),
+                prompt_version: r.get("prompt_version"),
+                item_type: r.get("item_type"),
+                verdict: r.get::<_, Option<String>>("verdict").and_then(|v| match v.as_str() {
+                    "approve" => Some(memex_types::Verdict::Approve),
+                    "reject" => Some(memex_types::Verdict::Reject),
+                    "abstain" => Some(memex_types::Verdict::Abstain),
+                    _ => None,
+                }),
+                count: r.get::<_, i64>("n") as u64,
+            })
+            .collect())
+    }
+
+    pub fn pending_count(&self) -> Result<u64, PgError> {
+        let sql = format!("SELECT count(*) AS n FROM {}.changesets WHERE state = 'pending'", self.schema);
+        let row = self.with_statement(&sql, |c, st| c.query_one(st, &[]))?;
+        Ok(row.get::<_, i64>("n") as u64)
+    }
+
+    pub fn pending_citing_rendition(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<ChangeSetRow>, PgError> {
+        let sql = format!(
+            "SELECT row FROM {}.changesets WHERE state = 'pending' AND $1 = ANY(rendition_ids) AND ($2::text IS NULL OR id > $2) ORDER BY id LIMIT $3",
+            self.schema
+        );
+        let after = after.map(|a| a.0.as_str());
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&rendition_id.0, &after, &(limit as i64)]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::ChangeSet(x) = json_row(r) { Some(x) } else { None })
+            .collect())
     }
 
     /// One query, however many hashes and pairs.

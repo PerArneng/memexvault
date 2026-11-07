@@ -20,6 +20,7 @@ mod reducer;
 mod registry;
 pub mod rendition;
 mod replay;
+pub mod review;
 pub mod search;
 mod seed;
 mod server;
@@ -47,13 +48,15 @@ pub use raster::{ALLOWED_DPI, PageImage, RasterError, Rasterizer, THUMBNAIL_DPI,
 pub use reducer::{ChangeSetRecorded, ReduceError, StateRecorded, reduce};
 pub use registry::{Registry, RegistryError};
 pub use replay::{ReplayError, all_events, replay};
+pub use review::{REVIEW_JOB, ReviewLimits};
 pub use search::Reranker;
 pub use seed::Seed;
 pub use server::{
-    BacklinkView, ClaimEvidence, ClaimRef, ClaimRefStatus, ClaimReference, CreatedSession, CreatedToken, EntityCandidate, EntityClaim, EntityEdit,
-    EntityResolution, EntityView, EvidenceLineage, ExtractJobError, ExtractionReport, FieldInput, ImportedPage, Lineage, NewEntity, NewPage, NewToken,
-    OutgoingLink, PIPELINE_VERSION, PageChange, PageDiff, PageList, PageRedirect, PageRevisionView, PageView, Proposal, ProposalOutcome, RENDITION_JOB,
-    RESULT_LIMIT, Redirect, RenditionInput, SearchEdges, Server, ServerEdges, ServerError, SplitRequest, TypeDecision, UnresolvedLink,
+    AutoCommitEntry, AutoCommitTable, BacklinkView, BatchDecision, ClaimEvidence, ClaimRef, ClaimRefStatus, ClaimReference, CreatedSession, CreatedToken,
+    EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, EvidenceLineage, ExtractJobError, ExtractionReport, FieldInput, ImportedPage,
+    Lineage, NeighborView, NewEntity, NewPage, NewToken, OutgoingLink, PIPELINE_VERSION, PageChange, PageDiff, PageList, PageRedirect, PageRevisionView,
+    PageView, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT, Redirect, RenditionInput, ReviewDetail, ReviewEvidence, ReviewItem, SearchEdges, Server,
+    ServerEdges, ServerError, SplitRequest, TypeDecision, UnresolvedLink,
 };
 pub use session::{LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, SESSION_TTL_MS};
 pub use settings::{Backends, CacheSettings, LlmSettings, Settings, SettingsError};

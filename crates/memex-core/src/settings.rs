@@ -65,6 +65,10 @@ pub struct Settings {
     /// Where `models fetch` puts model files.
     pub models_dir: PathBuf,
     pub http_bind: String,
+    /// The token `memexvault mcp` acts as, over stdio.
+    pub mcp_token: Option<String>,
+    /// Host names MCP over HTTP answers to. Only this machine's, unless a proxy in front needs others.
+    pub mcp_allowed_hosts: Vec<String>,
     pub backends: Backends,
     /// CPU threads for each embedding run, so background embedding can't take the whole machine.
     pub embed_threads: usize,
@@ -78,6 +82,11 @@ pub struct Settings {
     pub llm: Option<LlmSettings>,
     pub extraction: crate::ExtractionLimits,
     pub caches: CacheSettings,
+    /// The model the reviewer agent calls, on the same LLM. Without one, queued items wait for people with no verdict, and no extra tokens are spent.
+    pub reviewer_model: Option<String>,
+    pub review: crate::review::ReviewLimits,
+    /// What a combination's Wilson bound has to reach to earn auto-commit, in thousandths.
+    pub auto_commit_threshold_permille: u16,
 }
 
 /// Which model answers extraction's calls.
@@ -111,6 +120,8 @@ impl Default for Settings {
             data_dir: PathBuf::from("./memex-data"),
             models_dir: PathBuf::from("./memex-models"),
             http_bind: "127.0.0.1:8080".into(),
+            mcp_token: None,
+            mcp_allowed_hosts: vec!["localhost".into(), "127.0.0.1".into(), "::1".into()],
             backends: Backends::default(),
             embed_threads: 4,
             embed_query_sessions: 2,
@@ -119,6 +130,9 @@ impl Default for Settings {
             llm: None,
             extraction: crate::ExtractionLimits::default(),
             caches: CacheSettings::default(),
+            reviewer_model: None,
+            review: crate::review::ReviewLimits::default(),
+            auto_commit_threshold_permille: (crate::review::DEFAULT_THRESHOLD * 1000.0) as u16,
         }
     }
 }
@@ -131,6 +145,8 @@ impl fmt::Debug for Settings {
             .field("data_dir", &self.data_dir)
             .field("models_dir", &self.models_dir)
             .field("http_bind", &self.http_bind)
+            .field("mcp_token", &self.mcp_token.as_ref().map(|_| "<redacted>"))
+            .field("mcp_allowed_hosts", &self.mcp_allowed_hosts)
             .field("backends", &self.backends)
             .field("embed_threads", &self.embed_threads)
             .field("embed_query_sessions", &self.embed_query_sessions)
@@ -139,6 +155,9 @@ impl fmt::Debug for Settings {
             .field("llm", &self.llm)
             .field("extraction", &self.extraction)
             .field("caches", &self.caches)
+            .field("reviewer_model", &self.reviewer_model)
+            .field("review", &self.review)
+            .field("auto_commit_threshold_permille", &self.auto_commit_threshold_permille)
             .finish()
     }
 }
@@ -166,6 +185,9 @@ pub enum SettingsError {
         value: String,
         max: u64,
     },
+    InvalidThreshold {
+        value: String,
+    },
     /// One setting needs another that isn't set.
     Missing {
         name: &'static str,
@@ -184,6 +206,7 @@ impl fmt::Display for SettingsError {
                 f,
                 "{name} must be a number of bytes, either 0 to turn the tier off or from {MIN_CACHE_BYTES} to {max}, got '{value}'"
             ),
+            Self::InvalidThreshold { value } => write!(f, "MEMEX_AUTO_COMMIT_THRESHOLD must be above 0 and at most 1, got '{value}'"),
             Self::Missing { name, because } => write!(f, "{name} is needed {because}"),
         }
     }
@@ -276,10 +299,37 @@ impl Settings {
             MAX_RAM_CACHE_BYTES,
         )?;
         c.disk_bytes = cache_size("MEMEX_CACHE_DISK_BYTES", text("MEMEX_CACHE_DISK_BYTES")?, c.disk_bytes, MAX_DISK_CACHE_BYTES)?;
+        s.reviewer_model = text("MEMEX_REVIEW_MODEL")?;
+        if s.reviewer_model.is_some() && s.llm.is_none() {
+            return Err(SettingsError::Missing {
+                name: "MEMEX_LLM_PROVIDER",
+                because: "with MEMEX_REVIEW_MODEL".into(),
+            });
+        }
+        s.review.output_tokens = count(
+            "MEMEX_REVIEW_OUTPUT_TOKENS",
+            text("MEMEX_REVIEW_OUTPUT_TOKENS")?,
+            s.review.output_tokens as usize,
+        )? as u32;
+        s.review.timeout_ms = count("MEMEX_REVIEW_TIMEOUT_S", text("MEMEX_REVIEW_TIMEOUT_S")?, (s.review.timeout_ms / 1000) as usize)? as u64 * 1000;
+        if let Some(v) = text("MEMEX_AUTO_COMMIT_THRESHOLD")? {
+            // Zero would let a combination with one lucky sample through, and rounding must not turn a small number into it.
+            let permille = v
+                .parse::<f64>()
+                .ok()
+                .filter(|t| *t > 0.0 && *t <= 1.0)
+                .map(|t| (t * 1000.0).round() as u16)
+                .filter(|p| *p >= 1);
+            s.auto_commit_threshold_permille = permille.ok_or(SettingsError::InvalidThreshold { value: v })?;
+        }
         s.embed_threads = count("MEMEX_EMBED_THREADS", text("MEMEX_EMBED_THREADS")?, s.embed_threads)?;
         s.embed_query_sessions = count("MEMEX_EMBED_QUERY_SESSIONS", text("MEMEX_EMBED_QUERY_SESSIONS")?, s.embed_query_sessions)?;
         s.rerank_threads = count("MEMEX_RERANK_THREADS", text("MEMEX_RERANK_THREADS")?, s.rerank_threads)?;
         s.rerank_sessions = count("MEMEX_RERANK_SESSIONS", text("MEMEX_RERANK_SESSIONS")?, s.rerank_sessions)?;
+        s.mcp_token = text("MEMEX_MCP_TOKEN")?;
+        if let Some(v) = text("MEMEX_MCP_ALLOWED_HOSTS")? {
+            s.mcp_allowed_hosts = v.split(',').map(str::trim).filter(|h| !h.is_empty()).map(String::from).collect();
+        }
         if let Some(v) = text("MEMEX_HTTP_BIND")? {
             let port_ok = v.rsplit_once(':').is_some_and(|(host, port)| !host.is_empty() && port.parse::<u16>().is_ok());
             if !port_ok {
@@ -321,6 +371,19 @@ mod tests {
     fn from(vars: &[(&str, &str)]) -> Result<Settings, SettingsError> {
         let map: HashMap<String, String> = vars.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
         Settings::from_vars(|name| map.get(name).cloned())
+    }
+
+    #[test]
+    fn the_mcp_token_is_redacted_and_hosts_stay_local_unless_named() {
+        let s = from(&[
+            ("MEMEX_MCP_TOKEN", "mxt_secret"),
+            ("MEMEX_MCP_ALLOWED_HOSTS", "kb.example.org, kb.example.org:443"),
+        ])
+        .unwrap();
+        assert_eq!(s.mcp_token.as_deref(), Some("mxt_secret"));
+        assert_eq!(s.mcp_allowed_hosts, ["kb.example.org", "kb.example.org:443"]);
+        assert!(!format!("{s:?}").contains("mxt_secret"));
+        assert!(from(&[]).unwrap().mcp_allowed_hosts.contains(&"127.0.0.1".to_string()));
     }
 
     #[test]
@@ -457,6 +520,26 @@ mod tests {
     }
 
     #[test]
+    fn the_reviewer_is_off_by_default_and_needs_an_llm() {
+        let s = from(&[]).unwrap();
+        assert_eq!((s.reviewer_model.as_deref(), s.auto_commit_threshold_permille), (None, 950));
+        assert!(matches!(from(&[("MEMEX_REVIEW_MODEL", "m")]), Err(SettingsError::Missing { .. })));
+        let s = from(&[
+            ("MEMEX_LLM_PROVIDER", "openai"),
+            ("MEMEX_LLM_MODEL", "m"),
+            ("MEMEX_LLM_BASE_URL", "http://h/v1"),
+            ("MEMEX_REVIEW_MODEL", "small"),
+            ("MEMEX_REVIEW_TIMEOUT_S", "9"),
+            ("MEMEX_AUTO_COMMIT_THRESHOLD", "0.9"),
+        ])
+        .unwrap();
+        assert_eq!(
+            (s.reviewer_model.as_deref(), s.review.timeout_ms, s.auto_commit_threshold_permille),
+            (Some("small"), 9000, 900)
+        );
+    }
+
+    #[test]
     fn invalid_cache_sizes_are_refused_for_every_tier() {
         for var in ["QUERY", "INFERENCE", "OBJECT", "DISK"] {
             let name = format!("MEMEX_CACHE_{var}_BYTES");
@@ -473,6 +556,17 @@ mod tests {
             Err(SettingsError::InvalidCacheSize { .. })
         ));
         assert!(from(&[("MEMEX_CACHE_DISK_BYTES", &over_ram)]).is_ok(), "the disk has a higher limit");
+    }
+
+    #[test]
+    fn a_threshold_must_be_above_zero_and_at_most_one() {
+        for bad in ["0", "-0.5", "1.5", "NaN", "many", "0.0001"] {
+            assert!(
+                matches!(from(&[("MEMEX_AUTO_COMMIT_THRESHOLD", bad)]), Err(SettingsError::InvalidThreshold { .. })),
+                "{bad}"
+            );
+        }
+        assert_eq!(from(&[("MEMEX_AUTO_COMMIT_THRESHOLD", "1")]).unwrap().auto_commit_threshold_permille, 1000);
     }
 
     #[test]

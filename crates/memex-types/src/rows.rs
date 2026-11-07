@@ -5,6 +5,7 @@ use crate::governance::{ChangeSetState, Epistemic, Op, RiskDecision, Stance, Val
 use crate::jobs::JobRow;
 use crate::page::{BlockRow, RevisionRow, SlugRow};
 use crate::rendition::{Anchor, RenditionRow};
+use crate::review::{AutoCommitRow, ProposalOrigin, ReviewVerdictRow};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -27,10 +28,12 @@ pub enum Table {
     Revision,
     Derivation,
     Extraction,
+    ReviewVerdict,
+    AutoCommit,
 }
 
 impl Table {
-    pub const ALL: [Table; 16] = [
+    pub const ALL: [Table; 18] = [
         Table::Source,
         Table::Page,
         Table::Edge,
@@ -47,6 +50,8 @@ impl Table {
         Table::Revision,
         Table::Derivation,
         Table::Extraction,
+        Table::ReviewVerdict,
+        Table::AutoCommit,
     ];
 }
 
@@ -192,6 +197,12 @@ pub struct ChangeSetRow {
     /// The ChangeSet this one reverts.
     pub reverts: Option<ObjectId>,
     pub reverted_by: Option<ObjectId>,
+    /// Who and what it came from. Absent on ChangeSets from before spec 025.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<ProposalOrigin>,
+    /// What was proposed, when a person changed it before approving. `ops` then holds what was approved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_ops: Option<Vec<Op>>,
 }
 
 // Rows are handled one at a time on a path that does IO, so the size of the largest kind doesn't matter here.
@@ -215,6 +226,8 @@ pub enum Row {
     Revision(RevisionRow),
     Derivation(DerivationRow),
     Extraction(ExtractionRow),
+    ReviewVerdict(ReviewVerdictRow),
+    AutoCommit(AutoCommitRow),
 }
 
 impl Row {
@@ -236,6 +249,8 @@ impl Row {
             Row::Revision(r) => &r.header,
             Row::Derivation(r) => &r.header,
             Row::Extraction(r) => &r.header,
+            Row::ReviewVerdict(r) => &r.header,
+            Row::AutoCommit(r) => &r.header,
         }
     }
 
@@ -257,6 +272,8 @@ impl Row {
             Row::Revision(_) => Table::Revision,
             Row::Derivation(_) => Table::Derivation,
             Row::Extraction(_) => Table::Extraction,
+            Row::ReviewVerdict(_) => Table::ReviewVerdict,
+            Row::AutoCommit(_) => Table::AutoCommit,
         };
         RowKey {
             table,

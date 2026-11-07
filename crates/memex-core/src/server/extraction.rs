@@ -1,5 +1,5 @@
 //! Extraction on the facade: a job per rendition sends batches of segments to the LLM, and what comes back becomes proposals with a Derivation behind them. Everything goes through `propose`, so the review queue applies as it does to anyone else.
-use super::{FieldInput, Proposal, RESULT_LIMIT, Server, ServerEdges, ServerError};
+use super::{FieldInput, Proposal, ProposedBy, RESULT_LIMIT, Server, ServerEdges, ServerError};
 use crate::auth::{Caller, Operation};
 use crate::entity;
 use crate::extraction::{self, DERIVATION_KIND, EXTRACT_JOB, ExtractionLimits, ExtractionPrompt, ExtractionState};
@@ -13,12 +13,12 @@ use serde_json::{Value, json};
 use std::collections::HashSet;
 
 /// How a job's proposals are attributed. Always a machine, so they go to review until auto-commit is earned.
-const EXTRACTOR: &str = "extractor";
+pub(super) const EXTRACTOR: &str = "extractor";
 const EXTRACT_ATTEMPTS: u32 = 5;
 /// How many existing entities a mention names as candidates.
 const MAX_CANDIDATES: usize = 5;
 /// How long past a call's own limits a worker keeps the job.
-const LEASE_MARGIN_MS: i64 = 30_000;
+pub(super) const LEASE_MARGIN_MS: i64 = 30_000;
 
 /// Why a run didn't complete.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -446,7 +446,13 @@ impl<E: ServerEdges> Server<E> {
         let (mut proposed, mut rejected) = (0, 0);
         for item in &derivation.items {
             let proposal = self.item_proposal(rendition, derivation, item);
-            match self.propose_as(EXTRACTOR, true, vault, proposal, false) {
+            let by = ProposedBy {
+                actor: EXTRACTOR,
+                machine: true,
+                extractor: &derivation.model,
+                prompt_version: &derivation.prompt_hash,
+            };
+            match self.propose_as(&by, vault, proposal, false) {
                 Ok(outcome) if outcome.replayed => {}
                 Ok(outcome) if outcome.changeset.as_ref().is_some_and(|c| c.state == ChangeSetState::Rejected) => rejected += 1,
                 Ok(_) => proposed += 1,
@@ -518,6 +524,8 @@ impl<E: ServerEdges> Server<E> {
             row.updated_at_ms = self.now();
             return Ok(vec![Mutation::Put(Row::Extraction(row))]);
         }
+        // A new reading of the document is on its way, so what was proposed from older ones goes.
+        self.retire_stale_proposals(vault, &source_id, &rendition_id)?;
         let types = all_types(&snap)?;
         let prompt = extraction::build_prompt(&types);
         row.prompt_hash = Some(prompt.hash.clone());

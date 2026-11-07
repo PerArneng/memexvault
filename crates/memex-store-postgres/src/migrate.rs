@@ -267,6 +267,25 @@ pub const VAULT_MIGRATIONS: &[&str] = &[
         row jsonb NOT NULL
     );
 ",
+    // Spec 025: what the queue filters on, the reviewer agent's verdicts, and what each combination has earned. ChangeSets from before this have NULLs, and show as unknown.
+    "
+    ALTER TABLE {s}.changesets
+        ADD COLUMN extractor text COLLATE \"C\",
+        ADD COLUMN prompt_version text COLLATE \"C\",
+        ADD COLUMN item_types text[],
+        ADD COLUMN source_ids text[],
+        ADD COLUMN rendition_ids text[];
+    CREATE INDEX ON {s}.changesets (id) WHERE state = 'pending';
+    CREATE TABLE {s}.review_verdicts (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL,
+        verdict text NOT NULL
+    );
+    CREATE TABLE {s}.auto_commit (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL
+    );
+",
     // Spec 021: part of every cache key. Erasure bumps it, so nothing cached before can be reached again, even on disk after a restart.
     "
     CREATE TABLE {s}.cache_generation (

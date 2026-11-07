@@ -5,6 +5,11 @@ use serde_json::Value;
 pub const UNTRUSTED: &str = "untrusted";
 pub const TRUST_TIERS: [&str; 4] = ["verified", "trusted", "unverified", UNTRUSTED];
 
+/// The tiers a machine's claims can auto-commit from, once earned. Only a person can put a source here.
+pub fn at_least_trusted(tier: &str) -> bool {
+    matches!(tier, "verified" | "trusted")
+}
+
 /// What an upload may be. Spec 028 adds audio to what its pipeline can handle.
 pub const ALLOWED_MEDIA_TYPES: [&str; 3] = ["application/pdf", "text/plain", "text/markdown"];
 

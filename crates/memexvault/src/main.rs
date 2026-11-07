@@ -12,7 +12,7 @@ use memexvault::edges::{AdkAgentRunner, FsBlobStore, PgVectorIndex, SystemClock,
 use memexvault::pg_edge::PostgresStore;
 use memexvault::registry_edge::PostgresRegistry;
 use memexvault::rendition_job::{ChildRasterizer, EXIT_UNPARSEABLE, RenditionHandler, WorkerCommand};
-use memexvault::workers::{self, EmbedHandler, ExtractHandler, Pool};
+use memexvault::workers::{self, EmbedHandler, ExtractHandler, Pool, ReviewHandler};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -193,8 +193,8 @@ fn main() -> ExitCode {
     if command == "models" {
         return models_command(&args[1..], &settings);
     }
-    if !matches!(command, "migrate" | "bootstrap" | "serve") {
-        return fail("usage: memexvault migrate | bootstrap <name> | serve | models fetch | models check | --version");
+    if !matches!(command, "migrate" | "bootstrap" | "serve" | "mcp") {
+        return fail("usage: memexvault migrate | bootstrap <name> | serve | mcp | models fetch | models check | --version");
     }
     let (pg, server) = match build(&settings) {
         Ok(b) => b,
@@ -226,8 +226,21 @@ fn main() -> ExitCode {
             if let Err(e) = pg.check_server() {
                 return fail(e);
             }
+            // The MCP stdio server is this whole server, for one local client. A vault has one writer, so it can't run beside `serve` on the same vaults.
+            let stdio_token = if command == "mcp" {
+                let Some(token) = settings.mcp_token.clone() else {
+                    return fail("memexvault mcp needs MEMEX_MCP_TOKEN");
+                };
+                if let Err(e) = server.authenticate(&token) {
+                    return fail(format!("MEMEX_MCP_TOKEN: {e}"));
+                }
+                Some(token)
+            } else {
+                None
+            };
             match server.open_vaults() {
                 Ok(n) => tracing::info!(vaults = n, "writer leases held"),
+                Err(e) if stdio_token.is_some() => return fail(format!("{e}. Is `memexvault serve` running? If so, use MCP over its HTTP route instead")),
                 Err(e) => return fail(e),
             }
             let caches = match TieredCaches::open(settings.caches, settings.data_dir.join("vaults")) {
@@ -273,6 +286,7 @@ fn main() -> ExitCode {
                 worker,
                 ocr: Some(ocr),
             };
+            server.set_auto_commit_threshold(f64::from(settings.auto_commit_threshold_permille) / 1000.0);
             let stop = Arc::new(AtomicBool::new(false));
             // One embedding worker: its CPU use is capped by the session's threads, and identical text can't be embedded twice at once.
             let mut pools = vec![
@@ -301,6 +315,24 @@ fn main() -> ExitCode {
                     workers: 1,
                     handler: Arc::new(ExtractHandler { server: server.clone(), agent }),
                 });
+                // Each queued claim is a call, so this is asked for by name. It sees claims and quotes only, and nothing it says can commit anything.
+                if let Some(model) = &settings.reviewer_model {
+                    let reviewer = memex_core::LlmSettings {
+                        model: model.clone(),
+                        ..llm.clone()
+                    };
+                    let agent = match llm_endpoint(&reviewer).and_then(memex_agent_adk::AdkAgent::new) {
+                        Ok(a) => AdkAgentRunner(a),
+                        Err(e) => return fail(e),
+                    };
+                    server.set_reviewer(Some(settings.review));
+                    tracing::info!(model = %model, "the reviewer agent is on");
+                    pools.push(Pool {
+                        kind: memex_core::REVIEW_JOB.into(),
+                        workers: 1,
+                        handler: Arc::new(ReviewHandler { server: server.clone(), agent }),
+                    });
+                }
             }
             let mut threads = workers::start(server.clone(), pools, stop.clone());
             threads.push(workers::start_projector(server.clone(), stop.clone()));
@@ -312,7 +344,24 @@ fn main() -> ExitCode {
             let shutdown = async {
                 let _ = tokio::signal::ctrl_c().await;
             };
-            let served = runtime.block_on(memex_http::serve(server, &settings.http_bind, shutdown));
+            let served = match stdio_token {
+                Some(token) => runtime.block_on(async {
+                    tokio::select! {
+                        done = memex_mcp::serve_stdio(server, token) => done.map_err(std::io::Error::other),
+                        () = shutdown => Ok(()),
+                    }
+                }),
+                None => {
+                    let mcp = memex_mcp::routes(
+                        server.clone(),
+                        memex_mcp::McpHttp {
+                            allowed_hosts: settings.mcp_allowed_hosts.clone(),
+                            max_response_bytes: memex_mcp::DEFAULT_MAX_RESPONSE_BYTES,
+                        },
+                    );
+                    runtime.block_on(memex_http::serve_with(server, mcp, &settings.http_bind, shutdown))
+                }
+            };
             stop.store(true, Ordering::Relaxed);
             for t in threads {
                 let _ = t.join();
