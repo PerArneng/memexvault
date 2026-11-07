@@ -87,6 +87,57 @@ pub struct Settings {
     pub review: crate::review::ReviewLimits,
     /// What a combination's Wilson bound has to reach to earn auto-commit, in thousandths.
     pub auto_commit_threshold_permille: u16,
+    pub transcribe: TranscribeSettings,
+}
+
+/// How recordings are transcribed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranscribeSettings {
+    /// CPU threads for whisper.
+    pub threads: usize,
+    /// A longer recording fails its job.
+    pub max_seconds: u64,
+    /// The worker is killed above this, and the job fails.
+    pub max_rss_mb: u64,
+    /// The worker is killed after this long with no progress.
+    pub stall_seconds: u64,
+    /// The API that hears a recording as well as the local model. Without it, no audio leaves this server, whatever else is set. Only `MEMEX_BACKEND_TRANSCRIBER=gemini` fills this.
+    pub api: Option<TranscribeApi>,
+}
+
+impl Default for TranscribeSettings {
+    fn default() -> Self {
+        Self {
+            threads: 4,
+            max_seconds: 6 * 3600,
+            max_rss_mb: 4096,
+            stall_seconds: 1800,
+            api: None,
+        }
+    }
+}
+
+/// The transcription API, which recordings go to when it's on.
+#[derive(Clone, PartialEq, Eq)]
+pub struct TranscribeApi {
+    pub model: String,
+    pub api_key: String,
+    /// In place of the provider's own address.
+    pub base_url: Option<String>,
+    /// Spending for one recording stops here, counting input and output.
+    pub max_tokens: u64,
+}
+
+/// The key is a secret, so Debug never shows it.
+impl fmt::Debug for TranscribeApi {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TranscribeApi")
+            .field("model", &self.model)
+            .field("api_key", &"<redacted>")
+            .field("base_url", &self.base_url)
+            .field("max_tokens", &self.max_tokens)
+            .finish()
+    }
 }
 
 /// Which model answers extraction's calls.
@@ -133,6 +184,7 @@ impl Default for Settings {
             reviewer_model: None,
             review: crate::review::ReviewLimits::default(),
             auto_commit_threshold_permille: (crate::review::DEFAULT_THRESHOLD * 1000.0) as u16,
+            transcribe: TranscribeSettings::default(),
         }
     }
 }
@@ -158,6 +210,7 @@ impl fmt::Debug for Settings {
             .field("reviewer_model", &self.reviewer_model)
             .field("review", &self.review)
             .field("auto_commit_threshold_permille", &self.auto_commit_threshold_permille)
+            .field("transcribe", &self.transcribe)
             .finish()
     }
 }
@@ -358,7 +411,28 @@ impl Settings {
         pick("MEMEX_BACKEND_EMBEDDER", "Embedder", &["local"], |b| &mut b.embedder)?;
         pick("MEMEX_BACKEND_RERANKER", "Reranker", &["local"], |b| &mut b.reranker)?;
         pick("MEMEX_BACKEND_OCR", "Ocr", &["local"], |b| &mut b.ocr)?;
-        pick("MEMEX_BACKEND_TRANSCRIBER", "Transcriber", &["local"], |b| &mut b.transcriber)?;
+        pick("MEMEX_BACKEND_TRANSCRIBER", "Transcriber", &["local", "gemini"], |b| &mut b.transcriber)?;
+        let t = &mut s.transcribe;
+        t.threads = count("MEMEX_TRANSCRIBE_THREADS", text("MEMEX_TRANSCRIBE_THREADS")?, t.threads)?;
+        t.max_seconds = count("MEMEX_TRANSCRIBE_MAX_SECONDS", text("MEMEX_TRANSCRIBE_MAX_SECONDS")?, t.max_seconds as usize)? as u64;
+        t.max_rss_mb = count("MEMEX_TRANSCRIBE_MAX_RSS_MB", text("MEMEX_TRANSCRIBE_MAX_RSS_MB")?, t.max_rss_mb as usize)? as u64;
+        t.stall_seconds = count("MEMEX_TRANSCRIBE_STALL_S", text("MEMEX_TRANSCRIBE_STALL_S")?, t.stall_seconds as usize)? as u64;
+        // Naming the API is the only thing that turns it on. A key on its own does nothing.
+        if s.backends.transcriber == "gemini" {
+            let because = "with MEMEX_BACKEND_TRANSCRIBER=gemini".to_string();
+            let need = |name: &'static str, value: Option<String>| {
+                value.ok_or_else(|| SettingsError::Missing {
+                    name,
+                    because: because.clone(),
+                })
+            };
+            t.api = Some(TranscribeApi {
+                model: need("MEMEX_TRANSCRIBE_API_MODEL", text("MEMEX_TRANSCRIBE_API_MODEL")?)?,
+                api_key: need("MEMEX_TRANSCRIBE_API_KEY", text("MEMEX_TRANSCRIBE_API_KEY")?)?,
+                base_url: text("MEMEX_TRANSCRIBE_API_BASE_URL")?,
+                max_tokens: count("MEMEX_TRANSCRIBE_API_MAX_TOKENS", text("MEMEX_TRANSCRIBE_API_MAX_TOKENS")?, 1_000_000)? as u64,
+            });
+        }
         Ok(s)
     }
 }
@@ -578,5 +652,72 @@ mod tests {
         ])
         .unwrap();
         assert!(!format!("{s:?}").contains("sekret-value"));
+    }
+
+    #[test]
+    fn the_transcription_api_is_off_unless_named_whatever_else_is_set() {
+        let key_only = from(&[
+            ("MEMEX_TRANSCRIBE_API_KEY", "secret"),
+            ("MEMEX_TRANSCRIBE_API_MODEL", "m"),
+            ("MEMEX_TRANSCRIBE_API_BASE_URL", "http://127.0.0.1:1"),
+        ])
+        .unwrap();
+        assert_eq!(key_only.transcribe.api, None);
+        let local = from(&[
+            ("MEMEX_BACKEND_TRANSCRIBER", "local"),
+            ("MEMEX_TRANSCRIBE_API_KEY", "secret"),
+            ("MEMEX_TRANSCRIBE_API_MODEL", "m"),
+        ])
+        .unwrap();
+        assert_eq!(local.transcribe.api, None);
+        assert_eq!(Settings::default().transcribe.api, None);
+    }
+
+    #[test]
+    fn naming_the_transcription_api_needs_its_model_and_key() {
+        assert!(matches!(
+            from(&[("MEMEX_BACKEND_TRANSCRIBER", "gemini"), ("MEMEX_TRANSCRIBE_API_KEY", "k")]),
+            Err(SettingsError::Missing {
+                name: "MEMEX_TRANSCRIBE_API_MODEL",
+                ..
+            })
+        ));
+        assert!(matches!(
+            from(&[("MEMEX_BACKEND_TRANSCRIBER", "gemini"), ("MEMEX_TRANSCRIBE_API_MODEL", "m")]),
+            Err(SettingsError::Missing {
+                name: "MEMEX_TRANSCRIBE_API_KEY",
+                ..
+            })
+        ));
+        let on = from(&[
+            ("MEMEX_BACKEND_TRANSCRIBER", "gemini"),
+            ("MEMEX_TRANSCRIBE_API_KEY", "k3y"),
+            ("MEMEX_TRANSCRIBE_API_MODEL", "m"),
+        ])
+        .unwrap();
+        let api = on.transcribe.api.clone().unwrap();
+        assert_eq!((api.model.as_str(), api.max_tokens), ("m", 1_000_000));
+        assert!(!format!("{on:?}").contains("k3y"), "the key stays out of Debug");
+    }
+
+    #[test]
+    fn transcription_limits_can_be_set() {
+        let s = from(&[
+            ("MEMEX_TRANSCRIBE_THREADS", "2"),
+            ("MEMEX_TRANSCRIBE_MAX_SECONDS", "60"),
+            ("MEMEX_TRANSCRIBE_MAX_RSS_MB", "900"),
+            ("MEMEX_TRANSCRIBE_STALL_S", "5"),
+        ])
+        .unwrap();
+        assert_eq!(
+            (
+                s.transcribe.threads,
+                s.transcribe.max_seconds,
+                s.transcribe.max_rss_mb,
+                s.transcribe.stall_seconds
+            ),
+            (2, 60, 900, 5)
+        );
+        assert!(matches!(from(&[("MEMEX_TRANSCRIBE_THREADS", "0")]), Err(SettingsError::InvalidNumber { .. })));
     }
 }

@@ -143,6 +143,7 @@ fn segment(line: usize, text: &str) -> SegmentRow {
         heading: Some(heading_of(line)),
         page_from: Some(0),
         page_to: Some(0),
+        time: None,
     }
 }
 
@@ -217,6 +218,7 @@ fn ensure_loaded(r: &Rig, total: usize) {
             created_at_ms: 0,
             superseded_by: None,
             pages: vec![],
+            media: None,
         })));
     }
     record(&engine, &lease, setup);

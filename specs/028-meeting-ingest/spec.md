@@ -39,4 +39,11 @@ original file that can be played back.
 Live capture, calendar integration and meeting summaries as a separate feature.
 
 ## Result
-Not started.
+**Item 1's rule, set before anything was measured.**
+- **Recording:** `en_5m.wav` from spec 027's corpus. It's synthetic speech with four voices, and its truth comes from the synthesizer's word markers, not from hand labels. The other three languages' `*_5m.wav` run the same way and are reported beside it, and they aren't what the rule decides on.
+- **Claims:** the extraction job runs, with a scripted agent and no LLM, so this says nothing about a model's choice of quotes. It proposes one claim per sentence of every segment the real transcript gave, with no sentence left out, keeping sentences of at least 3 words. A person's approval commits them, and each gets its anchor as it commits, as usual.
+- **Alignment:** transcript words are aligned to truth words by a diff on lowercased alphanumerics. A quote's truth range runs from the truth start of its first aligned word to the truth end of its last aligned word.
+- **A claim passes** when its cited `t_start_ms` is at or before that truth start, its `t_end_ms` is at or after that truth end, and `t_start_ms` is within 1,000 ms of the truth start. A claim with under half of its words aligned has no truth to check against, and counts as a failure.
+- **The item passes** with at least 50 claims and at least 95% of them passing. Padding is 300 ms on each side, set from spec 027's finding that starts run 150-210 ms late, and it isn't tuned on this measurement. If it fails, the number stays failed.
+
+Not finished.

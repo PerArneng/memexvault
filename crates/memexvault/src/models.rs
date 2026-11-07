@@ -15,6 +15,22 @@ pub struct ModelFile {
     pub size: u64,
 }
 
+/// What transcription needs. The server starts without these, and a recording's job then says what to run.
+pub const ASR_MODELS: [ModelFile; 2] = [
+    ModelFile {
+        file: memex_asr::whisper::WHISPER_FILE,
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
+        sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+        size: 574041195,
+    },
+    ModelFile {
+        file: memex_asr::whisper::VAD_FILE,
+        url: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin",
+        sha256: "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987",
+        size: 885098,
+    },
+];
+
 /// What embedding needs.
 pub const EMBED_DIR: &str = "multilingual-e5-small";
 pub const EMBED_MODELS: [ModelFile; 2] = [

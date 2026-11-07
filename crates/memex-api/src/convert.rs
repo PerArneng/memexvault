@@ -60,6 +60,10 @@ pub fn lineage_dto(l: Lineage) -> LineageDto {
             .into_iter()
             .map(|e| EvidenceLineageDto {
                 rects: rects_of(e.anchor.as_ref()),
+                t_start_ms: e.anchor.as_ref().and_then(|a| a.time.as_ref()).map(|t| t.t_start_ms),
+                t_end_ms: e.anchor.as_ref().and_then(|a| a.time.as_ref()).map(|t| t.t_end_ms),
+                speaker: e.anchor.as_ref().and_then(|a| a.time.as_ref()).and_then(|t| t.speaker.clone()),
+                media_type: e.source.media_type,
                 evidence_id: e.evidence.header.id.0,
                 quote: e.evidence.quote,
                 stance: json_text(&e.evidence.stance),

@@ -12,6 +12,7 @@ pub mod extraction;
 pub mod governance;
 pub mod jobs;
 pub mod lexical;
+pub mod meeting;
 pub mod ocr;
 pub mod page;
 pub mod projector;
@@ -43,6 +44,7 @@ pub use dump::{Dump, canonical_dump, dump_store};
 pub use engine::{ApplyError, Engine, NewSource, RecordSourceError};
 pub use extraction::{EXTRACT_JOB, ExtractionLimits, ExtractionState};
 pub use lexical::{CommitPolicy, LexicalIndex, QueryError, Touched};
+pub use meeting::{TranscribeError, Transcribed, Transcriber};
 pub use projector::{LexicalProjector, ProjectError, StepOutcome};
 pub use raster::{ALLOWED_DPI, PageImage, RasterError, Rasterizer, THUMBNAIL_DPI, rect_to_pixels};
 pub use reducer::{ChangeSetRecorded, ReduceError, StateRecorded, reduce};
@@ -54,12 +56,12 @@ pub use seed::Seed;
 pub use server::{
     AutoCommitEntry, AutoCommitTable, BacklinkView, BatchDecision, ClaimEvidence, ClaimRef, ClaimRefStatus, ClaimReference, CreatedSession, CreatedToken,
     EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, EvidenceLineage, ExtractJobError, ExtractionReport, FieldInput, ImportedPage,
-    Lineage, NeighborView, NewEntity, NewPage, NewToken, OutgoingLink, PIPELINE_VERSION, PageChange, PageDiff, PageList, PageRedirect, PageRevisionView,
-    PageView, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT, Redirect, RenditionInput, ReviewDetail, ReviewEvidence, ReviewItem, SearchEdges, Server,
-    ServerEdges, ServerError, SplitRequest, TypeDecision, UnresolvedLink,
+    Lineage, MediaInfo, MeetingView, NeighborView, NewEntity, NewPage, NewToken, OutgoingLink, PIPELINE_VERSION, PageChange, PageDiff, PageList, PageRedirect,
+    PageRevisionView, PageView, ParticipantView, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT, Redirect, RenditionInput, ReviewDetail,
+    ReviewEvidence, ReviewItem, SearchEdges, Server, ServerEdges, ServerError, SplitRequest, TRANSCRIBE_JOB, TranscriptPage, TypeDecision, UnresolvedLink,
 };
 pub use session::{LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, SESSION_TTL_MS};
-pub use settings::{Backends, CacheSettings, LlmSettings, Settings, SettingsError};
+pub use settings::{Backends, CacheSettings, LlmSettings, Settings, SettingsError, TranscribeApi, TranscribeSettings};
 pub use sources::{ALLOWED_MEDIA_TYPES, UNTRUSTED, UploadLimits, UploadOutcome, UploadRequest, sniff_media_type};
 pub use store::{CommitItem, MAX_SHARED_IDS, PAGE_LIMIT, Receipt, Snapshot, Store, StoreError, WriterLease};
 pub use upcast::{CURRENT_VERSIONS, UpcastError, upcast};

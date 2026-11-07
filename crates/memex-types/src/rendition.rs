@@ -107,6 +107,9 @@ pub struct RenditionRow {
     /// How each page was read, and anything worth flagging.
     #[serde(default)]
     pub pages: Vec<PageOutcome>,
+    /// What decoding a recording found. Only a recording has this, and it says the word table is a `TimedDocument`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media: Option<MediaFacts>,
 }
 
 /// Where a quote sits: offsets into canonical text, plus rects for PDFs. Quote, prefix and suffix let a new rendition find it again.
@@ -121,4 +124,85 @@ pub struct Anchor {
     pub suffix: String,
     /// One per line, with its 0-based page.
     pub rects: Vec<(u32, Rect)>,
+    /// Where it plays in the original recording. Only a recording has this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time: Option<TimeSpan>,
+}
+
+/// A range of the original media's timeline, in integer milliseconds, with the speaker when one person spoke all of it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimeSpan {
+    pub t_start_ms: i64,
+    pub t_end_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
+}
+
+/// One spoken word, on the original media's timeline.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimedWord {
+    pub text: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
+}
+
+/// What decoding a recording found.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MediaFacts {
+    pub codec: String,
+    pub sample_rate: u32,
+    pub channels: u32,
+    pub duration_ms: i64,
+    /// Holes in the packets, kept as silence so times stay on the original timeline.
+    pub gaps: u32,
+    pub gap_ms: i64,
+    pub packets: u64,
+    pub bad_packets: u64,
+    /// Stretches where the transcriber crashed twice, and which have no words.
+    #[serde(default)]
+    pub skipped_spans: u32,
+    /// Stretches read on token times because the transcriber crashed on them once, which are less accurate.
+    #[serde(default)]
+    pub coarse_spans: u32,
+}
+
+/// What a transcription provider charged for, when one was used.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TranscribeUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub calls: u64,
+}
+
+/// A recording's word table: a rendition's words blob when it has `media`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimedDocument {
+    pub parser: String,
+    pub media: MediaFacts,
+    pub words: Vec<TimedWord>,
+    #[serde(default)]
+    pub usage: TranscribeUsage,
+}
+
+/// Someone at a meeting. `speaker` is a transcript's label for them, when someone knows it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Participant {
+    #[serde(default)]
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
+}
+
+/// What a person says about a recording, kept in its Source's metadata.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeetingMeta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date_ms: Option<i64>,
+    #[serde(default)]
+    pub participants: Vec<Participant>,
 }

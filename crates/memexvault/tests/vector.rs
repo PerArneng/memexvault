@@ -170,6 +170,7 @@ fn pg_vector_rebuild_needs_no_embedder() {
                 heading: None,
                 page_from: None,
                 page_to: None,
+                time: None,
             };
             Mutation::Put(Row::Segment(row))
         })

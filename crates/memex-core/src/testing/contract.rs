@@ -428,6 +428,7 @@ fn edges_and_sections_read_in_batches<S: Store>(store: &S, v: &VaultId) {
             heading: heading.map(String::from),
             page_from: None,
             page_to: None,
+            time: None,
         }))
     };
     let rows = vec![

@@ -436,6 +436,7 @@ mod tests {
             heading: None,
             page_from: None,
             page_to: None,
+            time: None,
         }
     }
 

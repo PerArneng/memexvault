@@ -137,3 +137,55 @@ mod tests {
         assert_ne!(x, other.next_u64());
     }
 }
+
+/// A transcriber that hears a word per second of sound over a threshold, named by the second it starts in, and nothing in silence. It counts the samples it was sent, so a test can see what reached it. It never stands in for a model's quality.
+#[derive(Debug, Default)]
+pub struct FakeTranscriber {
+    samples: AtomicU64,
+    calls: AtomicU64,
+    fail: std::sync::atomic::AtomicBool,
+}
+
+impl FakeTranscriber {
+    pub fn samples(&self) -> u64 {
+        self.samples.load(Ordering::SeqCst)
+    }
+
+    pub fn calls(&self) -> u64 {
+        self.calls.load(Ordering::SeqCst)
+    }
+
+    pub fn fail(&self, on: bool) {
+        self.fail.store(on, Ordering::SeqCst);
+    }
+}
+
+impl crate::Transcriber for FakeTranscriber {
+    fn model(&self) -> String {
+        "fake-transcriber".into()
+    }
+
+    fn transcribe(&self, pcm: &[f32], _: Option<&str>) -> Result<crate::Transcribed, crate::TranscribeError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.samples.fetch_add(pcm.len() as u64, Ordering::SeqCst);
+        if self.fail.load(Ordering::SeqCst) {
+            return Err(crate::TranscribeError::Unavailable("a scripted failure".into()));
+        }
+        let rate = crate::meeting::PCM_RATE as usize;
+        let words = pcm
+            .chunks(rate)
+            .enumerate()
+            .filter(|(_, second)| second.iter().any(|s| s.abs() > 0.01))
+            .map(|(i, _)| memex_types::TimedWord {
+                text: format!("word{i}"),
+                start_ms: i as i64 * 1000,
+                end_ms: i as i64 * 1000 + 500,
+                speaker: None,
+            })
+            .collect();
+        Ok(crate::Transcribed {
+            words,
+            usage: memex_types::TranscribeUsage::default(),
+        })
+    }
+}

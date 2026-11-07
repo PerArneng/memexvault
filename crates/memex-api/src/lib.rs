@@ -2,11 +2,13 @@
 mod convert;
 mod entities;
 mod extraction;
+mod meeting;
 mod pages;
 mod review;
 pub use convert::*;
 pub use entities::*;
 pub use extraction::*;
+pub use meeting::*;
 use memex_types::{
     AsOf, AssertionRow, ChangeSetRow, Citation, Conflict, DocKind, Event, EvidenceItem, EvidencePackage, EvidenceRow, FacetCount, Facets, Grant, JobRow,
     LexicalFilter, LexicalResults, ObjectId, Op, Principal, PrincipalKind, RenditionRow, Scope, SearchDebug, SearchMode, SearchRequest, SegmentRow,
@@ -400,6 +402,8 @@ pub struct UploadQuery {
     pub trust_tier: Option<String>,
     /// The Source this is a new version of.
     pub replaces: Option<String>,
+    /// A recording's language, such as `sv`, which helps its transcriber. Without it, the transcriber works it out.
+    pub language: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -522,11 +526,18 @@ pub struct SegmentDto {
     pub heading: Option<String>,
     pub page_from: Option<u32>,
     pub page_to: Option<u32>,
+    /// Where it plays, when it comes from a recording.
+    pub t_start_ms: Option<i64>,
+    pub t_end_ms: Option<i64>,
+    pub speaker: Option<String>,
 }
 
 impl From<SegmentRow> for SegmentDto {
     fn from(s: SegmentRow) -> Self {
         Self {
+            t_start_ms: s.time.as_ref().map(|t| t.t_start_ms),
+            t_end_ms: s.time.as_ref().map(|t| t.t_end_ms),
+            speaker: s.time.as_ref().and_then(|t| t.speaker.clone()),
             id: s.header.id.0,
             source_id: s.source_id.0,
             rendition_id: s.rendition_id.map(|i| i.0),
@@ -614,6 +625,13 @@ pub struct EvidenceLineageDto {
     pub broken: bool,
     /// Displayed coordinates in 1/100 pt, one per line.
     pub rects: Vec<RectDto>,
+    /// The source's media type. A recording's bytes play from `/sources/{sid}/stream`.
+    pub media_type: String,
+    /// Where the quote plays in the original recording, in milliseconds. Only a recording has these.
+    pub t_start_ms: Option<i64>,
+    pub t_end_ms: Option<i64>,
+    /// Who was speaking, when that's known and one person spoke all of it.
+    pub speaker: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -660,6 +678,10 @@ pub struct HighlightDto {
     pub page_height: i32,
     pub broken: bool,
     pub rects: Vec<RectDto>,
+    /// A recording's highlight is a time range and has no page or rects.
+    pub t_start_ms: Option<i64>,
+    pub t_end_ms: Option<i64>,
+    pub speaker: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -1114,12 +1136,20 @@ pub struct CitationDto {
     pub page_to: Option<u32>,
     pub rects: Vec<RectDto>,
     pub quote: Option<String>,
+    /// Where it plays in the original recording, in milliseconds. Only a recording has these.
+    pub t_start_ms: Option<i64>,
+    pub t_end_ms: Option<i64>,
+    /// Who was speaking, when that's known and one person spoke all of it.
+    pub speaker: Option<String>,
 }
 
 impl From<Citation> for CitationDto {
     fn from(c: Citation) -> Self {
         Self {
             anchor: c.status.as_str().into(),
+            t_start_ms: c.time.as_ref().map(|t| t.t_start_ms),
+            t_end_ms: c.time.as_ref().map(|t| t.t_end_ms),
+            speaker: c.time.as_ref().and_then(|t| t.speaker.clone()),
             source_id: c.source_id.map(|i| i.0),
             source_name: c.source_name,
             source_sha256: c.source_sha256,

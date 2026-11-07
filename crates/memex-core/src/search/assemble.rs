@@ -269,6 +269,7 @@ impl Loaded {
             page_to: s.page_to,
             rects: vec![],
             quote: None,
+            time: s.time.clone(),
         }
     }
 
@@ -296,6 +297,7 @@ impl Loaded {
             page_to: segment.and_then(|s| s.page_to),
             rects: anchor.map_or(vec![], |a| a.rects.clone()),
             quote: Some(e.quote.clone()),
+            time: anchor.and_then(|a| a.time.clone()),
         }
     }
 
@@ -316,6 +318,7 @@ impl Loaded {
             page_to: None,
             rects: vec![],
             quote: None,
+            time: None,
         }
     }
 

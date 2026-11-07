@@ -11,9 +11,10 @@ mod mem_store;
 mod mem_vector;
 pub mod registry_contract;
 mod scripted_agent;
+pub mod transcriber_contract;
 pub mod vector_contract;
 
-pub use fakes::{FakeRasterizer, FakeReranker, ManualClock, SeededRandom};
+pub use fakes::{FakeRasterizer, FakeReranker, FakeTranscriber, ManualClock, SeededRandom};
 pub use mem_blobs::{BlobStep, MemBlobStore};
 pub use mem_lexical::MemLexical;
 pub use mem_registry::MemRegistry;

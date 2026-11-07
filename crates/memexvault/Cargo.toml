@@ -7,11 +7,13 @@ publish = false
 
 [dependencies]
 memex-agent-adk = { path = "../memex-agent-adk" }
+memex-asr = { path = "../memex-asr" }
 memex-blob-fs = { path = "../memex-blob-fs" }
 memex-cache = { path = "../memex-cache" }
 getrandom.workspace = true
 sha2.workspace = true
 ureq = "3"
+whisper-rs = "=0.16.0"
 memex-core.workspace = true
 memex-http.workspace = true
 memex-mcp = { path = "../memex-mcp" }

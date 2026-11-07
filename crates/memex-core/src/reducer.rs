@@ -219,6 +219,7 @@ pub fn reduce<S: Snapshot>(snap: &S, e: &Event) -> Result<Vec<Mutation>, ReduceE
                 heading: None,
                 page_from: None,
                 page_to: None,
+                time: None,
             }))])
         }
         "state.recorded" => {

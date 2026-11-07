@@ -36,6 +36,7 @@ fn segment(id: &str, rendition: Option<&str>, language: Option<&str>, text: &str
         heading: None,
         page_from: None,
         page_to: None,
+        time: None,
     }
 }
 
@@ -76,6 +77,7 @@ fn rendition(id: &str, version: u32, superseded_by: Option<&str>) -> RenditionRo
         created_at_ms: 0,
         superseded_by: superseded_by.map(oid),
         pages: vec![],
+        media: None,
     }
 }
 

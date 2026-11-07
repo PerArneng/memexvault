@@ -1,7 +1,9 @@
 mod entities;
 mod extraction;
+mod meeting;
 mod pages;
 mod review;
+pub use self::meeting::{MediaInfo, MeetingView, ParticipantView, TranscriptPage};
 pub use entities::{
     ClaimEvidence, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, FieldInput, NewEntity, Redirect, SplitRequest, TypeDecision,
 };
@@ -14,6 +16,7 @@ pub use review::{AutoCommitEntry, AutoCommitTable, BatchDecision, ReviewDetail, 
 
 use crate::auth::{Caller, Decision, Operation, authorize};
 use crate::governance::{self, Author, NotReversible, PlanError};
+use crate::meeting as recordings;
 use crate::session::{LoginLimiter, SESSION_TTL_MS};
 use crate::vector::{EMBED_ATTEMPTS, EmbedDocRef, EmbedInput, EmbedRequest, check_query_text, embed_missing, embeddable};
 use crate::{
@@ -223,7 +226,12 @@ impl fmt::Debug for CreatedToken {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenditionInput {
     Pdf(memex_types::ParsedDocument, Vec<memex_types::PageOutcome>),
-    Plain { text: String, parser: String },
+    Plain {
+        text: String,
+        parser: String,
+    },
+    /// A transcribed recording.
+    Timed(memex_types::TimedDocument),
 }
 
 /// One piece of evidence, followed all the way to its source and region.
@@ -1558,7 +1566,7 @@ impl<E: ServerEdges> Server<E> {
             return Err(refuse(ServerError::Invalid("the upload is empty".into())));
         }
         let Some(media_type) = sources::sniff_media_type(&reader.prefix, &req.name) else {
-            return Err(refuse(ServerError::UnsupportedMedia("not a PDF or text file".into())));
+            return Err(refuse(ServerError::UnsupportedMedia("not a PDF, text file or recording".into())));
         };
         let vault_lock = self.vault_lock(vault);
         let _one_at_a_time = vault_lock.lock().expect("lock");
@@ -1572,6 +1580,7 @@ impl<E: ServerEdges> Server<E> {
                 existing: true,
             });
         }
+        let mut req = req;
         let (logical_id, version_no) = match &req.replaces {
             None => (None, 1),
             Some(old) => match snap.get(&RowKey {
@@ -1580,6 +1589,10 @@ impl<E: ServerEdges> Server<E> {
             })? {
                 Some(Row::Source(s)) => {
                     let versions = snap.source_versions(&s.logical_id)?;
+                    // A new version of a recording is the same meeting.
+                    if recordings::is_media(media_type) && s.metadata.get("meeting").is_some() {
+                        req.metadata = recordings::with_meeting(&req.metadata, &recordings::meeting_of(&s.metadata));
+                    }
                     (Some(s.logical_id), versions.last().map_or(1, |v| v.version_no + 1))
                 }
                 _ => return Err(ServerError::NotFound),
@@ -1610,7 +1623,7 @@ impl<E: ServerEdges> Server<E> {
         let job = jobs::new_job(
             ObjectId(self.new_id()),
             &actor,
-            RENDITION_JOB,
+            job_kind(media_type),
             json!({"source_id": id, "sha256": sha, "media_type": media_type}),
             rendition_key(&sha),
             5,
@@ -1781,12 +1794,21 @@ impl<E: ServerEdges> Server<E> {
         else {
             return Err(ServerError::NotFound);
         };
-        let (canon, words, parser, doc, pages) = match parsed {
-            RenditionInput::Pdf(doc, pages) => (rendition::canonical(&doc.words), doc.words.clone(), doc.parser.clone(), Some(doc), pages),
-            RenditionInput::Plain { text, parser } => (rendition::canonical_plain(&text), vec![], parser, None, vec![]),
+        let (canon, words, parser, doc, pages, timed) = match parsed {
+            RenditionInput::Pdf(doc, pages) => (rendition::canonical(&doc.words), doc.words.clone(), doc.parser.clone(), Some(doc), pages, None),
+            RenditionInput::Plain { text, parser } => (rendition::canonical_plain(&text), vec![], parser, None, vec![], None),
+            RenditionInput::Timed(mut d) => {
+                d.words = recordings::clean_words(d.words, d.media.duration_ms);
+                let index = recordings::TimedIndex::new(d);
+                (index.canon.clone(), vec![], index.doc.parser.clone(), None, vec![], Some(index))
+            }
         };
         let page_count = doc.as_ref().map_or(0, |d| d.pages.len() as u32);
-        let table = doc.as_ref().map(rendition::word_table_bytes).unwrap_or_else(|| b"{}".to_vec());
+        let table = match (&doc, &timed) {
+            (Some(d), _) => rendition::word_table_bytes(d),
+            (_, Some(t)) => serde_json::to_vec(&t.doc).map_err(|e| ServerError::Invalid(e.to_string()))?,
+            _ => b"{}".to_vec(),
+        };
         let text_blob = self.blobs.put(vault, &mut canon.text.as_bytes())?.hash.to_string();
         let words_blob = self.blobs.put(vault, &mut table.as_slice())?.hash.to_string();
         let now = self.now();
@@ -1798,10 +1820,16 @@ impl<E: ServerEdges> Server<E> {
             acl_id: None,
         };
         let id = ObjectId(self.new_id());
-        let spans = rendition::segments(&canon, &words);
+        let spans: Vec<recordings::TimedSegment> = match &timed {
+            Some(t) => recordings::timed_segments(&canon, &t.doc.words, t.doc.media.duration_ms),
+            None => rendition::segments(&canon, &words)
+                .into_iter()
+                .map(|span| recordings::TimedSegment { span, time: None })
+                .collect(),
+        };
         let mut out = vec![];
         let mut rows: Vec<SegmentRow> = vec![];
-        for span in &spans {
+        for recordings::TimedSegment { span, time } in &spans {
             let text = canon.text[span.start..span.end].to_string();
             rows.push(SegmentRow {
                 header: header(ObjectId(self.new_id()), 1),
@@ -1814,6 +1842,7 @@ impl<E: ServerEdges> Server<E> {
                 heading: span.heading.clone(),
                 page_from: span.page_from,
                 page_to: span.page_to,
+                time: time.clone(),
             });
         }
         // Supersede the rendition before this one, and move its evidence over by quote. What can't be found is flagged, never dropped.
@@ -1835,7 +1864,8 @@ impl<E: ServerEdges> Server<E> {
                     .anchor
                     .as_ref()
                     .map_or((String::new(), String::new()), |a| (a.prefix.clone(), a.suffix.clone()));
-                match rendition::locate(&canon, &words, &source.sha256, &id, &evidence.quote, &prefix, &suffix) {
+                match rendition::locate(&canon, &words, &source.sha256, &id, &evidence.quote, &prefix, &suffix).and_then(|a| Self::with_time(a, timed.as_ref()))
+                {
                     Some(anchor) => {
                         if let Some(seg) = rows.iter().find(|r| r.start <= anchor.start && anchor.start < r.end) {
                             evidence.segment_id = seg.header.id.clone();
@@ -1867,6 +1897,7 @@ impl<E: ServerEdges> Server<E> {
             created_at_ms: now,
             superseded_by: None,
             pages,
+            media: timed.map(|t| t.doc.media),
         })));
         Ok(out)
     }
@@ -2020,7 +2051,7 @@ impl<E: ServerEdges> Server<E> {
         let job = jobs::new_job(
             id,
             &caller.principal.id,
-            RENDITION_JOB,
+            job_kind(&source.media_type),
             json!({"source_id": source_id, "sha256": source.sha256, "media_type": source.media_type}),
             dedupe,
             5,
@@ -2099,7 +2130,9 @@ impl<E: ServerEdges> Server<E> {
                 .anchor
                 .as_ref()
                 .map_or((String::new(), String::new()), |a| (a.prefix.clone(), a.suffix.clone()));
-            let anchor = rendition::locate(&canon, &words, &source.sha256, &r.header.id, &e.quote, &prefix, &suffix);
+            let timed = self.timed_of(vault, &r)?;
+            let anchor =
+                rendition::locate(&canon, &words, &source.sha256, &r.header.id, &e.quote, &prefix, &suffix).and_then(|a| Self::with_time(a, timed.as_ref()));
             let broken = anchor.is_none() || e.anchor_broken;
             evidence.push(EvidenceLineage {
                 superseded: r.superseded_by.is_some(),
@@ -2285,6 +2318,13 @@ impl<E: ServerEdges> Server<E> {
 
 /// The job kind that turns a Source into a rendition. Spec 015 implements it.
 pub const RENDITION_JOB: &str = "rendition";
+/// The job kind that transcribes a recording into a rendition. It has its own pool, as one recording can take far longer than a document and holds a large model.
+pub const TRANSCRIBE_JOB: &str = "transcription";
+
+fn job_kind(media_type: &str) -> &'static str {
+    if recordings::is_media(media_type) { TRANSCRIBE_JOB } else { RENDITION_JOB }
+}
+
 /// Part of the dedupe key, so a new pipeline can process the same bytes again.
 pub const PIPELINE_VERSION: u32 = 1;
 
