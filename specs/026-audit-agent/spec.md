@@ -44,7 +44,7 @@ checks" requirement.
 Auto-fixing findings, and agent reputation.
 
 ## Result
-Built, with item 2 not met yet: its deterministic group measures 80 of 80, and its target depends on a live LLM run that's owed. Items 1, 3, 4, 5, 6, 7 and 8 pass. Every LLM answer here came from a scripted agent, and no provider was called.
+Built and landed with item 2 not met yet, by the user's decision: its deterministic group measures 80 of 80, and its target depends on a live LLM run that's owed, now in spec 081. Items 1, 3, 4, 5, 6, 7 and 8 pass. Every LLM answer here came from a scripted agent, and no provider was called.
 
 **What was built.**
 - `memex-core/src/audit.rs` is the pure part: sampling, the schedule, budgets, the checks and the recall report. `server/audit.rs` is the job, the scheduler step and planting.
@@ -110,3 +110,26 @@ Built, with item 2 not met yet: its deterministic group measures 80 of 80, and i
 - Sampling holds every standing claim in memory, about 200 bytes each. A candidate query in SQL would cut both that and the scan if spec 033 shows a need.
 - A broken page link shows on the run with no review item, since `RemoveEdge` wouldn't fix the page's text.
 - The rationale and check details hold document text, and spec 047 must show them as plain text.
+
+**Item 6's rerun, by the coordinator, on this branch merged with main, before landing.** The same rule and command, on a fresh database, with the load average at 13 to 47. Passed: median ratio 1.25 against 1.5. The median is the upper of the middle two, as the harness takes it.
+
+| Pair | Idle p95 ms | Audits p95 ms | Ratio |
+|---|---|---|---|
+| 0 | 48.8 | 72.0 | 1.47 |
+| 1 | 57.1 | 71.5 | 1.25 |
+| 2 | 50.6 | 66.0 | 1.31 |
+| 3 | 59.7 | 68.4 | 1.15 |
+| 4 | 62.9 | 61.7 | 0.98 |
+| 5 | 57.4 | 60.3 | 1.05 |
+
+The earlier 14.09 didn't come back, which fits the overloaded machine as its cause, but its cause still wasn't investigated. One audit took 5.5 s, against 45 s before. Every sampled claim was still suspect because of the harness's fake source hashes, so these audits write more than real ones would.
+
+**Landing checks,** by the coordinator on the same merge:
+- `cargo build --workspace`, `cargo test --workspace` (768 passed, 0 failed, 79 ignored), clippy, `cargo fmt --check` and `cargo deny check licenses` all pass.
+- The Postgres command passes 33 of 33 on a fresh database.
+- `pg_bad_cases` passes on a throwaway container, and so do the 8 TLS tests on their own server.
+- `pg_kill_postgres_100_times`, on a throwaway container: 100 cycles, highest acknowledged 6714, lost 0, partial 0, gaps 0, reopen failures 0, recovery p95 0.4 s. It works on the store alone, and doesn't run an audit.
+- A server built from this code gives the committed API types with no change. `pnpm api:check`, `pnpm typecheck` and `pnpm test` pass.
+- Not run: `pg_child`, `pg_job_child` and `pg_full_disk`.
+
+**The user's decisions at landing:** land with item 2 unmet, and keep a single failure revoking auto-commit, even at 10,000 correct and 1 wrong, at least until the live run shows how often a real model is wrong.
