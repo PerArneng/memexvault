@@ -1002,6 +1002,11 @@ test("a source not read yet says so, and a plain text source shows its text", as
   await renditionOf(request, text.id);
   await page.goto(docsPath(`/${text.id}`));
   await expect(page.getByText(`Plain words ${run}.`)).toBeVisible();
+  // A video gets a video element, on the same stream.
+  const video = await upload(request, `tone-${run}.webm`, readFileSync(join(repo, "crates/memex-asr/tests/fixtures/tone.webm")));
+  await page.goto(docsPath(`/${video.id}`));
+  await expect.poll(() => page.locator("video").evaluate((el: HTMLVideoElement) => el.duration), { timeout: 60_000 }).toBeGreaterThan(1);
+  await expect(page.locator("[data-media-problem]")).toHaveCount(0);
   // A PDF whose rendition isn't there yet is answered at the network, as it would otherwise race the real job.
   const pending = await upload(request, `pending-${run}.pdf`, makePdf(1, () => `Pending ${run}`));
   await page.route(`**/sources/${pending.id}/pages`, (route) => route.fulfill({ status: 404, json: { error: { code: "not_found", message: "not found", request_id: "req-pending" } } }));
