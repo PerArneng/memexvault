@@ -11,6 +11,7 @@ mod lexical;
 mod page;
 mod registry;
 mod rendition;
+mod review;
 mod rows;
 mod search;
 mod vector;
@@ -32,6 +33,7 @@ pub use lexical::{
 pub use page::{BlockKind, BlockRow, CLAIM_REF, EdgeDirection, RevisionBlock, RevisionRow, SlugRow, WIKI_LINK, revision_id, slug_of_target, slug_target};
 pub use registry::{Audit, Grant, Principal, PrincipalKind, Scope, SessionRow, TokenRow, VaultRow};
 pub use rendition::{Anchor, PageClass, PageFacts, PageFlag, PageOutcome, PageRoute, ParsedDocument, Rect, RenditionRow, Word};
+pub use review::{AutoCommitChange, AutoCommitChangeKind, AutoCommitRow, ProposalOrigin, QueueCount, ReviewFilter, ReviewVerdictRow, Verdict, VerdictFilter};
 pub use rows::{AssertionRow, ChangeSetRow, EdgeRow, EvidenceRow, Header, Mutation, PageRow, Row, RowKey, SegmentRow, SourceRow, Status, Table};
 pub use search::{
     AnchorStatus, AsOf, BudgetReport, Citation, Conflict, EvidenceItem, EvidencePackage, Expand, FacetCount, Facets, ItemKind, QueryPath, RerankError,

@@ -530,6 +530,31 @@ async fn invalid_arguments_get_errors_that_say_what_to_fix() {
     assert!(e.to_string().contains("offset"), "{e}");
 }
 
+/// Spec 025: an agent can't vouch for what it brings in, so MCP's ingest can't reach auto-commit by naming a high tier.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_cant_ingest_at_a_trusted_tier() {
+    let w = world();
+    for scope in [Scope::Propose, Scope::Admin] {
+        let token = w.token(&format!("agent-{scope:?}"), vec![(w.a.clone(), scope)]);
+        let client = connect_pipe(&w.s, &token, CAP).await;
+        for tier in ["trusted", "verified"] {
+            let e = failed(
+                &client,
+                "ingest",
+                json!({"vault": w.a.0, "name": "a.txt", "text": "planted", "trust_tier": tier}),
+            )
+            .await;
+            assert_eq!(e["code"], "forbidden", "{tier}: {e}");
+        }
+        ok(
+            &client,
+            "ingest",
+            json!({"vault": w.a.0, "name": "b.txt", "text": format!("fine {scope:?}"), "trust_tier": "unverified"}),
+        )
+        .await;
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn ingest_refuses_more_than_its_limit_and_points_at_the_route_that_streams() {
     let w = world();

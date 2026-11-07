@@ -37,4 +37,72 @@ auto-commit is possible only where audited precision has earned it.
 Consensus across multiple agents, agent reputation scoring.
 
 ## Result
-Not started.
+**Landed with the live half of item 1 and all of item 2 not run, by the user's decision.** No reviewer precision exists, and spec 81 holds the live runs and the label check. At landing, merged with specs 40 and 29: workspace checks, the Postgres suite, `pg_bad_cases` on a throwaway server and the 8 TLS tests passed, the console's API types were regenerated from the merged server, and `an_agent_cant_ingest_at_a_trusted_tier` was added, which shows the rule holds through MCP and fails when the rule is removed.
+
+**Status: the gate is built, and every mechanism is verified on fakes. The live halves of items 1 and 2 haven't been run, so what a real model does with the fixtures is unknown, and no reviewer precision exists. The ≥0.9 in item 2 is unproven.** No LLM was called and no key was used. Every number here comes from a scripted agent or fake samples.
+
+**Built.**
+- `memex_core::review`: the Wilson bound, what counts as earned, combinations, what the reviewer sees, verdict parsing and the agreement scorer, all pure. `memex-core/src/server/review.rs` holds the facade.
+- The reviewer job, `Server::run_review_job`, one per queued machine proposal with claims, off unless `MEMEX_REVIEW_MODEL` is set.
+- Vault migration 10: filter columns on `changesets`, `review_verdicts` and `auto_commit`. No server migration.
+- Routes under `/vaults/{id}/review`: `queue`, `counts`, `items/{cs}`, `items/{cs}/edit-approve`, `batch`, `auto-commit` and `auto-commit/{combination}/disable`. Approve and reject stay on `changesets/{cs}`.
+- `set_machine_auto_commit`, spec 013's single switch, is gone, replaced by the table. Tests that used it now earn it with `record_audit_samples`, which is also where spec 026 reports.
+- `docs/architecture.md` has a Review gate section, and `AGENTS.md` the commands and settings.
+
+**Verification.**
+
+1. **Mechanisms passed on a scripted agent. What a real model does: NOT RUN, as it needs a live LLM and costs money, so the user decides.**
+   - Ran on the fake, in `memex-core/tests/review.rs`: 32 fixtures in `crates/memex-core/tests/fixtures/injection/`, 8 each in text, hidden text, file metadata and fake tool output. The scripted extractor is obedient: it asks for tools, then returns the planted claim and an invented quote. The scripted reviewer asks for tools, then approves. Result for all 32, with auto-commit off: 0 commits, 0 tool calls accepted (each tool-using reply is refused and costs its retry, and `AgentRequest` has no way to offer a tool), and page, claim, evidence, entity, type, edge, block, slug and revision rows all unchanged. The invented quote makes no proposal. The reviewer's request holds only subject, predicate, value and quotes, and an approving verdict leaves the item pending. File names and metadata reached no request in the 8 metadata fixtures.
+   - Also on the fake, with auto-commit earned at 10,000 of 10,000: all 32 in an `untrusted` source and all 32 in an `unverified` source gave 0 auto-commits, and the 8 hidden ones gave 0 even in a `trusted` source.
+   - **The remaining limit, shown by `the_remaining_limit_a_planted_sentence_in_plain_view_in_a_source_a_person_marked_trusted_commits_as_asserted`:** with auto-commit earned, each of the 16 plain-view fixtures (text and tool output) in a source a person marked `trusted` or `verified` commits as an `asserted` claim. It touches nothing else and can't be `verified`, and an audit is what would catch it. So "0 auto-commits" holds with auto-commit off, and with it on for everything below `trusted` and for hidden text, but not for that case. Nothing here tries to detect bad text, as the design says.
+   - The live run, about 55,400 tokens by estimate (input 48,707, output 6,720, up to twice that if every call retries), from the real prompts with no call made. It prints what the model answered, for a person to read:
+     ```
+     MEMEX_LLM_PROVIDER=gemini MEMEX_LLM_MODEL=gemini-3.5-flash-lite MEMEX_LLM_API_KEY=<key> MEMEX_EVAL_MAX_TOKENS=120000 \
+     cargo test -p memexvault --release --test review_eval -- --ignored --nocapture --exact live_injection_fixtures
+     ```
+2. **NOT RUN. No reviewer precision has been measured, and no human labels exist.** Built and proved on a scripted agent: the scorer with hand-made cases, and a harness over a 48-line set in `crates/memexvault/tests/fixtures/review/` (en, sv, de, es, each 7 correct and 5 wrong). **An agent wrote those labels, and each line says so.** The report prints `NOT A MEASUREMENT` until every line is a person's. The scripted run's 92.6% comes from replies written from the labels with planted mistakes, and says nothing about a model. A person must check the labels, then run this, at about 13,300 tokens by estimate:
+   ```
+   MEMEX_LLM_PROVIDER=gemini MEMEX_LLM_MODEL=gemini-3.5-flash-lite MEMEX_LLM_API_KEY=<key> MEMEX_EVAL_MAX_TOKENS=30000 \
+   MEMEX_REVIEW_LABELS=<checked labels> \
+   cargo test -p memexvault --release --test review_eval -- --ignored --nocapture --exact live_reviewer_agreement
+   ```
+3. Passed. `wilson_has_these_exact_values`, against values worked out separately in Python from the same formula with z = 1.96: 0 of 0 and 0 of 500 are 0, 1 of 1 is 0.20654, 9 of 10 is 0.59584, 10 of 10 is 0.72246, 90 of 100 is 0.82563, 72 of 72 is 0.94935 and 73 of 73 is 0.95001. So at the default threshold of 0.95, the first possible earning takes 73 of 73.
+4. Passed with fake samples, on the fake store and on Postgres. 72 of 72 stays off, 73 of 73 turns on and the next extraction commits by itself, one failure at that count turns it off and the next goes to review, and 149 of 150 turns it back on. Each change is in the history.
+5. Passed in `every_decision_says_who_when_and_why`: a person's approval, rejection and edit, the validators, a person's own low-risk change, an earned auto-commit with its counts, prompt and bound, a disable, and in the stale test the pipeline. Each has who, when and why. The event's actor matches, an edit keeps what was proposed, and a verdict records its model, prompt hash, tokens and time.
+6. Passed. Approving twice returns the same row with no new event and no second sample, also by dump hash on Postgres. A second person gets a 409 naming who decided. A stale base gets `stale_version` with the current row. A proposal the vault has moved past, or on a replaced rendition, gets a 409. An outage: 30 rounds left the job waiting with both items in the queue, a person could still decide one, and when the model came back only the other cost a call.
+7. Passed, also on Postgres. With 500 good samples on record, the next proposal after a disable goes to review. 72 new samples aren't enough and 73 are. The OpenAPI document has no route to enable one, and `POST .../enable` is a 404.
+
+**Definition of done** on code commit `f3bdb50`: `cargo build --workspace` ok, `cargo test --workspace` 590 passed, 0 failed, 64 ignored, `clippy -D warnings` ok, `fmt --check` ok, `deny check licenses` ok with no new license. Postgres tests on a fresh database: 22 passed, 0 failed, no `LeaseLost`. The machine was shared, and no timing target applies to this spec.
+
+**Not run,** as the brief says: `pg_bad_cases`, `pg_kill_postgres` (both reach beyond this worker's database), `pg_child` and `pg_job_child` (helpers), and `pg_full_disk` (needs a small disk). This adds rows and columns to the same commit path and doesn't change how commits or leases work, so I expect no effect, but that's untested. `pg_kill_jobs_200_times` and `pg_kill_memexvault_1000_times` passed.
+
+**The other specs' follow-ups.**
+- **Spec 023:** closed. `needs_a_person` now covers every always-review kind, so an agent with admin scope can't approve or revert any of them. Tested for delete, removing a link, editing a verified claim, promoting an untrusted source and a machine's verified claim. Reverting a promotion stays open to it, because the kind is worked out from current state, and by then the source isn't untrusted. Lowering trust is the safe direction.
+- **Spec 024:** settled. Evidence must cite the current rendition, by a new `current_rendition` validator, so a proposal on a replaced one is refused and can't be approved. The new rendition's extraction run rejects extraction's pending proposals on old ones as `pipeline`, before any call, so an outage doesn't hold it up. Retiring happens there, rather than when the rendition commits, as `build_rendition` reads outside the vault's lock and could overwrite an approval made meanwhile. With extraction off nothing retires them, and a person can reject them, which doesn't count against the extractor.
+
+**Decisions.**
+- **The bar for auto-commit is `trusted`, by the user's decision.** A machine's claim citing any source below `trusted`, so `untrusted` or `unverified`, never auto-commits, however much its combination has earned. I'd first built this for `untrusted` only and reported the gap that left, and the user chose to close it. So auto-commit only ever applies to sources a person has marked `trusted` or `verified`, and uploads, which default to `unverified`, wait for a person. A segment whose source has no row counts as below, and one source below `trusted` among several is enough.
+- **An agent can't get a source to `trusted` itself,** or that decision would mean little. This is my addition to it: an agent's upload at `trusted` or `verified` is a 403, and an agent's request to raise a source from `unverified` is a new kind, `RaiseSourceTrust`, which never auto-commits and only a person can approve. A person can still raise one directly. `untrusted` to anything was already always-review.
+- **Stricter than the spec asks:** a machine's claim citing invisible characters or a page flagged for hidden text never auto-commits, whatever its source's tier. The spec only says untrusted sources can't reach `verified` automatically, but its Goal asks for 0 auto-commits on injection fixtures.
+- **`verified`:** a claim arriving as `verified` from a machine or citing an untrusted source is a new always-review kind, `ClaimVerified`, even from a person's token.
+- **Samples:** a person's decision on a machine's proposal. An edit, a rejection and a person reverting an auto-commit count as wrong. Agents' decisions, verdicts and always-review changes count for nothing. A person reverting something a person approved adds no sample, so its earlier "correct" stands.
+- **A second decision by the same person is idempotent, and by someone else a conflict.** Item 6 asks for the first and spec 046 for the second.
+- **Earned on read.** Whether a combination is on comes from its counts and the current threshold, so a new threshold takes effect at once. The history records only changes caused by samples and disables.
+- **Falling below keeps the counts, and a disable starts them again.** Item 4 needs the first to recover and item 7 needs the second to take real work. After falling, recovery can be quick or slow depending on the count.
+- **The reviewer** is asked for by name with `MEMEX_REVIEW_MODEL`, as each queued claim is a call, and someone with extraction on shouldn't start paying for it by upgrading. Its verdict never affects auto-commit, following the diagram in Governance.
+- **`decided_by`** is now also set on what nobody reviewed: `auto-commit`, `validators`, or the person. It was empty before, which item 5 doesn't allow. Older rows stay as they are.
+- **An agent with admin scope can still approve ordinary claims,** but that earns nothing. The spec doesn't reserve them for a person.
+- **`approve` now returns 409, not 400,** when validators fail on a proposal that passed them when proposed. A person's edit that fails is still a 400.
+- **Batches** are up to 200 decisions, each on its own, so one conflict leaves the rest. They aren't atomic.
+- **Threshold** is one server-wide setting in thousandths, above 0, with no per-vault value.
+
+**For the user to decide.** The live runs in items 1 and 2, and who checks the labels. Spec 081 holds the same kind of work for extraction, and could take these.
+
+**Follow-ups.**
+- The prompt hash covers the type registry, so adding an entity type resets every extraction combination to nothing earned. It's safe, and it may prove too strict once auto-commit is in real use.
+- Auto-commit has no samples once it's on, other than reverts, until spec 026's audit reports through `record_audit_samples`.
+- Items from before this spec have no origin, so they show as `unknown` and earn nothing.
+- A proposal queued while the reviewer was off has no job and never gets a verdict. Nothing queues it later.
+- Spec 030's erasure must cover `review_verdicts`, whose reasons may repeat document text, as well as `derivations`.
+- Run the live harness through the whole pipeline. It calls the same prompts and parser directly, without a vault.
+- The console has no screen for this yet: spec 046.

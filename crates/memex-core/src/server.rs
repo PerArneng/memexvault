@@ -1,6 +1,7 @@
 mod entities;
 mod extraction;
 mod pages;
+mod review;
 pub use entities::{
     ClaimEvidence, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, FieldInput, NewEntity, Redirect, SplitRequest, TypeDecision,
 };
@@ -9,6 +10,7 @@ pub use pages::{
     BacklinkView, ClaimRefStatus, ClaimReference, ImportedPage, NeighborView, NewPage, OutgoingLink, PageChange, PageDiff, PageRedirect, PageRevisionView,
     PageView, UnresolvedLink,
 };
+pub use review::{AutoCommitEntry, AutoCommitTable, BatchDecision, ReviewDetail, ReviewEvidence, ReviewItem};
 
 use crate::auth::{Caller, Decision, Operation, authorize};
 use crate::governance::{self, Author, NotReversible, PlanError};
@@ -31,7 +33,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fmt::{self, Write as _};
 use std::io::Read;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// The most items a list returns at once.
@@ -277,6 +279,14 @@ fn mark_machine(op: &mut memex_types::Op, is_machine: bool) {
     }
 }
 
+/// Who a proposal is attributed to, and which combination it counts under.
+pub(crate) struct ProposedBy<'a> {
+    actor: &'a str,
+    machine: bool,
+    extractor: &'a str,
+    prompt_version: &'a str,
+}
+
 /// The outcome of proposing, including a dry run.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProposalOutcome {
@@ -309,7 +319,10 @@ pub struct Server<E: ServerEdges> {
     leases: Mutex<HashMap<VaultId, WriterLease>>,
     /// Decisions read state and then commit, so they run one at a time per vault. The writer lease stops other processes.
     write_locks: Mutex<HashMap<VaultId, Arc<Mutex<()>>>>,
-    machine_auto_commit: AtomicBool,
+    /// What a combination's Wilson bound has to reach. Set once at startup, from settings.
+    auto_commit_threshold: Mutex<f64>,
+    /// None until the composition root has a reviewer model.
+    reviewer: Mutex<Option<crate::review::ReviewLimits>>,
     id_counter: AtomicU64,
     /// None until the composition root has an LLM to send documents to.
     extraction: Mutex<Option<crate::extraction::ExtractionLimits>>,
@@ -355,7 +368,8 @@ impl<E: ServerEdges> Server<E> {
             vector_projector: Mutex::new(VectorProjector::default()),
             leases: Mutex::new(HashMap::new()),
             write_locks: Mutex::new(HashMap::new()),
-            machine_auto_commit: AtomicBool::new(false),
+            auto_commit_threshold: Mutex::new(crate::review::DEFAULT_THRESHOLD),
+            reviewer: Mutex::new(None),
             id_counter: AtomicU64::new(0),
             extraction: Mutex::new(None),
         }
@@ -903,11 +917,6 @@ impl<E: ServerEdges> Server<E> {
         Ok(self.engine.store().snapshot(vault)?.events(after)?)
     }
 
-    /// Lets machine proposals auto-commit. Spec 025 earns this per extractor, and until then it stays off.
-    pub fn set_machine_auto_commit(&self, on: bool) {
-        self.machine_auto_commit.store(on, Ordering::SeqCst);
-    }
-
     fn vault_lock(&self, vault: &VaultId) -> Arc<Mutex<()>> {
         self.write_locks.lock().expect("lock").entry(vault.clone()).or_default().clone()
     }
@@ -923,10 +932,11 @@ impl<E: ServerEdges> Server<E> {
             return Ok((vec![schema, evidence], vec![]));
         }
         let quote = governance::validate_quotes(snap, &p.ops)?;
+        let current = governance::validate_current_rendition(snap, &p.ops)?;
         let (dedup, check) = governance::validate_dedup(snap, &p.ops)?;
         let entity = governance::validate_entities(snap, &p.ops)?;
         let page = governance::validate_pages(snap, &p.ops)?;
-        Ok((vec![schema, evidence, quote, dedup, entity, page], check.contradictions))
+        Ok((vec![schema, evidence, quote, current, dedup, entity, page], check.contradictions))
     }
 
     fn commit_changeset(&self, lease: &WriterLease, actor: &str, changeset: ChangeSetRow, mutations: Vec<Mutation>) -> Result<(), ServerError> {
@@ -957,11 +967,18 @@ impl<E: ServerEdges> Server<E> {
     pub fn propose(&self, caller: &Caller, vault: &VaultId, p: Proposal, dry_run: bool) -> Result<ProposalOutcome, ServerError> {
         self.allow(caller, Operation::VaultContentPropose(vault))?;
         // Whether a claim is a machine's comes from who holds the token, never from the request.
-        self.propose_as(&caller.principal.id, caller.principal.kind == PrincipalKind::Agent, vault, p, dry_run)
+        let by = ProposedBy {
+            actor: &caller.principal.id,
+            machine: caller.principal.kind == PrincipalKind::Agent,
+            extractor: &caller.principal.id,
+            prompt_version: "",
+        };
+        self.propose_as(&by, vault, p, dry_run)
     }
 
     /// `propose` for someone already allowed to: a caller, or a job of the server's own.
-    fn propose_as(&self, actor: &str, machine: bool, vault: &VaultId, p: Proposal, dry_run: bool) -> Result<ProposalOutcome, ServerError> {
+    fn propose_as(&self, by: &ProposedBy<'_>, vault: &VaultId, p: Proposal, dry_run: bool) -> Result<ProposalOutcome, ServerError> {
+        let (actor, machine) = (by.actor, by.machine);
         self.vault_exists(vault)?;
         crate::page::check_sizes(&p.ops).map_err(ServerError::Invalid)?;
         let lease = self.lease(vault)?;
@@ -985,7 +1002,14 @@ impl<E: ServerEdges> Server<E> {
         let (validators, contradictions) = self.validate(&snap, &p)?;
         let passed = validators.iter().all(|v| v.passed);
         let kinds = governance::kinds_of(&snap, &p.ops)?;
-        let decision = governance::risk(&kinds, Author { machine }, self.machine_auto_commit.load(Ordering::SeqCst), passed);
+        let origin = Self::origin_of(&snap, by, &p.ops)?;
+        // Only worth reading once nothing else stands in the way.
+        let earned = if machine && passed && !kinds.iter().any(|k| governance::ALWAYS_REVIEW.contains(k)) {
+            self.earned_auto_commit(&snap, &origin, &p.ops)?
+        } else {
+            None
+        };
+        let decision = governance::risk(&kinds, Author { machine }, earned.is_some(), passed);
         let actor = actor.to_string();
         let id = ObjectId(self.new_id());
         let now = self.now();
@@ -1010,18 +1034,26 @@ impl<E: ServerEdges> Server<E> {
             validators: validators.clone(),
             risk: decision,
             proposed_at_ms: now,
-            decided_by: None,
+            // Every decision says who made it and why, including those no person looked at.
+            decided_by: match decision {
+                RiskDecision::Review => None,
+                RiskDecision::Reject => Some(crate::review::VALIDATORS.to_string()),
+                RiskDecision::AutoCommit if machine => Some(crate::review::AUTO_COMMIT.to_string()),
+                RiskDecision::AutoCommit => Some(actor.clone()),
+            },
             decided_at_ms: if decision == RiskDecision::Review { None } else { Some(now) },
-            decision_reason: if decision == RiskDecision::Reject {
-                validators.iter().find(|v| !v.passed).and_then(|v| v.detail.clone())
-            } else {
-                None
+            decision_reason: match decision {
+                RiskDecision::Review => None,
+                RiskDecision::Reject => validators.iter().find(|v| !v.passed).and_then(|v| v.detail.clone()),
+                RiskDecision::AutoCommit => Some(earned.unwrap_or_else(|| "a person's own low-risk change".to_string())),
             },
             commit_seq: None,
             applied: vec![],
             inverse: vec![],
             reverts: None,
             reverted_by: None,
+            origin: Some(origin),
+            original_ops: None,
         };
         // A dry run stops before anything is written, but still catches a stale base version.
         let mut mutations = vec![];
@@ -1044,6 +1076,9 @@ impl<E: ServerEdges> Server<E> {
                 replayed: false,
                 dry_run: true,
             });
+        }
+        if decision == RiskDecision::Review && machine {
+            mutations.extend(self.review_job_rows(&row));
         }
         self.commit_changeset(&lease, &actor, row.clone(), mutations)?;
         Ok(ProposalOutcome {
@@ -1102,8 +1137,20 @@ impl<E: ServerEdges> Server<E> {
         }
     }
 
-    /// Approving needs admin scope. The reviewer is recorded.
+    /// Approving needs admin scope. The reviewer is recorded. Asking again gets the same result and changes nothing, while someone else's decision is a conflict that says whose it was.
     pub fn approve(&self, caller: &Caller, vault: &VaultId, id: &ObjectId, reason: Option<String>) -> Result<ChangeSetRow, ServerError> {
+        self.decide_approval(caller, vault, id, reason, None)
+    }
+
+    /// `approve` for what `approve` and an edited approval share. `edited` replaces the ops, keeping what was first proposed on the row.
+    fn decide_approval(
+        &self,
+        caller: &Caller,
+        vault: &VaultId,
+        id: &ObjectId,
+        reason: Option<String>,
+        edited: Option<Vec<memex_types::Op>>,
+    ) -> Result<ChangeSetRow, ServerError> {
         self.allow(caller, Operation::VaultContentReview(vault))?;
         self.vault_exists(vault)?;
         let lease = self.lease(vault)?;
@@ -1111,8 +1158,25 @@ impl<E: ServerEdges> Server<E> {
         let _one_at_a_time = vault_lock.lock().expect("lock");
         let snap = self.engine.store().snapshot(vault)?;
         let mut row = self.changeset(vault, id)?;
-        if row.state != ChangeSetState::Pending {
-            return Err(ServerError::Conflict(format!("this ChangeSet is already {:?}", row.state)));
+        let mut edited = edited;
+        if let Some(ops) = &mut edited {
+            for op in ops.iter_mut() {
+                mark_machine(op, row.proposer_is_machine);
+            }
+        }
+        if let Some(same) = review::decided_already(&row, caller, ChangeSetState::Committed)? {
+            // The same edit again is the same decision. A different one isn't, as this one has already happened.
+            if edited.as_ref().is_some_and(|ops| ops != &same.ops) {
+                return Err(ServerError::Conflict("this ChangeSet was already approved, with different ops".into()));
+            }
+            return Ok(same);
+        }
+        // Approving it unchanged is what an edit to the same ops amounts to.
+        let edited = edited.filter(|ops| ops != &row.ops);
+        let was_edited = edited.is_some();
+        if let Some(ops) = edited {
+            crate::page::check_sizes(&ops).map_err(ServerError::Invalid)?;
+            row.original_ops = Some(std::mem::replace(&mut row.ops, ops));
         }
         self.only_a_person(caller, &snap, &row)?;
         let now = self.now();
@@ -1125,7 +1189,9 @@ impl<E: ServerEdges> Server<E> {
         };
         let (validators, contradictions) = self.validate(&snap, &proposal)?;
         if let Some(failed) = validators.iter().find(|v| !v.passed) {
-            return Err(ServerError::Invalid(format!("no longer valid: {}", failed.detail.clone().unwrap_or_default())));
+            let why = format!("no longer valid: {}", failed.detail.clone().unwrap_or_default());
+            // A person's edit can simply be wrong. Otherwise it passed when proposed, so the vault has moved on.
+            return Err(if was_edited { ServerError::Invalid(why) } else { ServerError::Conflict(why) });
         }
         let seed = &self.seed;
         let mut edge_id = || ObjectId(format!("{:012x}{:020x}", now.max(0), u128::from(seed.next_u64())));
@@ -1140,9 +1206,26 @@ impl<E: ServerEdges> Server<E> {
         row.decision_reason = reason;
         row.commit_seq = snap.head()?.map(|h| h + 1).or(Some(0));
         row.header.version += 1;
+        // Outside `applied`, so a later sample doesn't look like an edit to what this committed. An edit means what was proposed wasn't right as it stood.
+        mutations.extend(self.decision_samples(&snap, caller, &row, !was_edited, now)?);
         drop(snap);
         self.commit_changeset(&lease, &actor, row.clone(), mutations)?;
         Ok(row)
+    }
+
+    /// A person's correction: approves `ops` instead of what was proposed, which stays on the row. It counts against the extractor, since what it proposed wasn't right.
+    pub fn approve_edited(
+        &self,
+        caller: &Caller,
+        vault: &VaultId,
+        id: &ObjectId,
+        ops: Vec<memex_types::Op>,
+        reason: Option<String>,
+    ) -> Result<ChangeSetRow, ServerError> {
+        if caller.principal.kind != PrincipalKind::Human {
+            return Err(ServerError::Forbidden);
+        }
+        self.decide_approval(caller, vault, id, reason, Some(ops))
     }
 
     pub fn reject(&self, caller: &Caller, vault: &VaultId, id: &ObjectId, reason: String) -> Result<ChangeSetRow, ServerError> {
@@ -1155,16 +1238,25 @@ impl<E: ServerEdges> Server<E> {
         let vault_lock = self.vault_lock(vault);
         let _one_at_a_time = vault_lock.lock().expect("lock");
         let mut row = self.changeset(vault, id)?;
-        if row.state != ChangeSetState::Pending {
-            return Err(ServerError::Conflict(format!("this ChangeSet is already {:?}", row.state)));
+        if let Some(same) = review::decided_already(&row, caller, ChangeSetState::Rejected)? {
+            return Ok(same);
         }
         let actor = caller.principal.id.clone();
+        let now = self.now();
         row.state = ChangeSetState::Rejected;
         row.decided_by = Some(actor.clone());
-        row.decided_at_ms = Some(self.now());
+        row.decided_at_ms = Some(now);
         row.decision_reason = Some(reason);
         row.header.version += 1;
-        self.commit_changeset(&lease, &actor, row.clone(), vec![])?;
+        let snap = self.engine.store().snapshot(vault)?;
+        // Clearing out what a reprocessed document left behind says nothing about the extractor.
+        let samples = if governance::validate_current_rendition(&snap, &row.ops)?.passed {
+            self.decision_samples(&snap, caller, &row, false, now)?
+        } else {
+            vec![]
+        };
+        drop(snap);
+        self.commit_changeset(&lease, &actor, row.clone(), samples)?;
         Ok(row)
     }
 
@@ -1211,6 +1303,12 @@ impl<E: ServerEdges> Server<E> {
         let mut mutations = target.inverse.clone();
         let inverse = governance::inverse_of(&snap, &mutations)?;
         let commit_seq = snap.head()?.map(|h| h + 1).or(Some(0));
+        // A person undoing what committed with nobody looking is the one sample an auto-commit gets short of an audit.
+        let samples = if target.decided_by.as_deref() == Some(crate::review::AUTO_COMMIT) {
+            self.decision_samples(&snap, caller, &target, false, now)?
+        } else {
+            vec![]
+        };
         drop(snap);
         target.reverted_by = Some(revert_id.clone());
         target.header.version += 1;
@@ -1241,7 +1339,10 @@ impl<E: ServerEdges> Server<E> {
             inverse,
             reverts: Some(id.clone()),
             reverted_by: None,
+            origin: None,
+            original_ops: None,
         };
+        mutations.extend(samples);
         self.commit_changeset(&lease, &actor, row.clone(), mutations)?;
         Ok(row)
     }
@@ -1361,8 +1462,18 @@ impl<E: ServerEdges> Server<E> {
         if !sources::TRUST_TIERS.contains(&req.trust_tier.as_str()) {
             return Err(ServerError::Invalid(format!("unknown trust tier '{}'", req.trust_tier)));
         }
+        // An agent can't vouch for what it brings in, as that's what lets a source's claims auto-commit.
+        if caller.principal.kind != PrincipalKind::Human && sources::at_least_trusted(&req.trust_tier) {
+            return Err(ServerError::Forbidden);
+        }
         let lease = self.lease(vault)?;
-        if self.engine.store().snapshot(vault)?.open_job_count(&[crate::extraction::EXTRACT_JOB])? >= limits.max_open_jobs {
+        if self
+            .engine
+            .store()
+            .snapshot(vault)?
+            .open_job_count(&[crate::extraction::EXTRACT_JOB, crate::review::REVIEW_JOB])?
+            >= limits.max_open_jobs
+        {
             return Err(ServerError::Busy);
         }
         let mut reader = LimitedSniffer {

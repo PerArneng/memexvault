@@ -127,29 +127,50 @@ where
     A: memex_core::AgentRunner + Send + Sync,
 {
     fn run(&self, vault: &VaultId, job: &JobRow) -> Result<Vec<Mutation>, JobFailure> {
-        self.server.run_extraction_job(vault, job, &self.agent).map_err(|e| match e {
-            memex_core::ExtractJobError::Wait(message) => JobFailure {
-                message,
-                retryable: true,
-                waiting: true,
-            },
-            memex_core::ExtractJobError::Retry(message) => JobFailure {
-                message,
-                retryable: true,
-                waiting: false,
-            },
-            memex_core::ExtractJobError::Fatal(message) => JobFailure {
-                message,
-                retryable: false,
-                waiting: false,
-            },
-            // Recording the result finds out the job has gone, and writes nothing.
-            memex_core::ExtractJobError::Lost => JobFailure {
-                message: "this worker no longer holds the job".into(),
-                retryable: true,
-                waiting: false,
-            },
-        })
+        self.server.run_extraction_job(vault, job, &self.agent).map_err(job_failure)
+    }
+}
+
+fn job_failure(e: memex_core::ExtractJobError) -> JobFailure {
+    match e {
+        memex_core::ExtractJobError::Wait(message) => JobFailure {
+            message,
+            retryable: true,
+            waiting: true,
+        },
+        memex_core::ExtractJobError::Retry(message) => JobFailure {
+            message,
+            retryable: true,
+            waiting: false,
+        },
+        memex_core::ExtractJobError::Fatal(message) => JobFailure {
+            message,
+            retryable: false,
+            waiting: false,
+        },
+        // Recording the result finds out the job has gone, and writes nothing.
+        memex_core::ExtractJobError::Lost => JobFailure {
+            message: "this worker no longer holds the job".into(),
+            retryable: true,
+            waiting: false,
+        },
+    }
+}
+
+/// Runs the reviewer agent. Its verdict commits with the job, and it can write nothing else.
+pub struct ReviewHandler<E: ServerEdges, A> {
+    pub server: Arc<Server<E>>,
+    pub agent: A,
+}
+
+impl<E, A> JobHandler for ReviewHandler<E, A>
+where
+    E: ServerEdges,
+    Server<E>: Send + Sync,
+    A: memex_core::AgentRunner + Send + Sync,
+{
+    fn run(&self, vault: &VaultId, job: &JobRow) -> Result<Vec<Mutation>, JobFailure> {
+        self.server.run_review_job(vault, job, &self.agent).map_err(job_failure)
     }
 }
 

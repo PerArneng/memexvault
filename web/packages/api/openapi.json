@@ -15,6 +15,142 @@
         ],
         "type": "object"
       },
+      "AutoCommitChangeDto": {
+        "properties": {
+          "at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "by": {
+            "type": "string"
+          },
+          "correct": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "incorrect": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "description": "`earned`, `fell_below` or `disabled`.",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "at_ms",
+          "by",
+          "kind",
+          "reason",
+          "correct",
+          "incorrect"
+        ],
+        "type": "object"
+      },
+      "AutoCommitDto": {
+        "properties": {
+          "correct": {
+            "description": "Since it was last disabled. These decide whether it's on.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "extractor": {
+            "type": "string"
+          },
+          "history": {
+            "description": "When it was earned, fell below the threshold or was disabled, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/AutoCommitChangeDto"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "incorrect": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "item_type": {
+            "type": "string"
+          },
+          "on": {
+            "type": "boolean"
+          },
+          "precision": {
+            "description": "Absent with no samples.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "prompt_version": {
+            "type": "string"
+          },
+          "total_correct": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "total_incorrect": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "wilson_bound": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "extractor",
+          "prompt_version",
+          "item_type",
+          "correct",
+          "incorrect",
+          "total_correct",
+          "total_incorrect",
+          "wilson_bound",
+          "on",
+          "history"
+        ],
+        "type": "object"
+      },
+      "AutoCommitPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AutoCommitDto"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "threshold": {
+            "description": "What `wilson_bound` has to reach.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "threshold",
+          "items"
+        ],
+        "type": "object"
+      },
       "BacklinkDto": {
         "properties": {
           "block_id": {
@@ -71,6 +207,102 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "BatchBody": {
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/BatchDecisionBody"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "decisions"
+        ],
+        "type": "object"
+      },
+      "BatchDecisionBody": {
+        "description": "One decision in a batch.",
+        "properties": {
+          "decision": {
+            "description": "`approve`, `reject` or `edit_approve`.",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ops": {
+            "description": "With `edit_approve`.",
+            "items": {
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "decision"
+        ],
+        "type": "object"
+      },
+      "BatchResultDto": {
+        "description": "How one decision went. One failing leaves the others as they are.",
+        "properties": {
+          "changeset": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ChangeSetDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "description": "Set when it failed, with the same codes as the single routes.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "BatchResultsDto": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/BatchResultDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
         ],
         "type": "object"
       },
@@ -208,17 +440,49 @@
               "null"
             ]
           },
+          "extractor": {
+            "description": "The model behind an extraction, or otherwise whoever proposed it. Absent from before spec 025.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "type": "string"
           },
           "idempotency_key": {
             "type": "string"
           },
+          "item_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "ops": {
             "items": {
               "type": "object"
             },
             "type": "array"
+          },
+          "original_ops": {
+            "description": "What was proposed, when a person changed it before approving. `ops` then holds what was approved.",
+            "items": {
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "prompt_version": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "proposed_at_ms": {
             "format": "int64",
@@ -248,6 +512,15 @@
           "risk": {
             "description": "`auto_commit`, `review` or `reject`.",
             "type": "string"
+          },
+          "source_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "state": {
             "description": "`pending`, `committed` or `rejected`.",
@@ -619,6 +892,38 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "DisableBody": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "EditApproveBody": {
+        "properties": {
+          "ops": {
+            "description": "What to approve instead of what was proposed, which stays on record.",
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ops"
         ],
         "type": "object"
       },
@@ -2876,6 +3181,59 @@
         ],
         "type": "object"
       },
+      "QueueCountDto": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "extractor": {
+            "type": "string"
+          },
+          "item_type": {
+            "type": "string"
+          },
+          "prompt_version": {
+            "type": "string"
+          },
+          "verdict": {
+            "description": "Absent for items with no verdict yet.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "extractor",
+          "prompt_version",
+          "item_type",
+          "count"
+        ],
+        "type": "object"
+      },
+      "QueueCountsDto": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/QueueCountDto"
+            },
+            "type": "array"
+          },
+          "pending": {
+            "description": "Pending items. One with several types counts once here, and once under each in `groups`.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pending",
+          "groups"
+        ],
+        "type": "object"
+      },
       "ReanchorFailureDto": {
         "properties": {
           "assertion_id": {
@@ -3134,6 +3492,208 @@
         "required": [
           "candidates",
           "degraded"
+        ],
+        "type": "object"
+      },
+      "ReviewDetailDto": {
+        "properties": {
+          "auto_commit_block": {
+            "description": "Why auto-commit wouldn't take this even if earned.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "changeset": {
+            "$ref": "#/components/schemas/ChangeSetDto"
+          },
+          "combinations": {
+            "description": "Each type's standing under this proposal's extractor and prompt. A type with no samples has no entry.",
+            "items": {
+              "$ref": "#/components/schemas/AutoCommitDto"
+            },
+            "type": "array"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewEvidenceDto"
+            },
+            "type": "array"
+          },
+          "needs_a_person": {
+            "description": "Only a person can approve this.",
+            "type": "boolean"
+          },
+          "verdict": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ReviewVerdictDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "changeset",
+          "evidence",
+          "combinations",
+          "needs_a_person"
+        ],
+        "type": "object"
+      },
+      "ReviewEvidenceDto": {
+        "properties": {
+          "claim_id": {
+            "type": "string"
+          },
+          "page_flags": {
+            "description": "What the pipeline flagged on these pages, such as hidden text.",
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "page_from": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "page_to": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "quote": {
+            "type": "string"
+          },
+          "rendition_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "segment_id": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "superseded": {
+            "description": "Its document was processed again, so this can't be approved as it stands.",
+            "type": "boolean"
+          },
+          "trust_tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "claim_id",
+          "segment_id",
+          "quote",
+          "superseded",
+          "page_flags"
+        ],
+        "type": "object"
+      },
+      "ReviewItemDto": {
+        "properties": {
+          "changeset": {
+            "$ref": "#/components/schemas/ChangeSetDto"
+          },
+          "verdict": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ReviewVerdictDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "changeset"
+        ],
+        "type": "object"
+      },
+      "ReviewItemPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewItemDto"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "ReviewVerdictDto": {
+        "description": "The reviewer agent's opinion. It's advice, and it decides nothing.",
+        "properties": {
+          "attempts": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "created_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "prompt_hash": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "The model's own words about untrusted text, so show them as plain text.",
+            "type": "string"
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/TokenUsageDto"
+          },
+          "verdict": {
+            "description": "`approve`, `reject` or `abstain`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "reason",
+          "model",
+          "prompt_hash",
+          "tokens",
+          "attempts",
+          "created_at_ms"
         ],
         "type": "object"
       },
@@ -8075,6 +8635,521 @@
         },
         "tags": [
           "renditions"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/review/auto-commit": {
+      "get": {
+        "operationId": "auto_commit_table",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "From `next_cursor` of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 200. The default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`created`, the default.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoCommitPage"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Each combination of extractor, prompt version and type: its precision, Wilson bound, whether it's on, and every time that changed, with the threshold it's judged by.",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/review/auto-commit/{combination}/disable": {
+      "post": {
+        "operationId": "disable_auto_commit",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "combination",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisableBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoCommitDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Stops auto-commit for this combination at once. Its counts start again, and there's no route to turn it on: only new samples clearing the threshold can.",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/review/batch": {
+      "post": {
+        "operationId": "decide_batch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResultsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Up to 200 decisions, each attributed and each on its own, so one conflict leaves the others as they are. A malformed request refuses the lot.",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/review/counts": {
+      "get": {
+        "operationId": "review_counts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueCountsDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/review/items/{cs}": {
+      "get": {
+        "operationId": "review_item",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cs",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDetailDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "One item: the proposal, the reviewer agent's verdict, what its quotes rest on, and where its combination stands.",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/review/items/{cs}/edit-approve": {
+      "post": {
+        "operationId": "edit_approve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cs",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditApproveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSetDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Approves a person's corrected version. What was proposed stays on record, and it counts against the extractor. Only a person can do this.",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/review/queue": {
+      "get": {
+        "operationId": "review_queue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "From `next_cursor` of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 200. The default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`created`, the default.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "`pending`, `committed` or `rejected`.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "extractor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "prompt_version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "`claim`, `entity:<type>`, `page`, `link` or `source`.",
+            "in": "query",
+            "name": "item_type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "proposer",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "`approve`, `reject`, `abstain`, or `none` for items with no verdict yet.",
+            "in": "query",
+            "name": "verdict",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewItemPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The queue with `state=pending`, or any other ChangeSets the filters ask for, in creation order. Each comes with the reviewer agent's verdict if it has one.",
+        "tags": [
+          "review"
         ]
       }
     },

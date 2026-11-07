@@ -270,6 +270,113 @@ impl Snapshot for MemSnapshot<'_> {
             .collect())
     }
 
+    fn review_queue(&self, filter: &memex_types::ReviewFilter, after: Option<&ObjectId>, limit: usize) -> Result<Vec<ChangeSetRow>, StoreError> {
+        self.count();
+        let verdict_of = |id: &ObjectId| match self.state.rows.get(&RowKey {
+            table: Table::ReviewVerdict,
+            id: id.clone(),
+        }) {
+            Some(Row::ReviewVerdict(v)) => Some(v.verdict),
+            _ => None,
+        };
+        Ok(self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::ChangeSet(c) => Some(c),
+                _ => None,
+            })
+            .filter(|c| {
+                let origin = c.origin.as_ref();
+                after.is_none_or(|a| &c.header.id > a)
+                    && filter.state.is_none_or(|s| s == c.state)
+                    && filter.extractor.as_ref().is_none_or(|e| origin.is_some_and(|o| &o.extractor == e))
+                    && filter.prompt_version.as_ref().is_none_or(|p| origin.is_some_and(|o| &o.prompt_version == p))
+                    && filter.item_type.as_ref().is_none_or(|t| origin.is_some_and(|o| o.item_types.contains(t)))
+                    && filter.source_id.as_ref().is_none_or(|s| origin.is_some_and(|o| o.source_ids.contains(s)))
+                    && filter.proposer.as_ref().is_none_or(|p| &c.proposer == p)
+                    && filter.verdict.is_none_or(|v| match v {
+                        memex_types::VerdictFilter::Is(x) => verdict_of(&c.header.id) == Some(x),
+                        memex_types::VerdictFilter::None => verdict_of(&c.header.id).is_none(),
+                    })
+            })
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    fn review_counts(&self) -> Result<Vec<memex_types::QueueCount>, StoreError> {
+        self.count();
+        let mut counts = std::collections::BTreeMap::new();
+        for r in self.state.rows.values() {
+            let Row::ChangeSet(c) = r else { continue };
+            if c.state != memex_types::ChangeSetState::Pending {
+                continue;
+            }
+            let verdict = match self.state.rows.get(&RowKey {
+                table: Table::ReviewVerdict,
+                id: c.header.id.clone(),
+            }) {
+                Some(Row::ReviewVerdict(v)) => Some(v.verdict.as_str()),
+                _ => None,
+            };
+            let (extractor, prompt, types) = match &c.origin {
+                Some(o) if !o.item_types.is_empty() => (o.extractor.clone(), o.prompt_version.clone(), o.item_types.clone()),
+                Some(o) => (o.extractor.clone(), o.prompt_version.clone(), vec!["unknown".to_string()]),
+                None => (String::new(), String::new(), vec!["unknown".to_string()]),
+            };
+            for t in types {
+                *counts.entry((extractor.clone(), prompt.clone(), t, verdict)).or_insert(0u64) += 1;
+            }
+        }
+        Ok(counts
+            .into_iter()
+            .map(|((extractor, prompt_version, item_type, verdict), count)| memex_types::QueueCount {
+                extractor,
+                prompt_version,
+                item_type,
+                verdict: match verdict {
+                    Some("approve") => Some(memex_types::Verdict::Approve),
+                    Some("reject") => Some(memex_types::Verdict::Reject),
+                    Some(_) => Some(memex_types::Verdict::Abstain),
+                    None => None,
+                },
+                count,
+            })
+            .collect())
+    }
+
+    fn pending_count(&self) -> Result<u64, StoreError> {
+        self.count();
+        Ok(self
+            .state
+            .rows
+            .values()
+            .filter(|r| matches!(r, Row::ChangeSet(c) if c.state == memex_types::ChangeSetState::Pending))
+            .count() as u64)
+    }
+
+    fn pending_citing_rendition(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<ChangeSetRow>, StoreError> {
+        self.count();
+        Ok(self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::ChangeSet(c)
+                    if c.state == memex_types::ChangeSetState::Pending
+                        && after.is_none_or(|a| &c.header.id > a)
+                        && c.origin.as_ref().is_some_and(|o| o.rendition_ids.contains(rendition_id)) =>
+                {
+                    Some(c.clone())
+                }
+                _ => None,
+            })
+            .take(limit)
+            .collect())
+    }
+
     fn unresolved_links(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<EdgeRow>, StoreError> {
         self.count();
         let exists = |table, id: &str| {

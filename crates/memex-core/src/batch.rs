@@ -175,6 +175,26 @@ impl<S: Snapshot> Snapshot for Pending<'_, S> {
     }
 
     /// Committed rows only, as with `rows`.
+    fn review_queue(&self, filter: &memex_types::ReviewFilter, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::ChangeSetRow>, StoreError> {
+        self.base.review_queue(filter, after, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn review_counts(&self) -> Result<Vec<memex_types::QueueCount>, StoreError> {
+        self.base.review_counts()
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn pending_count(&self) -> Result<u64, StoreError> {
+        self.base.pending_count()
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn pending_citing_rendition(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::ChangeSetRow>, StoreError> {
+        self.base.pending_citing_rendition(rendition_id, after, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
     fn shared_values(
         &self,
         type_name: &str,

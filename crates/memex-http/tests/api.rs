@@ -1146,8 +1146,8 @@ fn every_list_route_in_the_openapi_document_has_cursor_limit_and_sort() {
         }
     }
     assert_eq!(
-        lists, 23,
-        "vaults, principals, tokens, changesets, changes, contradictions, sources, jobs, segments, re-anchor failures, flagged pages, two claim lists, entity types, entities, same-as suggestions, pages, revisions, backlinks, outgoing links, unresolved links, derivations and neighborhoods"
+        lists, 25,
+        "vaults, principals, tokens, changesets, changes, contradictions, sources, jobs, segments, re-anchor failures, flagged pages, two claim lists, entity types, entities, same-as suggestions, pages, revisions, backlinks, outgoing links, unresolved links, derivations, neighborhoods, the review queue and the auto-commit table"
     );
     // Every route the router serves is documented.
     for p in [
@@ -1898,4 +1898,182 @@ async fn extraction_status_derivations_and_a_rerun_through_the_routes_create_no_
         assert!(doc["paths"].get(format!("/api/v1/vaults/{{id}}/sources/{{sid}}{path}")).is_some(), "{path}");
     }
     assert!(doc["paths"].get("/api/v1/vaults/{id}/renditions/{rid}/derivations").is_some());
+}
+
+/// The review routes end to end, on fakes: queue, counts, one item, edit, batch, the table and a disable, with their scopes.
+#[tokio::test]
+async fn the_review_routes_work_together_and_keep_to_their_scopes() {
+    let s = server();
+    let root = s.bootstrap("root").unwrap().token;
+    let admin = s.authenticate(&root).unwrap();
+    let vault = s.create_vault(&admin, "rev").unwrap().id;
+    let base = format!("/api/v1/vaults/{vault}");
+    s.set_extraction(Some(memex_core::ExtractionLimits::default()));
+    s.set_reviewer(Some(memex_core::ReviewLimits::default()));
+
+    let reader = s.create_principal(&admin, "rev-reader", memex_types::PrincipalKind::Human, false).unwrap();
+    let reader = s
+        .create_token(
+            &admin,
+            memex_core::NewToken {
+                principal_id: Some(reader.id),
+                name: "t".into(),
+                grants: vec![memex_types::Grant {
+                    vault: vault.clone(),
+                    scope: memex_types::Scope::Read,
+                }],
+                expires_at_ms: None,
+            },
+        )
+        .unwrap()
+        .token;
+
+    let propose_one = |n: usize| {
+        let sentence = format!("Fartyget {n} byggdes i Stockholm.");
+        let text = format!(
+            "{sentence} {}",
+            "Detta är en lång mening om ingenting särskilt som fyller ut stycket med ord. ".repeat(12)
+        );
+        let req = memex_core::UploadRequest {
+            name: format!("d{n}.txt"),
+            trust_tier: "unverified".into(),
+            metadata: json!({}),
+            replaces: None,
+        };
+        let source = s
+            .upload(&admin, &vault, req, memex_core::UploadLimits::default(), &mut text.as_bytes())
+            .unwrap()
+            .source
+            .header
+            .id;
+        let job = s.claim_job(&vault, memex_core::RENDITION_JOB, "p").unwrap().unwrap();
+        let input = memex_core::RenditionInput::Plain {
+            text: text.clone(),
+            parser: "plain-1".into(),
+        };
+        let rows = s.build_rendition(&vault, &source, input).unwrap();
+        assert!(s.complete_job(&vault, &job, rows).unwrap());
+        let job = s.claim_job(&vault, memex_core::EXTRACT_JOB, "w").unwrap().unwrap();
+        let agent = memex_core::testing::ScriptedAgent::new(vec![extraction_reply(&sentence)]);
+        let rows = s.run_extraction_job(&vault, &job, &agent).unwrap();
+        assert!(s.complete_job(&vault, &job, rows).unwrap());
+    };
+    for n in 0..4 {
+        propose_one(n);
+    }
+    // The first item's reviewer has its say.
+    let job = s.claim_job(&vault, memex_core::REVIEW_JOB, "w").unwrap().unwrap();
+    let agent = memex_core::testing::ScriptedAgent::new(vec![Ok(memex_types::AgentReply {
+        json: json!({"verdict": "reject", "reason": "<script>the quote says nothing</script>"}).to_string(),
+        usage: memex_types::AgentUsage::default(),
+        tool_calls: 0,
+    })]);
+    let rows = s.run_review_job(&vault, &job, &agent).unwrap();
+    assert!(s.complete_job(&vault, &job, rows).unwrap());
+
+    let (code, queue, _) = call(&s, "GET", &format!("{base}/review/queue?state=pending&limit=3"), Some(&reader), None).await;
+    assert_eq!(code, StatusCode::OK, "{queue}");
+    assert_eq!(queue["items"].as_array().unwrap().len(), 3);
+    assert!(queue["next_cursor"].is_string());
+    let first = queue["items"][0]["changeset"]["id"].as_str().unwrap().to_string();
+    let second = queue["items"][1]["changeset"]["id"].as_str().unwrap().to_string();
+    let third = queue["items"][2]["changeset"]["id"].as_str().unwrap().to_string();
+    assert_eq!(queue["items"][0]["verdict"]["verdict"], "reject");
+    assert_eq!(queue["items"][0]["changeset"]["extractor"], "scripted");
+    assert_eq!(queue["items"][0]["changeset"]["item_types"], json!(["claim"]));
+    let (_, none, _) = call(&s, "GET", &format!("{base}/review/queue?state=pending&verdict=none"), Some(&reader), None).await;
+    assert_eq!(none["items"].as_array().unwrap().len(), 3);
+    let (code, _, _) = call(&s, "GET", &format!("{base}/review/queue?verdict=maybe"), Some(&reader), None).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
+    let (_, counts, _) = call(&s, "GET", &format!("{base}/review/counts"), Some(&reader), None).await;
+    assert_eq!(counts["pending"], 4);
+    assert_eq!(
+        counts["groups"].as_array().unwrap().iter().map(|g| g["count"].as_u64().unwrap()).sum::<u64>(),
+        4
+    );
+
+    let (code, item, _) = call(&s, "GET", &format!("{base}/review/items/{first}"), Some(&reader), None).await;
+    assert_eq!(code, StatusCode::OK, "{item}");
+    assert_eq!(
+        item["verdict"]["reason"], "<script>the quote says nothing</script>",
+        "kept as data, for the page to show as text"
+    );
+    assert_eq!(item["evidence"][0]["trust_tier"], "unverified");
+    assert_eq!(item["evidence"][0]["superseded"], false);
+    assert_eq!(item["needs_a_person"], false);
+    assert_eq!(item["changeset"]["state"], "pending", "a verdict decides nothing");
+
+    // Reading isn't deciding.
+    let edit_path = format!("{base}/review/items/{first}/edit-approve");
+    let mut ops = item["changeset"]["ops"].clone();
+    ops[0]["value"] = json!("Göteborg");
+    let (code, _, _) = call(&s, "POST", &edit_path, Some(&reader), Some(json!({"ops": ops}))).await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    let (code, _, _) = call(&s, "POST", &edit_path, Some(&root), Some(json!({"ops": [{"op": "no such op"}]}))).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    let (code, edited, _) = call(&s, "POST", &edit_path, Some(&root), Some(json!({"ops": ops, "reason": "the wrong city"}))).await;
+    assert_eq!(code, StatusCode::OK, "{edited}");
+    assert_eq!(edited["state"], "committed");
+    assert_eq!(edited["decision_reason"], "the wrong city");
+    assert_eq!(edited["decided_by"], admin.principal.id.as_str());
+    assert_eq!(edited["ops"][0]["value"], "Göteborg");
+    assert_eq!(edited["original_ops"][0]["value"], "Stockholm");
+
+    let batch = json!({"decisions": [
+        {"id": second, "decision": "approve", "reason": "fine"},
+        {"id": third, "decision": "reject"},
+    ]});
+    let (code, _, _) = call(&s, "POST", &format!("{base}/review/batch"), Some(&reader), Some(batch.clone())).await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    let (code, _, _) = call(
+        &s,
+        "POST",
+        &format!("{base}/review/batch"),
+        Some(&root),
+        Some(json!({"decisions": [{"id": "x", "decision": "shrug"}]})),
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    let (code, results, _) = call(&s, "POST", &format!("{base}/review/batch"), Some(&root), Some(batch)).await;
+    assert_eq!(code, StatusCode::OK, "{results}");
+    assert_eq!(results["results"][0]["changeset"]["state"], "committed");
+    assert_eq!(results["results"][1]["error_code"], "invalid", "a rejection needs a reason");
+
+    let (_, table, _) = call(&s, "GET", &format!("{base}/review/auto-commit"), Some(&reader), None).await;
+    assert_eq!(table["threshold"], 0.95);
+    let row = &table["items"][0];
+    assert_eq!(
+        (row["correct"].as_u64(), row["incorrect"].as_u64(), row["on"].as_bool()),
+        (Some(1), Some(1), Some(false))
+    );
+    assert_eq!(row["precision"], 0.5);
+    assert!(row["wilson_bound"].as_f64().unwrap() < 0.5);
+    let combination = row["id"].as_str().unwrap().to_string();
+
+    let disable = format!("{base}/review/auto-commit/{combination}/disable");
+    let (code, _, _) = call(&s, "POST", &disable, Some(&reader), Some(json!({"reason": "r"}))).await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    let (code, _, _) = call(&s, "POST", &disable, Some(&root), Some(json!({"reason": " "}))).await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    let (code, off, _) = call(&s, "POST", &disable, Some(&root), Some(json!({"reason": "a bad batch"}))).await;
+    assert_eq!(code, StatusCode::OK, "{off}");
+    assert_eq!(off["history"][0]["kind"], "disabled");
+    assert_eq!(off["history"][0]["reason"], "a bad batch");
+    assert_eq!((off["correct"].as_u64(), off["total_correct"].as_u64()), (Some(0), Some(1)));
+
+    // Verification 7: no route can turn it back on.
+    let doc = serde_json::to_value(openapi()).unwrap();
+    let review: Vec<&String> = doc["paths"].as_object().unwrap().keys().filter(|p| p.contains("auto-commit")).collect();
+    assert_eq!(review.len(), 2, "{review:?}");
+    assert!(review.iter().all(|p| !p.contains("enable") || p.contains("disable")), "{review:?}");
+    let (code, _, _) = call(
+        &s,
+        "POST",
+        &format!("{base}/review/auto-commit/{combination}/enable"),
+        Some(&root),
+        Some(json!({})),
+    )
+    .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
 }

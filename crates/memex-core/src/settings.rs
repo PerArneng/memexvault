@@ -52,6 +52,11 @@ pub struct Settings {
     /// The LLM that extraction sends documents to. Without one, nothing leaves the server and no extraction is queued.
     pub llm: Option<LlmSettings>,
     pub extraction: crate::ExtractionLimits,
+    /// The model the reviewer agent calls, on the same LLM. Without one, queued items wait for people with no verdict, and no extra tokens are spent.
+    pub reviewer_model: Option<String>,
+    pub review: crate::review::ReviewLimits,
+    /// What a combination's Wilson bound has to reach to earn auto-commit, in thousandths.
+    pub auto_commit_threshold_permille: u16,
 }
 
 /// Which model answers extraction's calls.
@@ -94,6 +99,9 @@ impl Default for Settings {
             rerank_sessions: 2,
             llm: None,
             extraction: crate::ExtractionLimits::default(),
+            reviewer_model: None,
+            review: crate::review::ReviewLimits::default(),
+            auto_commit_threshold_permille: (crate::review::DEFAULT_THRESHOLD * 1000.0) as u16,
         }
     }
 }
@@ -115,6 +123,9 @@ impl fmt::Debug for Settings {
             .field("rerank_sessions", &self.rerank_sessions)
             .field("llm", &self.llm)
             .field("extraction", &self.extraction)
+            .field("reviewer_model", &self.reviewer_model)
+            .field("review", &self.review)
+            .field("auto_commit_threshold_permille", &self.auto_commit_threshold_permille)
             .finish()
     }
 }
@@ -136,6 +147,9 @@ pub enum SettingsError {
         name: &'static str,
         value: String,
     },
+    InvalidThreshold {
+        value: String,
+    },
     /// One setting needs another that isn't set.
     Missing {
         name: &'static str,
@@ -150,6 +164,7 @@ impl fmt::Display for SettingsError {
             Self::Empty { name } => write!(f, "{name} is set but empty"),
             Self::InvalidBind { value } => write!(f, "MEMEX_HTTP_BIND must be host:port, got '{value}'"),
             Self::InvalidNumber { name, value } => write!(f, "{name} must be a whole number of at least 1, got '{value}'"),
+            Self::InvalidThreshold { value } => write!(f, "MEMEX_AUTO_COMMIT_THRESHOLD must be above 0 and at most 1, got '{value}'"),
             Self::Missing { name, because } => write!(f, "{name} is needed {because}"),
         }
     }
@@ -220,6 +235,29 @@ impl Settings {
         e.batch_tokens = count("MEMEX_EXTRACT_BATCH_TOKENS", text("MEMEX_EXTRACT_BATCH_TOKENS")?, e.batch_tokens as usize)? as u64;
         e.output_tokens = count("MEMEX_EXTRACT_OUTPUT_TOKENS", text("MEMEX_EXTRACT_OUTPUT_TOKENS")?, e.output_tokens as usize)? as u32;
         e.timeout_ms = count("MEMEX_EXTRACT_TIMEOUT_S", text("MEMEX_EXTRACT_TIMEOUT_S")?, (e.timeout_ms / 1000) as usize)? as u64 * 1000;
+        s.reviewer_model = text("MEMEX_REVIEW_MODEL")?;
+        if s.reviewer_model.is_some() && s.llm.is_none() {
+            return Err(SettingsError::Missing {
+                name: "MEMEX_LLM_PROVIDER",
+                because: "with MEMEX_REVIEW_MODEL".into(),
+            });
+        }
+        s.review.output_tokens = count(
+            "MEMEX_REVIEW_OUTPUT_TOKENS",
+            text("MEMEX_REVIEW_OUTPUT_TOKENS")?,
+            s.review.output_tokens as usize,
+        )? as u32;
+        s.review.timeout_ms = count("MEMEX_REVIEW_TIMEOUT_S", text("MEMEX_REVIEW_TIMEOUT_S")?, (s.review.timeout_ms / 1000) as usize)? as u64 * 1000;
+        if let Some(v) = text("MEMEX_AUTO_COMMIT_THRESHOLD")? {
+            // Zero would let a combination with one lucky sample through, and rounding must not turn a small number into it.
+            let permille = v
+                .parse::<f64>()
+                .ok()
+                .filter(|t| *t > 0.0 && *t <= 1.0)
+                .map(|t| (t * 1000.0).round() as u16)
+                .filter(|p| *p >= 1);
+            s.auto_commit_threshold_permille = permille.ok_or(SettingsError::InvalidThreshold { value: v })?;
+        }
         s.embed_threads = count("MEMEX_EMBED_THREADS", text("MEMEX_EMBED_THREADS")?, s.embed_threads)?;
         s.embed_query_sessions = count("MEMEX_EMBED_QUERY_SESSIONS", text("MEMEX_EMBED_QUERY_SESSIONS")?, s.embed_query_sessions)?;
         s.rerank_threads = count("MEMEX_RERANK_THREADS", text("MEMEX_RERANK_THREADS")?, s.rerank_threads)?;
@@ -394,6 +432,37 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(s.llm.unwrap().base_url.as_deref(), Some("http://h/v1"));
+    }
+
+    #[test]
+    fn the_reviewer_is_off_by_default_and_needs_an_llm() {
+        let s = from(&[]).unwrap();
+        assert_eq!((s.reviewer_model.as_deref(), s.auto_commit_threshold_permille), (None, 950));
+        assert!(matches!(from(&[("MEMEX_REVIEW_MODEL", "m")]), Err(SettingsError::Missing { .. })));
+        let s = from(&[
+            ("MEMEX_LLM_PROVIDER", "openai"),
+            ("MEMEX_LLM_MODEL", "m"),
+            ("MEMEX_LLM_BASE_URL", "http://h/v1"),
+            ("MEMEX_REVIEW_MODEL", "small"),
+            ("MEMEX_REVIEW_TIMEOUT_S", "9"),
+            ("MEMEX_AUTO_COMMIT_THRESHOLD", "0.9"),
+        ])
+        .unwrap();
+        assert_eq!(
+            (s.reviewer_model.as_deref(), s.review.timeout_ms, s.auto_commit_threshold_permille),
+            (Some("small"), 9000, 900)
+        );
+    }
+
+    #[test]
+    fn a_threshold_must_be_above_zero_and_at_most_one() {
+        for bad in ["0", "-0.5", "1.5", "NaN", "many", "0.0001"] {
+            assert!(
+                matches!(from(&[("MEMEX_AUTO_COMMIT_THRESHOLD", bad)]), Err(SettingsError::InvalidThreshold { .. })),
+                "{bad}"
+            );
+        }
+        assert_eq!(from(&[("MEMEX_AUTO_COMMIT_THRESHOLD", "1")]).unwrap().auto_commit_threshold_permille, 1000);
     }
 
     #[test]

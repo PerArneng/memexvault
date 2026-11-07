@@ -205,12 +205,27 @@ fn machine_proposals_wait_for_review_until_auto_commit_is_earned_whatever_they_c
         None
     );
     drop(snap);
-    w.s.set_machine_auto_commit(true);
+    w.s.record_audit_samples(&w.v, &w.agent.principal.id, "", "claim", 100, 0, "test", "earned for this test")
+        .unwrap();
+    let req = memex_core::UploadRequest {
+        name: "t.txt".into(),
+        trust_tier: "trusted".into(),
+        metadata: json!({}),
+        replaces: None,
+    };
+    let trusted =
+        w.s.upload(&w.admin, &w.v, req, memex_core::UploadLimits::default(), &mut "a trusted document".as_bytes())
+            .unwrap()
+            .source
+            .header
+            .id;
+    w.s.record_segment(&w.admin, &w.v, &id("seg2"), &trusted, None, "Staden ligger vid Göta älv.")
+        .unwrap();
     let out =
         w.s.propose(
             &w.agent,
             &w.v,
-            proposal("b", vec![claim("a3", "other", json!(1), vec![("seg1", "Göta älv")])]),
+            proposal("b", vec![claim("a3", "other", json!(1), vec![("seg2", "Göta älv")])]),
             false,
         )
         .unwrap();
@@ -220,7 +235,8 @@ fn machine_proposals_wait_for_review_until_auto_commit_is_earned_whatever_they_c
 #[test]
 fn an_unsourced_machine_claim_can_not_become_active_even_if_the_request_says_it_is_not_a_machine() {
     let w = world();
-    w.s.set_machine_auto_commit(true);
+    w.s.record_audit_samples(&w.v, &w.agent.principal.id, "", "claim", 100, 0, "test", "earned for this test")
+        .unwrap();
     // The op says machine: false, and the token says agent. The token wins.
     let out =
         w.s.propose(&w.agent, &w.v, proposal("a", vec![claim("a1", "pump", json!(12), vec![])]), false)
@@ -381,7 +397,10 @@ fn review_records_who_decided_and_only_admins_can() {
             .unwrap()
             .is_empty()
     );
-    assert!(matches!(w.s.approve(&w.admin, &w.v, &cs.header.id, None), Err(ServerError::Conflict(_))));
+    // The same person asking again gets the same result, and nothing new happens.
+    let head = w.s.read_events(&w.admin, &w.v, None).unwrap().len();
+    assert_eq!(w.s.approve(&w.admin, &w.v, &cs.header.id, None).unwrap(), done);
+    assert_eq!(w.s.read_events(&w.admin, &w.v, None).unwrap().len(), head);
     let cs2 =
         w.s.propose(
             &w.agent,

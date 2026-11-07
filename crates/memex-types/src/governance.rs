@@ -163,6 +163,10 @@ pub enum OpKind {
     EditSource,
     CreateEntity,
     EditEntity,
+    /// Raising an `unverified` source to `trusted` or above. A person may do this directly, and an agent's request needs a person, since it's what lets that source's claims auto-commit.
+    RaiseSourceTrust,
+    /// A claim arriving as `verified` from a machine, or citing an untrusted source. Only a person can make that so.
+    ClaimVerified,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

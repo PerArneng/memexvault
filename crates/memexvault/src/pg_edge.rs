@@ -163,6 +163,24 @@ impl Snapshot for PostgresSnapshot<'_> {
         self.inner.unresolved_links(after, limit).map_err(|e| translate(&self.vault, e))
     }
 
+    fn review_queue(&self, filter: &memex_types::ReviewFilter, after: Option<&ObjectId>, limit: usize) -> Result<Vec<ChangeSetRow>, StoreError> {
+        self.inner.review_queue(filter, after, limit).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn review_counts(&self) -> Result<Vec<memex_types::QueueCount>, StoreError> {
+        self.inner.review_counts().map_err(|e| translate(&self.vault, e))
+    }
+
+    fn pending_count(&self) -> Result<u64, StoreError> {
+        self.inner.pending_count().map_err(|e| translate(&self.vault, e))
+    }
+
+    fn pending_citing_rendition(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<ChangeSetRow>, StoreError> {
+        self.inner
+            .pending_citing_rendition(rendition_id, after, limit)
+            .map_err(|e| translate(&self.vault, e))
+    }
+
     fn sections_of(&self, sections: &[(ObjectId, String)], limit: usize) -> Result<Vec<SegmentRow>, StoreError> {
         self.inner.sections_of(sections, limit).map_err(|e| translate(&self.vault, e))
     }

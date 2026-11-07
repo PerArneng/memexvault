@@ -18,6 +18,11 @@ impl ApiError {
         self.code == "not_caught_up"
     }
 
+    /// The two parts a batch reports for each decision that failed.
+    pub fn code_and_message(self) -> (&'static str, String) {
+        (self.code, self.message)
+    }
+
     pub fn new(status: StatusCode, code: &'static str, message: impl Into<String>, request_id: &str) -> Self {
         Self {
             status,

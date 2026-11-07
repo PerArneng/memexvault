@@ -821,7 +821,10 @@ fn a_merge_by_an_agent_never_auto_commits() {
     define(&w, &w.human, "Widget", None, widget_v1(), "t");
     let (a, b) = (widget(&w, "e1", "A"), widget(&w, "e2", "B"));
     for earned in [false, true] {
-        w.s.set_machine_auto_commit(earned);
+        if earned {
+            w.s.record_audit_samples(&w.v, &w.agent.principal.id, "", "entity:Widget", 100, 0, "test", "earned for this test")
+                .unwrap();
+        }
         let o = w.s.propose_merge(&w.agent, &w.v, &a, &b, "r".into(), format!("m{earned}")).unwrap();
         assert_eq!(state(&o), ChangeSetState::Pending, "earned {earned}");
         assert_eq!(o.risk, RiskDecision::Review);
@@ -856,7 +859,6 @@ fn a_merge_by_an_agent_never_auto_commits() {
     // An agent can't revert it either.
     assert!(matches!(w.s.revert(&w.agent_admin, &w.v, &cs_id(&o), "r".into()), Err(ServerError::Forbidden)));
     // Nor can it bring a type live, or approve its own.
-    w.s.set_machine_auto_commit(true);
     let o = define(&w, &w.agent, "AgentType", None, widget_v1(), "at");
     assert_eq!(state(&o), ChangeSetState::Pending);
     let preview = w.s.preview_entity_type(&w.agent, &w.v, "AgentType2", &widget_v1()).unwrap();
@@ -864,7 +866,23 @@ fn a_merge_by_an_agent_never_auto_commits() {
     assert!(matches!(w.s.approve(&w.agent_admin, &w.v, &cs_id(&o), None), Err(ServerError::Forbidden)));
     assert_eq!(w.s.approve(&w.admin, &w.v, &cs_id(&o), None).unwrap().state, ChangeSetState::Committed);
     // While a machine's ordinary claims about entities, once earned, do commit.
-    let (_, o) = new_widget(&w, &w.agent, "ae", vec![cited("name", json!("By agent"), "The pump")]);
+    let req = memex_core::UploadRequest {
+        name: "t.txt".into(),
+        trust_tier: "trusted".into(),
+        metadata: json!({}),
+        replaces: None,
+    };
+    let trusted =
+        w.s.upload(&w.admin, &w.v, req, memex_core::UploadLimits::default(), &mut "a trusted document".as_bytes())
+            .unwrap()
+            .source
+            .header
+            .id;
+    w.s.record_segment(&w.admin, &w.v, &ObjectId("seg2".into()), &trusted, None, "The pump weighs 12 kg.")
+        .unwrap();
+    let mut from_trusted = cited("name", json!("By agent"), "The pump");
+    from_trusted.evidence[0].segment_id = ObjectId("seg2".into());
+    let (_, o) = new_widget(&w, &w.agent, "ae", vec![from_trusted]);
     assert_eq!(state(&o), ChangeSetState::Committed, "{:?}", o.validators);
     // A machine's claim needs evidence even so.
     let (_, o) = new_widget(&w, &w.agent, "ae2", vec![field("name", json!("No evidence"))]);

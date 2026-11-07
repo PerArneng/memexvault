@@ -617,7 +617,8 @@ fn people_commit_and_agents_wait_through_the_risk_function() {
         Err(ServerError::StaleVersion { .. })
     ));
     // Earned auto-commit counts for an agent's edit, but a delete always waits.
-    w.s.set_machine_auto_commit(true);
+    w.s.record_audit_samples(&w.v, &w.agent.principal.id, "", "page", 100, 0, "test", "earned for this test")
+        .unwrap();
     assert_eq!(
         w.s.propose_page_edit(&w.agent, &w.v, &agent_page, 2, "earned".into(), "r".into(), "ae2".into(), false)
             .unwrap()
