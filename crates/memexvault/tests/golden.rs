@@ -1239,6 +1239,14 @@ fn cache_tiers_replay() {
         100.0 * hits as f64 / (hits + misses).max(1) as f64
     );
     let p95 = report("cached, 1 client", warm);
+    // The one store call a hit makes, on its own: what's left of a hit's time is the machine's round trip to Postgres.
+    let mut marks: Vec<f64> = vec![];
+    for _ in 0..requests.len() {
+        let t = Instant::now();
+        rig.store.cache_marks(&rig.v).expect("marks");
+        marks.push(t.elapsed().as_secs_f64() * 1000.0);
+    }
+    report("marks alone, 1 client", marks);
     std::thread::scope(|s| {
         let handles: Vec<_> = (0..8)
             .map(|_| {
