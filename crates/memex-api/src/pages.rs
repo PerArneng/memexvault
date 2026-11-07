@@ -293,3 +293,53 @@ pub struct PageRedirectDto {
     /// The slug asked for is an old one.
     pub redirected: bool,
 }
+
+/// Which links a neighborhood shows.
+#[derive(Debug, Default, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct NeighborhoodParams {
+    /// Comma-separated edge kinds. The default is `wiki_link,claim_ref,contradicts`.
+    pub kinds: Option<String>,
+}
+
+impl NeighborhoodParams {
+    /// The kinds asked for, or the default ones.
+    pub fn kinds(&self) -> Vec<String> {
+        let asked: Vec<String> = self
+            .kinds
+            .iter()
+            .flat_map(|k| k.split(','))
+            .map(str::trim)
+            .filter(|k| !k.is_empty())
+            .map(String::from)
+            .collect();
+        if asked.is_empty() {
+            DEFAULT_NEIGHBOR_KINDS.iter().map(|k| k.to_string()).collect()
+        } else {
+            asked
+        }
+    }
+}
+
+const DEFAULT_NEIGHBOR_KINDS: [&str; 3] = ["wiki_link", "claim_ref", "contradicts"];
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct NeighborDto {
+    pub edge_id: String,
+    pub kind: String,
+    /// `out` when the object asked about is where the link starts, or `in`.
+    pub direction: String,
+    pub from: String,
+    pub to: String,
+    pub block_id: Option<String>,
+    /// What's at the other end. Null is a link to a slug no page holds.
+    pub neighbor: Option<String>,
+    /// The other end's title, when it's a page.
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct NeighborPage {
+    pub items: Vec<NeighborDto>,
+    pub next_cursor: Option<String>,
+}

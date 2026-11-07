@@ -2244,6 +2244,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vaults/{id}/objects/{oid}/neighborhood": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every link at one object, both ways, one hop. Kinds default to wiki links, claim references and contradictions. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number;
+                    /** @description `created`, the default. */
+                    sort?: string;
+                    /** @description Comma-separated edge kinds. The default is `wiki_link,claim_ref,contradicts`. */
+                    kinds?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                    oid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NeighborPage"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/vaults/{id}/pages": {
         parameters: {
             query?: never;
@@ -5053,6 +5116,23 @@ export interface components {
         };
         NameBody: {
             name: string;
+        };
+        NeighborDto: {
+            block_id?: string | null;
+            /** @description `out` when the object asked about is where the link starts, or `in`. */
+            direction: string;
+            edge_id: string;
+            from: string;
+            kind: string;
+            /** @description What's at the other end. Null is a link to a slug no page holds. */
+            neighbor?: string | null;
+            /** @description The other end's title, when it's a page. */
+            title?: string | null;
+            to: string;
+        };
+        NeighborPage: {
+            items: components["schemas"]["NeighborDto"][];
+            next_cursor?: string | null;
         };
         NewEntityBody: {
             aliases?: string[];

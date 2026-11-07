@@ -1973,6 +1973,74 @@
         ],
         "type": "object"
       },
+      "NeighborDto": {
+        "properties": {
+          "block_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "direction": {
+            "description": "`out` when the object asked about is where the link starts, or `in`.",
+            "type": "string"
+          },
+          "edge_id": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "neighbor": {
+            "description": "What's at the other end. Null is a link to a slug no page holds.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "description": "The other end's title, when it's a page.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "edge_id",
+          "kind",
+          "direction",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "NeighborPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NeighborDto"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "NewEntityBody": {
         "properties": {
           "aliases": {
@@ -6489,6 +6557,100 @@
         },
         "tags": [
           "jobs"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/objects/{oid}/neighborhood": {
+      "get": {
+        "operationId": "neighborhood",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "oid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "From `next_cursor` of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 200. The default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`created`, the default.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated edge kinds. The default is `wiki_link,claim_ref,contradicts`.",
+            "in": "query",
+            "name": "kinds",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NeighborPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Every link at one object, both ways, one hop. Kinds default to wiki links, claim references and contradictions.",
+        "tags": [
+          "pages"
         ]
       }
     },
