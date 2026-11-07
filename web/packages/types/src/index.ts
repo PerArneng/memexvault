@@ -61,3 +61,12 @@ export type ApiFailure =
   | { readonly kind: "unreachable"; readonly message: string }
   /** An answer that isn't our API, such as a proxy's error page. */
   | { readonly kind: "protocol"; readonly status: number; readonly message: string };
+
+export * from "./wiki";
+
+/**
+ * Marks a piece of rendered Markdown that isn't Markdown, such as a wiki link. `core` puts `OPEN<n>CLOSE` in the source and `ui` renders
+ * what the caller gives for `<n>`. They're private-use characters, and any already in the source are replaced first.
+ */
+export const INLINE_OPEN = "";
+export const INLINE_CLOSE = "";
