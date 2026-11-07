@@ -35,8 +35,9 @@ const TRUST: Readonly<Record<TrustTier, Spec>> = {
 };
 export const TrustBadge = ({ tier }: { readonly tier: TrustTier }) => iconBadge(TRUST[tier]);
 
-export type EpistemicStatus = "asserted" | "inferred" | "disputed" | "superseded";
+export type EpistemicStatus = "verified" | "asserted" | "inferred" | "disputed" | "superseded";
 const EPISTEMIC: Readonly<Record<EpistemicStatus, Spec>> = {
+  verified: { tone: "success", label: "Verified", icon: ShieldCheck },
   asserted: { tone: "info", label: "Asserted", icon: Check },
   inferred: { tone: "neutral", label: "Inferred", icon: Sparkles },
   disputed: { tone: "warning", label: "Disputed", icon: Swords },

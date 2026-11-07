@@ -1,4 +1,5 @@
 use crate::ObjectId;
+use crate::audit::{AuditCheckRow, AuditPlantedRow, AuditRunRow, AuditStateRow};
 use crate::entity::{EntityRow, EntityTypeRow};
 use crate::extraction::{DerivationRow, ExtractionRow};
 use crate::governance::{ChangeSetState, Epistemic, Op, RiskDecision, Stance, ValidatorResult};
@@ -30,10 +31,14 @@ pub enum Table {
     Extraction,
     ReviewVerdict,
     AutoCommit,
+    AuditRun,
+    AuditCheck,
+    AuditState,
+    AuditPlanted,
 }
 
 impl Table {
-    pub const ALL: [Table; 18] = [
+    pub const ALL: [Table; 22] = [
         Table::Source,
         Table::Page,
         Table::Edge,
@@ -52,6 +57,10 @@ impl Table {
         Table::Extraction,
         Table::ReviewVerdict,
         Table::AutoCommit,
+        Table::AuditRun,
+        Table::AuditCheck,
+        Table::AuditState,
+        Table::AuditPlanted,
     ];
 }
 
@@ -231,6 +240,10 @@ pub enum Row {
     Extraction(ExtractionRow),
     ReviewVerdict(ReviewVerdictRow),
     AutoCommit(AutoCommitRow),
+    AuditRun(AuditRunRow),
+    AuditCheck(AuditCheckRow),
+    AuditState(AuditStateRow),
+    AuditPlanted(AuditPlantedRow),
 }
 
 impl Row {
@@ -254,6 +267,10 @@ impl Row {
             Row::Extraction(r) => &r.header,
             Row::ReviewVerdict(r) => &r.header,
             Row::AutoCommit(r) => &r.header,
+            Row::AuditRun(r) => &r.header,
+            Row::AuditCheck(r) => &r.header,
+            Row::AuditState(r) => &r.header,
+            Row::AuditPlanted(r) => &r.header,
         }
     }
 
@@ -277,6 +294,10 @@ impl Row {
             Row::Extraction(_) => Table::Extraction,
             Row::ReviewVerdict(_) => Table::ReviewVerdict,
             Row::AutoCommit(_) => Table::AutoCommit,
+            Row::AuditRun(_) => Table::AuditRun,
+            Row::AuditCheck(_) => Table::AuditCheck,
+            Row::AuditState(_) => Table::AuditState,
+            Row::AuditPlanted(_) => Table::AuditPlanted,
         };
         RowKey {
             table,

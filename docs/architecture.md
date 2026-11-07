@@ -144,7 +144,7 @@ Each object kind has its own tables and a common header: UUIDv7, creator, status
 | Rendition | Parser output for a Source (parser@version, canonical text and word table blobs) | Immutable, superseded by reprocessing |
 | Segment | A located, structure-bounded span of a Rendition, with its detected language | Immutable |
 | Evidence | Links an Assertion to a Segment with anchor, quote and stance | Append-only |
-| Assertion | One claim, literal-valued or entity-valued, with epistemic status and confidence | Never edited, only superseded |
+| Assertion | One claim, literal-valued or entity-valued, with epistemic status and confidence | Never edited, only superseded or retired |
 | Entity | A typed thing with aliases. Current state is materialized from its Assertions | Via merge and split events |
 | EntityType | A versioned JSON Schema with field annotations | New versions only |
 | Page, Block, Revision | Wiki content, edited with optimistic versions | Editable, full history |
@@ -256,11 +256,12 @@ flowchart LR
 
 - **Validators:** schema, scope, quote verification, dedup and contradiction.
 - **Always human-reviewed:** merges, deletes, breaking schema changes, edits to verified claims, promoting untrusted
-  sources, and a claim arriving as `verified` from a machine or citing an untrusted source. Only a person can approve or revert these, whatever scope an agent holds.
+  sources, retiring a claim (`RetractAssertion`), and a claim arriving as `verified` from a machine or citing an untrusted source. Only a person can approve or revert these, whatever scope an agent holds.
 - **Auto-commit starts off.** A combination of extractor, prompt version and type earns it when the Wilson lower bound
   of its audited precision clears a threshold. An LLM's self-reported confidence never counts. See [Review gate](#review-gate).
 - **Contradictions are preserved.** Both claims stay, linked and surfaced with their sources.
 - **Reversible:** every ChangeSet has a computed inverse, and a revert is itself a ChangeSet.
+- **Retiring a claim.** `RetractAssertion` marks a claim `Superseded` with nothing in `superseded_by`, which means nothing stands for it now. It leaves search, entity fields and cards at once, a page's reference to it reads as missing, `as_of` still finds it at a time it stood, and a revert restores the row exactly. It may leave an entity without a required field, since a type's schema mustn't keep a wrong claim in place.
 
 ### Extraction
 
@@ -292,10 +293,20 @@ Spec 025. Everything pending is the queue, in `/vaults/{id}/review`, with filter
 
 ### Audit agent
 
-Runs on a schedule with an injected seed and a token budget. It samples by extractor, type, age and trust, weighted
-toward recent auto-commits, and holds `propose` scope only. Checks: quote relocation, isolated entailment, blind
-re-extraction, staleness and index reconciliation. Failures revoke auto-commit and requeue sibling claims. Planted errors
-measure the auditor's recall.
+Spec 026. Runs on a schedule, or on demand, with a seed and a token budget, sampling the claims that stand and checking them against their sources. It's off until someone writes a schedule. It has no token: a job of the server's own that acts as a machine principal holding `propose` scope, and its results are events like anything else, so replay calls no LLM.
+
+- **The sample** is a pure function of the seed and the vault's claims, weighted toward recent auto-commits and toward rare extractors, rare types and low trust, by exponential keys, so the order rows arrive in can't matter. Age counts from the newest commit in the vault rather than from the clock, so the same seed on the same state gives the same sample next week, whether scheduled or from the route.
+- **Deterministic checks** cost no tokens: quote relocation, link rot (a segment, source or bytes gone, and page links that lead nowhere), staleness (a per-predicate TTL in days, or a claim's own validity ending), and index reconciliation. Reconciliation compares a count and an order-independent hash of ids between the store and each index, and asks the keyword index about each sampled claim. Events since an index's watermark that touched nothing it holds don't count against it, and otherwise the answer is inconclusive rather than a finding.
+- **LLM checks** are off unless `MEMEX_AUDIT_MODEL` is set: isolated entailment of the claim against its quote, then blind re-extraction of the segment, shown nothing about the claim, and compared with it. Tools are never offered, and replies must match their schema.
+- **Budgets.** Per run and per UTC day, on the schedule. A call that wouldn't fit either isn't made. Running out, an outage or a provider's refusal ends the LLM checks and not the run, which finishes with its deterministic results and says why it stopped.
+- **Findings become review items,** as a `RetractAssertion` proposal through the ordinary gate, one per claim ever, with a person deciding. A vault-level finding, or a claim only an index has lost, has nothing to retire, and shows on the run.
+- **What revokes.** Only a quote that fails on the rendition the claim cites, or a `not_entailed` answer, and only for a machine's combination. It records an incorrect sample and, if the combination had earned auto-commit, disables it at once however good its record, so its counts start again and only new samples can earn it back. Link rot, a quote lost because the source was replaced or re-rendered, staleness, a blind re-extraction's disagreement alone and index drift are findings and revoke nothing, since they aren't shown to be the extractor's error.
+- **What earns.** A claim gives its combination one correct sample, once, and only with an entailment and no failure, because a quote that's where it says proves nothing the validators hadn't already checked.
+- **Siblings** are a revoked combination's auto-committed claims that still stand, requeued as `RetractAssertion` items, at most 200 per run. A cursor holds the place and each run reports what's left, so later runs carry on until the combination is covered, including runs that found nothing wrong.
+- **A person's decision on an audit item.** Keeping a claim is a correct sample for its combination. Retiring a sibling or a claim only a blind re-extraction disagreed with is an incorrect one, while retiring a finding the audit already counted adds nothing, and neither does anything for a person's own claim. An agent's decision counts for nothing. A claim a person kept isn't asked about or counted against again.
+- **Missed slots** aren't caught up: one run goes, and the slots passed over are counted. A slot that finds a run still open is passed over and counted too.
+- **Planted errors** measure recall in a test vault, one marked as such while empty, as planting writes straight to rows. The report keeps kinds the deterministic checks catch apart from kinds only LLM checks can, and it won't judge the 80% target until a real model has answered, as scripted answers prove the mechanism and say nothing about a model.
+- **The known limit** is a false sentence in plain view in a trusted source, quoted faithfully. Every check passes it, as it would have to compare sources to find it.
 
 ### Prompt injection
 

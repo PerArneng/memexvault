@@ -426,6 +426,14 @@ pub fn plan<S: Snapshot>(
                 out.push(Mutation::Put(Row::Assertion(old)));
                 out.extend(assertion_rows(replacement, creator, changeset).into_iter().map(Mutation::Put));
             }
+            Op::RetractAssertion { target, base_version, .. } => {
+                let k = key(Table::Assertion, target);
+                let row = check_base(k.clone(), snap.get(&k)?, *base_version)?;
+                let Row::Assertion(mut old) = row else { return Err(PlanError::Missing(k)) };
+                old.header.status = Status::Superseded;
+                old.header.version += 1;
+                out.push(Mutation::Put(Row::Assertion(old)));
+            }
             Op::AddEdge { id, from, to, kind } => {
                 must_be_new(key(Table::Edge, id))?;
                 out.push(Mutation::Put(Row::Edge(EdgeRow {
@@ -556,6 +564,8 @@ pub fn kinds_of<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Vec<OpKind>, StoreE
                 Some(Row::Assertion(a)) if a.epistemic == Epistemic::Verified => OpKind::EditVerifiedClaim,
                 _ => OpKind::EditClaim,
             },
+            // Taking a claim away is a delete as far as the risk table goes, so it always gets a person.
+            Op::RetractAssertion { .. } => OpKind::Delete,
             Op::CreatePage { .. } => OpKind::CreatePage,
             Op::EditPage { .. } | Op::RenamePage { .. } | Op::RevertPage { .. } => OpKind::EditPage,
             Op::DeletePage { .. } => OpKind::Delete,

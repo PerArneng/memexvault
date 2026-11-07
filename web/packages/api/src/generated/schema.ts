@@ -853,6 +853,522 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vaults/{id}/audit/budget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditBudgetDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/planted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Corrupts claims in a test vault and tags them, tagging what's left clean, to measure what audits catch. It's refused on any other vault. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PlantBody"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PlantedDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/recall": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What planted errors came to, per kind and in two groups: kinds the deterministic checks catch, and kinds only LLM checks can. Scripted answers say nothing about a model, so `target_met` stays null until a real model's run. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RecallReportDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Runs in creation order, with their seeds, what each found and what it spent. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number;
+                    /** @description `created`, the default. */
+                    sort?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditRunPage"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Starts a run now. A seed makes it repeatable: the same seed on the same state samples the same claims as any other run with that seed, scheduled or not. It may spend tokens, so it needs admin scope. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TriggerAuditBody"];
+                };
+            };
+            responses: {
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditRunDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/runs/{run}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One run, with its seed and its sample in rank order. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    run: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditRunDetailDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/runs/{run}/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What was found about each sampled claim, in rank order, with each check's result and the review item it led to. `findings=true` leaves out what passed. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number;
+                    /** @description `created`, the default. */
+                    sort?: string;
+                    /** @description Only what didn't pass. */
+                    findings?: boolean;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                    run: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditCheckPage"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditScheduleDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        /** Replaces the schedule, which is off until someone turns it on. The first run comes one interval from now. */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AuditScheduleBody"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditScheduleDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/audit/test-vault": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Marks an empty vault as one errors can be planted in. It can't be undone. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/vaults/{id}/changes": {
         parameters: {
             query?: never;
@@ -4319,8 +4835,6 @@ export interface paths {
                     trust_tier?: string;
                     /** @description The Source this is a new version of. */
                     replaces?: string;
-                    /** @description A recording's language, such as `sv`, which helps its transcriber. Without it, the transcriber works it out. */
-                    language?: string;
                 };
                 header?: never;
                 path: {
@@ -4653,221 +5167,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{id}/sources/{sid}/media": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    sid: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["MediaInfoDto"];
-                    };
-                };
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/vaults/{id}/sources/{sid}/meeting": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    sid: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["MeetingDto"];
-                    };
-                };
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-            };
-        };
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    sid: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["MeetingBody"];
-                };
-            };
-            responses: {
-                /** @description Proposed. A person's commits at once and an agent's waits for review. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["MeetingProposalResult"];
-                    };
-                };
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-            };
-        };
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/vaults/{id}/sources/{sid}/meeting/participants/{pid}/link": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    sid: string;
-                    pid: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json": components["schemas"]["ParticipantLinkBody"];
-                };
-            };
-            responses: {
-                /** @description Proposed. A person's commits at once and an agent's waits for review. */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["MeetingProposalResult"];
-                    };
-                };
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/vaults/{id}/sources/{sid}/pages": {
         parameters: {
             query?: never;
@@ -5124,149 +5423,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/vaults/{id}/sources/{sid}/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    sid: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description The original recording, as it was uploaded, to play */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Part of it, for a Range request. A player seeks to a cited time with these. */
-                206: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-                /** @description The range starts past the end */
-                416: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/vaults/{id}/sources/{sid}/transcript": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: {
-                    /** @description Text around this time, in milliseconds. Goes with `window_ms`. */
-                    around_ms?: number;
-                    /** @description How far either side of `around_ms`. The default is 30000. */
-                    window_ms?: number;
-                    /** @description Text from this time on. */
-                    from_ms?: number;
-                    /** @description Text up to this time. */
-                    to_ms?: number;
-                    /** @description Include each word's own times. */
-                    words?: boolean;
-                    /** @description From `next_cursor` of the previous page. */
-                    cursor?: string;
-                    /** @description 1 to 200. The default is 50. */
-                    limit?: number;
-                };
-                header?: never;
-                path: {
-                    id: string;
-                    sid: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["TranscriptDto"];
-                    };
-                };
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-                /** @description Not transcribed yet */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ErrorBody"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/vaults/{id}/sources/{sid}/versions": {
         parameters: {
             query?: never;
@@ -5438,6 +5594,160 @@ export interface components {
     schemas: {
         AssertionList: {
             items: Record<string, never>[];
+        };
+        AuditBudgetDto: {
+            /**
+             * Format: int64
+             * @description Whole days since the epoch, in UTC.
+             */
+            day: number;
+            /** Format: int64 */
+            day_remaining: number;
+            /** Format: int64 */
+            day_spent: number;
+            /** Format: int64 */
+            day_token_budget: number;
+            /** Format: int64 */
+            run_token_budget: number;
+        };
+        /** @description One sampled claim and what was found about it. A finding is one of these whose outcome isn't `passed`. */
+        AuditCheckDto: {
+            auto_committed: boolean;
+            /** @description The review item a person decides this on. */
+            changeset_id?: string | null;
+            checks: components["schemas"]["AuditCheckResultDto"][];
+            claim_id: string;
+            combination?: components["schemas"]["AuditCombinationDto"] | null;
+            counted_correct: boolean;
+            /** Format: int64 */
+            finished_at_ms?: number | null;
+            id: string;
+            /** @description `sampled`, `passed`, `suspect` or `failed`. */
+            outcome: string;
+            /** Format: int32 */
+            rank: number;
+            run_id: string;
+            /** Format: int64 */
+            weight_micro: number;
+        };
+        AuditCheckPage: {
+            items: components["schemas"]["AuditCheckDto"][];
+            next_cursor?: string | null;
+        };
+        AuditCheckResultDto: {
+            cause?: string | null;
+            check: string;
+            /** @description May hold a document's or a model's words, so show it as plain text. */
+            detail: string;
+            model?: string | null;
+            prompt_hash?: string | null;
+            /** @description `pass`, `fail` or `inconclusive`. */
+            status: string;
+            tokens?: components["schemas"]["TokenUsageDto"] | null;
+        };
+        AuditCombinationDto: {
+            extractor: string;
+            item_type: string;
+            prompt_version: string;
+        };
+        AuditRunDetailDto: {
+            run: components["schemas"]["AuditRunDto"];
+            /** @description The claims it sampled, in rank order. The checks route has what was found about each. */
+            sample: string[];
+        };
+        AuditRunDto: {
+            /** Format: int64 */
+            created_at_ms: number;
+            /** Format: int32 */
+            failed: number;
+            /** Format: int64 */
+            finished_at_ms?: number | null;
+            id: string;
+            /** Format: int32 */
+            llm_calls: number;
+            /** Format: int32 */
+            llm_skipped: number;
+            /** Format: int32 */
+            missed_slots: number;
+            model?: string | null;
+            /** Format: int32 */
+            passed: number;
+            /** Format: int64 */
+            population: number;
+            requested_by: string;
+            /** @description Combinations this run took auto-commit from. */
+            revoked: string[];
+            /** Format: int64 */
+            run_token_budget: number;
+            /** Format: int32 */
+            sample_size: number;
+            /** Format: int32 */
+            sampled: number;
+            /** @description A decimal number, as text. */
+            seed: string;
+            /**
+             * Format: int64
+             * @description Claims of revoked combinations still to go back to review. Later runs carry on with them.
+             */
+            siblings_remaining: number;
+            /** Format: int32 */
+            siblings_requeued: number;
+            /** Format: int64 */
+            started_at_ms?: number | null;
+            /** @description `queued`, `running`, `finished`, or `failed` if its job gave up. */
+            state: string;
+            /** Format: int64 */
+            state_seq?: number | null;
+            /** @description Why its LLM checks ended early: `run_budget`, `day_budget`, `llm_unavailable` or `llm_refused`. Running out of budget isn't a failure. */
+            stop?: string | null;
+            stop_detail?: string | null;
+            /** Format: int32 */
+            suspect: number;
+            tokens: components["schemas"]["TokenUsageDto"];
+            /** @description `scheduled` or `on_demand`. */
+            trigger: string;
+            vault_findings: components["schemas"]["VaultFindingDto"][];
+        };
+        AuditRunPage: {
+            items: components["schemas"]["AuditRunDto"][];
+            next_cursor?: string | null;
+        };
+        /** @description How often to audit, how much, and what it may spend. */
+        AuditScheduleBody: {
+            /** Format: int64 */
+            day_token_budget: number;
+            enabled: boolean;
+            /** Format: int64 */
+            interval_ms: number;
+            /** Format: int64 */
+            run_token_budget: number;
+            /** Format: int32 */
+            sample_size: number;
+            /** @description Days until claims of each predicate go stale. */
+            ttl_days?: {
+                [key: string]: number;
+            };
+        };
+        AuditScheduleDto: {
+            /** Format: int64 */
+            day_token_budget: number;
+            enabled: boolean;
+            /** Format: int64 */
+            interval_ms: number;
+            /** Format: int64 */
+            next_run_at_ms?: number | null;
+            /** Format: int64 */
+            run_token_budget: number;
+            /** Format: int32 */
+            sample_size: number;
+            /**
+             * Format: int64
+             * @description Slots passed over since it began, because the server was away or a run was still open.
+             */
+            total_missed_slots: number;
+            ttl_days: {
+                [key: string]: number;
+            };
         };
         AutoCommitChangeDto: {
             /** Format: int64 */
@@ -5638,17 +5948,8 @@ export interface components {
             source_id?: string | null;
             source_name?: string | null;
             source_sha256?: string | null;
-            /** @description Who was speaking, when that's known and one person spoke all of it. */
-            speaker?: string | null;
             /** Format: int64 */
             start?: number | null;
-            /** Format: int64 */
-            t_end_ms?: number | null;
-            /**
-             * Format: int64
-             * @description Where it plays in the original recording, in milliseconds. Only a recording has these.
-             */
-            t_start_ms?: number | null;
             trust_tier?: string | null;
         };
         ClaimRefDto: {
@@ -5854,8 +6155,6 @@ export interface components {
             /** @description The quote no longer resolves. Reported rather than guessed. */
             broken: boolean;
             evidence_id: string;
-            /** @description The source's media type. A recording's bytes play from `/sources/{sid}/stream`. */
-            media_type: string;
             parser: string;
             quote: string;
             /** @description Displayed coordinates in 1/100 pt, one per line. */
@@ -5865,18 +6164,9 @@ export interface components {
             source_id: string;
             source_name: string;
             source_sha256: string;
-            /** @description Who was speaking, when that's known and one person spoke all of it. */
-            speaker?: string | null;
             stance: string;
             /** @description A newer rendition exists. This still resolves. */
             superseded: boolean;
-            /** Format: int64 */
-            t_end_ms?: number | null;
-            /**
-             * Format: int64
-             * @description Where the quote plays in the original recording, in milliseconds. Only a recording has these.
-             */
-            t_start_ms?: number | null;
             trust_tier: string;
         };
         /** @description The answer to a search: claims first, then segments, then context sections, within a token budget. */
@@ -6000,6 +6290,16 @@ export interface components {
             scope: components["schemas"]["ScopeDto"];
             vault_id: string;
         };
+        GroupRecallDto: {
+            /** Format: int64 */
+            audited: number;
+            /** Format: int64 */
+            caught: number;
+            /** Format: int64 */
+            planted: number;
+            /** Format: double */
+            recall?: number | null;
+        };
         HealthDto: {
             status: string;
         };
@@ -6013,14 +6313,6 @@ export interface components {
             page_width: number;
             rects: components["schemas"]["RectDto"][];
             source_id: string;
-            speaker?: string | null;
-            /** Format: int64 */
-            t_end_ms?: number | null;
-            /**
-             * Format: int64
-             * @description A recording's highlight is a time range and has no page or rects.
-             */
-            t_start_ms?: number | null;
         };
         InversePreview: {
             blocked_because?: string | null;
@@ -6052,6 +6344,19 @@ export interface components {
             items: components["schemas"]["JobDto"][];
             next_cursor?: string | null;
         };
+        KindRecallDto: {
+            /** Format: int64 */
+            audited: number;
+            /** Format: int64 */
+            caught: number;
+            kind: string;
+            /** @description Only an LLM check can catch this kind. */
+            needs_llm: boolean;
+            /** Format: int64 */
+            planted: number;
+            /** Format: double */
+            recall?: number | null;
+        };
         LexicalHitDto: {
             id: string;
             /** @description `segment` or `claim`. */
@@ -6080,68 +6385,6 @@ export interface components {
         /** @description Signs in a browser. No `Debug`, so the token can't reach a log by accident. */
         LoginBody: {
             token: string;
-        };
-        MediaInfoDto: {
-            /** Format: int32 */
-            channels?: number | null;
-            /**
-             * Format: int32
-             * @description Stretches read with less accurate times, because the transcriber crashed on them once.
-             */
-            coarse_spans?: number | null;
-            codec?: string | null;
-            /**
-             * Format: int64
-             * @description Empty until transcribed, as decoding is what finds it.
-             */
-            duration_ms?: number | null;
-            /** Format: int64 */
-            gap_ms?: number | null;
-            /**
-             * Format: int32
-             * @description Holes in the audio, kept as silence so times stay on the original timeline.
-             */
-            gaps?: number | null;
-            media_type: string;
-            /** @description The current rendition, once transcribed. */
-            rendition_id?: string | null;
-            /** Format: int32 */
-            sample_rate?: number | null;
-            /** Format: int64 */
-            size: number;
-            /**
-             * Format: int32
-             * @description Stretches the transcriber crashed on twice, which have no words.
-             */
-            skipped_spans?: number | null;
-            source_id: string;
-        };
-        /** @description A full replacement of a meeting's metadata, as a proposal. */
-        MeetingBody: {
-            /** Format: int32 */
-            base_version: number;
-            /** Format: int64 */
-            date_ms?: number | null;
-            idempotency_key: string;
-            participants: components["schemas"]["ParticipantInput"][];
-            title?: string | null;
-        };
-        MeetingDto: {
-            /** Format: int64 */
-            date_ms?: number | null;
-            participants: components["schemas"]["ParticipantDto"][];
-            source_id: string;
-            /** @description With no title set, the file's name. */
-            title?: string | null;
-            /**
-             * Format: int32
-             * @description The version to base an edit on.
-             */
-            version: number;
-        };
-        MeetingProposalResult: {
-            result: components["schemas"]["ProposalResult"];
-            source_id: string;
         };
         MergeBody: {
             idempotency_key: string;
@@ -6379,26 +6622,21 @@ export interface components {
             items: components["schemas"]["PageSummaryDto"][];
             next_cursor?: string | null;
         };
-        ParticipantDto: {
-            /** @description The Person a committed proposal links them to. */
-            entity_id?: string | null;
-            /** @description Stable, so a link can follow them. The server gives one to a participant sent without it. */
-            id: string;
-            name: string;
-            /** @description A transcript's label for them, when someone knows it. */
-            speaker?: string | null;
+        PlantBody: {
+            /** @description Kinds to plant, and every kind if left out. */
+            kinds?: string[] | null;
+            /** Format: int32 */
+            per_kind: number;
+            /** @description A decimal number, as text. */
+            seed: string;
         };
-        ParticipantInput: {
-            /** @description Leave out for a new participant. */
-            id?: string | null;
-            name: string;
-            speaker?: string | null;
+        PlantedCountDto: {
+            kind: string;
+            /** Format: int64 */
+            planted: number;
         };
-        /** @description Proposes that a participant is this Person. */
-        ParticipantLinkBody: {
-            entity_id: string;
-            idempotency_key: string;
-            rationale: string;
+        PlantedDto: {
+            kinds: components["schemas"]["PlantedCountDto"][];
         };
         PrincipalDto: {
             /** Format: int64 */
@@ -6459,6 +6697,33 @@ export interface components {
         };
         ReasonBody: {
             reason?: string | null;
+        };
+        /** @description What planted errors in this vault came to. Keep the two groups apart: the deterministic one is measured, and the LLM one means something only when `llm_evidence` is `model`. */
+        RecallReportDto: {
+            /** Format: int64 */
+            clean_audited: number;
+            deterministic: components["schemas"]["GroupRecallDto"];
+            /** Format: int64 */
+            false_positives_deterministic: number;
+            /** Format: int64 */
+            false_positives_llm: number;
+            kinds: components["schemas"]["KindRecallDto"][];
+            /** @description `none`, `scripted` or `model`. Scripted answers prove the mechanism and say nothing about a model. */
+            llm_evidence: string;
+            llm_models: string[];
+            llm_only: components["schemas"]["GroupRecallDto"];
+            /** Format: int64 */
+            overall_caught: number;
+            /** Format: int64 */
+            overall_planted: number;
+            /** Format: double */
+            overall_recall?: number | null;
+            /** Format: double */
+            target: number;
+            /** @description Null until it can be judged: every kind planted, with answers from a real model. */
+            target_met?: boolean | null;
+            /** @description Too few planted errors to trust the figure. */
+            too_small: boolean;
         };
         RectDto: {
             /** Format: int32 */
@@ -6632,16 +6897,8 @@ export interface components {
             page_to?: number | null;
             rendition_id?: string | null;
             source_id: string;
-            speaker?: string | null;
             /** Format: int64 */
             start: number;
-            /** Format: int64 */
-            t_end_ms?: number | null;
-            /**
-             * Format: int64
-             * @description Where it plays, when it comes from a recording.
-             */
-            t_start_ms?: number | null;
             text: string;
         };
         SegmentPage: {
@@ -6734,41 +6991,14 @@ export interface components {
             /** Format: int64 */
             thinking_tokens: number;
         };
-        TranscriptDto: {
+        /** @description What to run. Anything left out comes from the schedule. The same seed on the same state gives the same sample. */
+        TriggerAuditBody: {
             /** Format: int64 */
-            duration_ms: number;
-            next_cursor?: string | null;
-            parser: string;
-            parts: components["schemas"]["TranscriptPartDto"][];
-            rendition_id: string;
-        };
-        /** @description A stretch of a transcript: a turn, cut to the window asked for. Its range is the same a claim citing these words gets. */
-        TranscriptPartDto: {
-            /** Format: int64 */
-            end: number;
-            /** @description Who was speaking, when that's known and one person spoke all of it. */
-            speaker?: string | null;
-            /**
-             * Format: int64
-             * @description UTF-8 byte offsets into the rendition's canonical text.
-             */
-            start: number;
-            /** Format: int64 */
-            t_end_ms: number;
-            /** Format: int64 */
-            t_start_ms: number;
-            text: string;
-            words?: components["schemas"]["TranscriptWordDto"][] | null;
-        };
-        TranscriptWordDto: {
-            /** Format: int64 */
-            end_ms: number;
-            /**
-             * Format: int64
-             * @description The table's own times, with no padding.
-             */
-            start_ms: number;
-            text: string;
+            run_token_budget?: number | null;
+            /** Format: int32 */
+            sample_size?: number | null;
+            /** @description A decimal number, as text, since it can be too large for a JSON number to carry safely. */
+            seed?: string | null;
         };
         TypePreviewBody: {
             schema: Record<string, never>;
@@ -6817,6 +7047,12 @@ export interface components {
             created_by: string;
             id: string;
             name: string;
+        };
+        VaultFindingDto: {
+            check: string;
+            detail: string;
+            /** @description `pass`, `fail` or `inconclusive`. */
+            status: string;
         };
         VaultPage: {
             items: components["schemas"]["VaultDto"][];

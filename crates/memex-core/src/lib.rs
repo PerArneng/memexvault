@@ -1,5 +1,6 @@
 //! Pure: traits, the Engine, reducers and policy. No runtime, network or file access. Anything with an edge sits behind a trait here.
 mod agent;
+pub mod audit;
 mod auth;
 mod batch;
 mod blob;
@@ -35,6 +36,7 @@ pub mod vector;
 pub mod vector_projector;
 
 pub use agent::{AgentOutcome, AgentRunner, run_with_retry};
+pub use audit::{AUDIT_JOB, AUDITOR, AuditLimits};
 pub use auth::{Caller, Decision, Operation, authorize};
 pub use batch::{BatchLimits, Pending, plan_batch};
 pub use blob::{BlobInfo, BlobStore, BlobStoreError, BlobStored, Verified, sweepable};
@@ -54,12 +56,12 @@ pub use review::{REVIEW_JOB, ReviewLimits};
 pub use search::Reranker;
 pub use seed::Seed;
 pub use server::{
-    AutoCommitEntry, AutoCommitTable, BacklinkView, BatchDecision, ClaimEvidence, ClaimRef, ClaimRefStatus, ClaimReference, CreatedSession, CreatedToken,
-    EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, EvidenceLineage, ExtractJobError, ExtractionReport, FieldInput, ImportedPage,
-    Lineage, MediaInfo, MeetingView, NeighborView, NewEntity, NewPage, NewToken, OutgoingLink, PIPELINE_VERSION, PageChange, PageDiff, PageList, PageRedirect,
-    PageRevisionView, PageView, ParticipantLink, ParticipantView, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT, Redirect, RenditionInput,
-    ReviewDetail, ReviewEvidence, ReviewItem, SearchEdges, Server, ServerEdges, ServerError, SplitRequest, TRANSCRIBE_JOB, TranscriptPage, TranscriptWindow,
-    TypeDecision, UnresolvedLink,
+    AuditBudget, AuditRunDetail, AutoCommitEntry, AutoCommitTable, BacklinkView, BatchDecision, ClaimEvidence, ClaimRef, ClaimRefStatus, ClaimReference,
+    CreatedSession, CreatedToken, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, EvidenceLineage, ExtractJobError, ExtractionReport,
+    FieldInput, ImportedPage, Lineage, MediaInfo, MeetingView, NeighborView, NewEntity, NewPage, NewToken, OutgoingLink, PIPELINE_VERSION, PageChange,
+    PageDiff, PageList, PageRedirect, PageRevisionView, PageView, ParticipantLink, ParticipantView, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT,
+    Redirect, RenditionInput, ReviewDetail, ReviewEvidence, ReviewItem, SearchEdges, Server, ServerEdges, ServerError, SplitRequest, TRANSCRIBE_JOB,
+    TranscriptPage, TranscriptWindow, TriggerAudit, TypeDecision, UnresolvedLink,
 };
 pub use session::{LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, SESSION_TTL_MS};
 pub use settings::{Backends, CacheSettings, LlmSettings, Settings, SettingsError, TranscribeApi, TranscribeSettings};

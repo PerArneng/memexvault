@@ -229,6 +229,34 @@ impl<E: ServerEdges> Server<E> {
         else {
             return Ok(vec![]);
         };
+        // An audit's item asks whether to retire a claim, so a person keeping it says the claim was right, and retiring it says it was wrong, unless the audit has already counted that.
+        if row.proposer == crate::audit::AUDITOR {
+            // A person's own claim has no machine's record to add to.
+            if origin.extractor == crate::audit::AUDITOR {
+                return Ok(vec![]);
+            }
+            let counts_against = row.ops.iter().any(|op| matches!(op, Op::RetractAssertion { counts_against: true, .. }));
+            let (right, wrong) = match correct {
+                _ if row.original_ops.is_some() => (0, 0),
+                true => (0, u64::from(counts_against)),
+                false => (1, 0),
+            };
+            if right + wrong == 0 {
+                return Ok(vec![]);
+            }
+            let reason = format!(
+                "{} by {}: audit item {}",
+                if wrong > 0 { "retired" } else { "kept" },
+                caller.principal.id,
+                row.header.id
+            );
+            let who = SampleBy {
+                by: &caller.principal.id,
+                reason: &reason,
+                at_ms: now,
+            };
+            return self.sample_rows(snap, origin, right, wrong, &who);
+        }
         // An always-review change, such as a merge, says nothing about how good this source's claims are, and auto-commit could never take it anyway.
         let proposed = row.original_ops.as_ref().unwrap_or(&row.ops);
         if governance::kinds_of(snap, proposed)?.iter().any(|k| governance::ALWAYS_REVIEW.contains(k)) {
@@ -266,6 +294,25 @@ impl<E: ServerEdges> Server<E> {
         let vault_lock = self.vault_lock(vault);
         let _one_at_a_time = vault_lock.lock().expect("lock");
         let snap = self.engine.store().snapshot(vault)?;
+        let row = self.audit_sample_row(&snap, extractor, prompt_version, item_type, (correct, incorrect), false, by, reason)?;
+        drop(snap);
+        self.state_event(&lease, by, vec![Mutation::Put(Row::AutoCommit(row.clone()))])?;
+        Ok(row)
+    }
+
+    /// A combination's row with an audit's samples added. With `revoke`, and if it had earned auto-commit, it's turned off and its counts start again, as with a manual disable, however many good samples it had. Call it with the vault's lock held.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn audit_sample_row<S: Snapshot>(
+        &self,
+        snap: &S,
+        extractor: &str,
+        prompt_version: &str,
+        item_type: &str,
+        (correct, incorrect): (u64, u64),
+        revoke: bool,
+        by: &str,
+        reason: &str,
+    ) -> Result<AutoCommitRow, ServerError> {
         let now = self.now();
         let key = RowKey {
             table: Table::AutoCommit,
@@ -275,11 +322,11 @@ impl<E: ServerEdges> Server<E> {
             Some(Row::AutoCommit(r)) => r,
             _ => review::fresh_row(extractor, prompt_version, item_type, now),
         };
-        drop(snap);
+        let threshold = self.threshold();
+        let was_on = review::earned(row.correct, row.incorrect, threshold);
         let who = SampleBy { by, reason, at_ms: now };
-        let row = review::with_samples(row, correct, incorrect, self.threshold(), &who);
-        self.state_event(&lease, by, vec![Mutation::Put(Row::AutoCommit(row.clone()))])?;
-        Ok(row)
+        let row = review::with_samples(row, correct, incorrect, threshold, &who);
+        Ok(if revoke && was_on { review::disabled(row, &who) } else { row })
     }
 
     /// Stops auto-commit for one combination at once, and only new samples can earn it back. There's deliberately no way to turn it on by hand.
@@ -468,6 +515,58 @@ impl<E: ServerEdges> Server<E> {
                     page_flags,
                 });
             }
+        }
+        out.extend(Self::retraction_evidence(snap, ops)?);
+        Ok(out)
+    }
+
+    /// What a claim up for retirement cites, as a person needs to see it, resolved as far as it still resolves.
+    fn retraction_evidence<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Vec<ReviewEvidence>, ServerError> {
+        let targets: Vec<ObjectId> = ops
+            .iter()
+            .filter_map(|op| {
+                if let Op::RetractAssertion { target, .. } = op {
+                    Some(target.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if targets.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut out = vec![];
+        for e in snap.evidence_of(&targets)? {
+            let segment = match snap.get(&RowKey {
+                table: Table::Segment,
+                id: e.segment_id.clone(),
+            })? {
+                Some(Row::Segment(s)) => Some(s),
+                _ => None,
+            };
+            let source = match &segment {
+                Some(s) => match snap.get(&RowKey {
+                    table: Table::Source,
+                    id: s.source_id.clone(),
+                })? {
+                    Some(Row::Source(x)) => Some(x),
+                    _ => None,
+                },
+                None => None,
+            };
+            out.push(ReviewEvidence {
+                claim_id: e.assertion_id.clone(),
+                segment_id: e.segment_id.clone(),
+                quote: e.quote.clone(),
+                source_id: segment.as_ref().map(|s| s.source_id.clone()),
+                source_name: source.as_ref().map(|s| s.name.clone()),
+                trust_tier: source.map(|s| s.trust_tier),
+                rendition_id: segment.as_ref().and_then(|s| s.rendition_id.clone()),
+                page_from: segment.as_ref().and_then(|s| s.page_from),
+                page_to: segment.as_ref().and_then(|s| s.page_to),
+                superseded: false,
+                page_flags: vec![],
+            });
         }
         Ok(out)
     }

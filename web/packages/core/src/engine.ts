@@ -12,19 +12,24 @@ import type { Preferences } from "./preferences";
 import { INITIAL_SESSION, sessionReducer } from "./session";
 import type { SessionEvent, SessionState } from "./session";
 import type { Settings } from "./settings";
+import { createWikiCases } from "./wiki-cases";
+import type { IdSource, WikiCases } from "./wiki-cases";
+import type { DraftStorage } from "./draft";
 
 export interface Edges {
   readonly clock: Clock;
   readonly settings: Settings;
   readonly api: Api;
   readonly preferences: Preferences;
+  readonly drafts: DraftStorage;
+  readonly ids: IdSource;
 }
 
 /** A vault list can't run forever if a server hands back cursors in a loop: 50 pages of 200 is 10,000 vaults. */
 const MAX_VAULT_PAGES = 50;
 
 /** The single entry point for views. Later specs add a method per use case. */
-export interface Engine {
+export interface Engine extends WikiCases {
   startedAt(): EpochMs;
   uptimeMs(): number;
   settings(): Settings;
@@ -107,6 +112,7 @@ export const createEngine = (edges: Edges): Engine => {
   };
 
   return {
+    ...createWikiCases({ edges, watched, principal: () => (session.status === "signed_in" ? session.identity.principal.id : "unknown") }),
     startedAt: () => started,
     uptimeMs: () => clock.now() - started,
     settings: () => edges.settings,

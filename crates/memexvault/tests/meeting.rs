@@ -3,13 +3,14 @@
 #![allow(clippy::disallowed_methods, clippy::disallowed_macros)]
 use memex_core::testing::{FakeEmbedder, FakeRasterizer, FakeReranker, ManualClock, MemBlobStore, MemRegistry, ScriptedAgent};
 use memex_core::{
-    EMBED_JOB, EXTRACT_JOB, ExtractJobError, ExtractionLimits, RENDITION_JOB, RenditionInput, SearchEdges, Server, ServerEdges, StepOutcome, TRANSCRIBE_JOB,
-    UploadLimits, UploadRequest,
+    AUDIT_JOB, EMBED_JOB, EXTRACT_JOB, ExtractJobError, ExtractionLimits, RENDITION_JOB, RenditionInput, SearchEdges, Server, ServerEdges, StepOutcome,
+    TRANSCRIBE_JOB, TriggerAudit, UploadLimits, UploadRequest,
 };
 use memex_lexical::TantivyLexical;
 use memex_store_postgres::{PgStore, schema_of_vault};
 use memex_types::{
-    AgentReply, AgentRequest, AgentUsage, ChangeSetState, ItemKind, MediaFacts, ObjectId, SearchRequest, TimedDocument, TimedWord, TranscribeUsage, VaultId,
+    AgentReply, AgentRequest, AgentUsage, AuditCheckKind, AuditCheckStatus, ChangeSetState, ItemKind, MediaFacts, ObjectId, SearchRequest, TimedDocument,
+    TimedWord, TranscribeUsage, VaultId,
 };
 use memex_vector::PgVectors;
 use memexvault::edges::{PgVectorIndex, SystemClock, SystemSeed, TantivyIndex};
@@ -284,6 +285,46 @@ fn pg_meeting_every_committed_claim_has_a_time_anchor_that_resolves() {
             "a claim's range sits inside its segment's"
         );
     }
+}
+
+/// Spec 26's audit was written before recordings existed. A claim from a recording has to pass the same checks, or an audit would revoke auto-commit for nothing.
+#[test]
+#[ignore = "needs Postgres"]
+fn pg_meeting_an_audit_passes_a_recordings_claims() {
+    let r = rig("meet-audit");
+    r.ingest_recording(recording_of(spoken(60)));
+    let agent = ScriptedAgent::answering(every_sentence);
+    r.extract(&agent);
+    r.approve_all();
+    r.project();
+    r.s.trigger_audit(
+        &r.admin,
+        &r.v,
+        TriggerAudit {
+            seed: Some(7),
+            sample_size: Some(1000),
+            run_token_budget: Some(0),
+        },
+    )
+    .unwrap();
+    let job = r.s.claim_job(&r.v, AUDIT_JOB, "w").unwrap().expect("an audit job");
+    let run = ObjectId(job.input["run_id"].as_str().unwrap().into());
+    let rows = r.s.run_audit_job(&r.v, &job, None::<&ScriptedAgent>).unwrap();
+    assert!(r.s.complete_job(&r.v, &job, rows).unwrap());
+    let checks = r.s.audit_run_checks(&r.admin, &r.v, &run, false, None, 1000).unwrap();
+    println!("audit of a recording: {} claims checked", checks.len());
+    assert_eq!(checks.len(), 60, "every claim sampled");
+    for row in &checks {
+        for kind in [AuditCheckKind::QuoteRelocation, AuditCheckKind::LinkRot] {
+            let c = row.checks.iter().find(|c| c.check == kind).expect("the check ran");
+            assert_eq!(c.status, AuditCheckStatus::Pass, "{:?} {} {}", kind, c.cause.as_deref().unwrap_or(""), c.detail);
+        }
+    }
+    assert_eq!(
+        r.count("SELECT count(*) FROM {s}.changesets WHERE state = 'pending'"),
+        0,
+        "no finding went to review"
+    );
 }
 
 #[test]

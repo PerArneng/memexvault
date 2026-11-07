@@ -25,6 +25,17 @@ pub trait LexicalIndex {
     fn rollback(&self, vault: &VaultId) -> Result<(), LexicalError>;
     fn search(&self, vault: &VaultId, query: &LexicalQuery) -> Result<LexicalResults, LexicalError>;
     fn delete_vault(&self, vault: &VaultId) -> Result<(), LexicalError>;
+    /// A count and digest of the live generation's documents of this kind, and which of `wanted` it holds, for an audit to compare with the store. None if this backend can't say.
+    fn reconcile(&self, _vault: &VaultId, _kind: DocKind, _wanted: &[ObjectId]) -> Result<Option<IndexContents>, LexicalError> {
+        Ok(None)
+    }
+}
+
+/// What an index holds, for comparing with the store.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct IndexContents {
+    pub digest: memex_types::IdDigest,
+    pub present: BTreeSet<ObjectId>,
 }
 
 pub const MAX_QUERY_BYTES: usize = 4096;
@@ -307,7 +318,7 @@ pub fn filter_passes(doc: &IndexDoc, f: &LexicalFilter) -> bool {
 }
 
 /// The ids of renditions that are no longer current, out of those these segments belong to. One store call.
-fn stale_renditions<S: Snapshot>(snap: &S, segments: &[SegmentRow]) -> Result<BTreeSet<ObjectId>, StoreError> {
+pub(crate) fn stale_renditions<S: Snapshot + ?Sized>(snap: &S, segments: &[SegmentRow]) -> Result<BTreeSet<ObjectId>, StoreError> {
     let ids: Vec<ObjectId> = segments
         .iter()
         .filter_map(|s| s.rendition_id.clone())

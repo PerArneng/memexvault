@@ -959,3 +959,63 @@ mod pg {
         s.0.drop_vault(&v).unwrap();
     }
 }
+
+// Spec 026: a retirement goes through events like anything else, so a cached search can't outlive it.
+#[test]
+fn a_retired_claim_can_not_be_served_from_a_cached_search_and_returns_on_a_revert() {
+    let w = world_with("retired", ALL_ON);
+    w.put_segment("seg", 1, "zebrafinken sjunger om natten");
+    let claim = memex_types::AssertionRow {
+        header: memex_types::Header {
+            id: oid("claim"),
+            creator: "t".into(),
+            status: memex_types::Status::Active,
+            version: 1,
+            acl_id: None,
+        },
+        subject: "zebrafinken".into(),
+        predicate: "sjunger".into(),
+        value: serde_json::json!("om natten"),
+        epistemic: memex_types::Epistemic::Asserted,
+        machine: false,
+        confidence_permille: 1000,
+        valid_from_ms: None,
+        valid_to_ms: None,
+        canonical_hash: "h".into(),
+        changeset_id: oid("none"),
+        superseded_by: None,
+    };
+    w.record(vec![Mutation::Put(Row::Assertion(claim))]);
+    w.settle();
+    let claims = |w: &World| w.q("zebrafinken").items.iter().filter(|i| i.kind == memex_types::ItemKind::Claim).count();
+    assert_eq!(claims(&w), 1);
+    let hits = w.tier("query").hits;
+    assert_eq!(claims(&w), 1);
+    assert_eq!(w.tier("query").hits, hits + 1, "the second search came from the cache");
+    let cs =
+        w.s.propose(
+            &w.c,
+            &w.v,
+            memex_core::Proposal {
+                ops: vec![memex_types::Op::RetractAssertion {
+                    target: oid("claim"),
+                    base_version: 1,
+                    counts_against: false,
+                }],
+                rationale: "wrong".into(),
+                idempotency_key: "retire".into(),
+            },
+            false,
+        )
+        .unwrap()
+        .changeset
+        .unwrap();
+    assert_eq!(claims(&w), 1, "proposing changes nothing");
+    let retired = w.s.approve(&w.c, &w.v, &cs.header.id, None).unwrap();
+    assert_eq!(claims(&w), 0, "gone at once, before any index has moved");
+    w.settle();
+    assert_eq!(claims(&w), 0);
+    w.s.revert(&w.c, &w.v, &retired.header.id, "it was right".into()).unwrap();
+    w.settle();
+    assert_eq!(claims(&w), 1);
+}

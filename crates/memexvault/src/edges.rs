@@ -174,6 +174,23 @@ impl memex_core::LexicalIndex for TantivyIndex {
     fn delete_vault(&self, vault: &memex_types::VaultId) -> Result<(), memex_types::LexicalError> {
         self.0.delete_vault(vault)
     }
+
+    fn reconcile(
+        &self,
+        vault: &memex_types::VaultId,
+        kind: memex_types::DocKind,
+        wanted: &[memex_types::ObjectId],
+    ) -> Result<Option<memex_core::lexical::IndexContents>, memex_types::LexicalError> {
+        let looked_for: std::collections::HashSet<&str> = wanted.iter().map(|i| i.0.as_str()).collect();
+        let mut out = memex_core::lexical::IndexContents::default();
+        let live = self.0.for_each_id(vault, kind, |id| {
+            memex_core::audit::add_to_digest(&mut out.digest, id);
+            if looked_for.contains(id) {
+                out.present.insert(memex_types::ObjectId(id.into()));
+            }
+        })?;
+        Ok(live.then_some(out))
+    }
 }
 
 /// The default VectorIndex: `memex-vector` behind the core trait. Its types are already the trait's, so this only forwards.
@@ -235,5 +252,20 @@ impl memex_core::VectorIndex for PgVectorIndex {
     fn delete_vault(&self, vault: &memex_types::VaultId) -> Result<(), memex_types::VectorError> {
         self.0.forget_mark(vault);
         Ok(())
+    }
+
+    fn reconcile(
+        &self,
+        vault: &memex_types::VaultId,
+        kind: memex_types::DocKind,
+        wanted: &[memex_types::ObjectId],
+    ) -> Result<Option<memex_core::lexical::IndexContents>, memex_types::VectorError> {
+        Ok(self
+            .0
+            .reconcile(vault, kind.as_str(), wanted)?
+            .map(|(count, xor, present)| memex_core::lexical::IndexContents {
+                digest: memex_types::IdDigest { count, xor },
+                present: present.into_iter().map(memex_types::ObjectId).collect(),
+            }))
     }
 }
