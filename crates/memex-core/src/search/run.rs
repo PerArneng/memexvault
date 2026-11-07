@@ -1,19 +1,22 @@
 //! One search, from request to evidence package.
 use super::assemble::{Fenced, facets, fence, parent_sections, rerank_text};
 use super::budget::{decode_cursor, encode_cursor, fit};
+use super::expand::{HOPS, expand};
 use super::fusion::{Fused, RRF_K, fuse};
 use super::history::{HistoryError, keyword_scan, past_docs, past_state};
-use super::plan::{CANDIDATES_PER_SIGNAL, QueryPlan, plan_query};
+use super::plan::{CANDIDATES_PER_SIGNAL, QueryPlan, is_relational, plan_query};
 use super::relevance::{Signals, THRESHOLDS, is_low_relevance, term_coverage};
 use super::{RERANK_TOP, Reranker};
 use crate::lexical::MAX_SEARCH_LIMIT;
 use crate::{Clock, Embedder, LexicalIndex, ServerError, Snapshot, Store, Touched, VectorIndex};
 use memex_types::{
-    BudgetReport, DocKind, EmbedPurpose, EvidenceItem, EvidencePackage, Generation, ItemKind, LexicalError, LexicalFilter, LexicalQuery, LexicalResults,
-    ObjectId, QueryPath, SearchDebug, SearchMode, SearchRequest, SignalScores, VaultId, VectorError, VectorHealth, VectorQuery,
+    BudgetReport, DocKind, EmbedPurpose, EvidenceItem, EvidencePackage, Expand, Generation, ItemKind, LexicalError, LexicalFilter, LexicalQuery,
+    LexicalResults, ObjectId, QueryPath, SearchDebug, SearchMode, SearchRequest, SignalScores, VaultId, VectorError, VectorHealth, VectorQuery,
 };
 use std::time::Duration;
 
+/// Whether a query the rules class as relational follows Edges without being asked to. Spec 022 decides this from its measurements, and records them.
+pub const EXPAND_BY_DEFAULT: bool = false;
 /// How many of the best items a word coverage check reads.
 const COVERAGE_ITEMS: usize = 5;
 /// Candidates fenced beyond what a page needs, since a few may have gone. Reading every row a signal offered took most of the fence's time, and few pages get past the first ranks.
@@ -300,7 +303,7 @@ fn rerank<R: Reranker>(reranker: &R, text: &str, candidates: &mut [Fenced], degr
     }
 }
 
-fn debug_of(plan: &QueryPlan, signals: Signals, before: usize, candidates: &[Fenced], stages: Vec<(String, f64)>) -> SearchDebug {
+fn debug_of(plan: &QueryPlan, signals: Signals, before: usize, expanded: usize, candidates: &[Fenced], stages: Vec<(String, f64)>) -> SearchDebug {
     SearchDebug {
         lexical_weight: plan.lexical_weight,
         vector_weight: plan.vector_weight,
@@ -310,6 +313,7 @@ fn debug_of(plan: &QueryPlan, signals: Signals, before: usize, candidates: &[Fen
         term_coverage: signals.coverage,
         candidates_before_fence: before,
         candidates_after_fence: candidates.len(),
+        expanded,
         signals: candidates
             .iter()
             .map(|c| SignalScores {
@@ -328,7 +332,7 @@ fn debug_of(plan: &QueryPlan, signals: Signals, before: usize, candidates: &[Fen
 
 /// An id could be either kind, and the fence drops whichever it isn't.
 fn exact_candidates(id: &ObjectId) -> Vec<Fused> {
-    [DocKind::Segment, DocKind::Claim, DocKind::Entity]
+    [DocKind::Segment, DocKind::Claim, DocKind::Entity, DocKind::Page, DocKind::Block]
         .map(|kind| Fused {
             id: id.clone(),
             kind,
@@ -391,6 +395,8 @@ struct Finish<'r, 'c, C> {
     more_unread: bool,
     /// The sections around the hits, which someone asking for one object by id doesn't need.
     context: bool,
+    /// Candidates that following Edges added.
+    expanded: usize,
 }
 
 impl<C: Clock> Finish<'_, '_, C> {
@@ -422,10 +428,16 @@ impl<C: Clock> Finish<'_, '_, C> {
         }
         let next_cursor = (page.end < candidates.len() || self.more_unread).then(|| encode_cursor(page.end));
         let facet_counts = self.req.facets.then(|| facets(&candidates));
-        let debug = self
-            .req
-            .debug
-            .then(|| debug_of(self.plan, self.signals, self.before_fence, &candidates, std::mem::take(&mut self.stages.out)));
+        let debug = self.req.debug.then(|| {
+            debug_of(
+                self.plan,
+                self.signals,
+                self.before_fence,
+                self.expanded,
+                &candidates,
+                std::mem::take(&mut self.stages.out),
+            )
+        });
         Ok(EvidencePackage {
             path: self.path,
             items,
@@ -486,6 +498,7 @@ fn search_past<St: Store, C: Clock>(
         stages,
         more_unread,
         context: true,
+        expanded: 0,
     };
     let package = finish.package(&then, candidates);
     drop(then);
@@ -549,6 +562,7 @@ where
                 stages,
                 more_unread: false,
                 context: false,
+                expanded: 0,
             };
             return finish.package(&snap, candidates);
         }
@@ -559,6 +573,13 @@ where
     // The snapshot is taken after the candidates on purpose: anything retracted while they were gathered is gone from it.
     let snap = e.store.snapshot(vault)?;
     let fused = with_entity_lookup(&snap, fused, &req.text, &req.filter)?;
+    let expanding = match req.expand {
+        Expand::On => true,
+        Expand::Off => false,
+        Expand::Auto => EXPAND_BY_DEFAULT && is_relational(&req.text),
+    };
+    let (fused, expanded) = if expanding { expand(&snap, fused, HOPS)? } else { (fused, 0) };
+    stages.mark("expand");
     let before_fence = fused.len().min(fence_window(req, offset));
     let (mut candidates, more_unread) = fence_page(&snap, fused, req, offset)?;
     stages.mark("fence");
@@ -585,6 +606,7 @@ where
         stages,
         more_unread,
         context: true,
+        expanded,
     };
     finish.package(&snap, candidates)
 }

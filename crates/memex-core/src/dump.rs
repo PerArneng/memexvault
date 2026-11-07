@@ -60,6 +60,8 @@ mod tests {
             title: title.into(),
             body: body.into(),
             updated_at_ms: 5,
+            slug: String::new(),
+            redirects: vec![],
         })
     }
 

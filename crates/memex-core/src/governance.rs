@@ -1,8 +1,7 @@
 //! The proposal flow's pure parts: validators, the risk table, planning ops into mutations, inverses and as-of reads.
 use crate::{ChangeSetRecorded, Snapshot, StoreError};
 use memex_types::{
-    AssertionRow, EdgeRow, Epistemic, Event, EvidenceRow, Header, Mutation, ObjectId, Op, OpKind, PageRow, RiskDecision, Row, RowKey, Status, Table,
-    ValidatorResult,
+    AssertionRow, EdgeRow, Epistemic, Event, EvidenceRow, Header, Mutation, ObjectId, Op, OpKind, RiskDecision, Row, RowKey, Status, Table, ValidatorResult,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -247,6 +246,24 @@ pub fn validate_entities<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<ValidatorR
     }
 }
 
+/// Page rules that a plan can check now: size, title, slug shape and a revision that exists. A slug another page holds or a stale version may change while a proposal waits, so those are found when it runs for real.
+pub fn validate_pages<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<ValidatorResult, StoreError> {
+    let name = "page";
+    if !crate::page::touches_pages(ops) {
+        return Ok(pass(name));
+    }
+    let mut n = 0u64;
+    let mut ids = || {
+        n += 1;
+        ObjectId(format!("validation-{n}"))
+    };
+    match crate::page::plan_pages(snap, ops, "validator", &ObjectId("validation".into()), 0, &mut ids) {
+        Err(PlanError::Invalid(detail)) => Ok(fail(name, detail)),
+        Err(PlanError::Store(e)) => Err(e),
+        _ => Ok(pass(name)),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlanError {
     /// A base version no longer matches. It carries the current row, for the caller to rebase on.
@@ -376,29 +393,6 @@ pub fn plan<S: Snapshot>(
                 out.push(Mutation::Put(Row::Assertion(old)));
                 out.extend(assertion_rows(replacement, creator, changeset).into_iter().map(Mutation::Put));
             }
-            Op::CreatePage { id, title, body } => {
-                must_be_new(key(Table::Page, id))?;
-                out.push(Mutation::Put(Row::Page(PageRow {
-                    header: new_header(id.clone(), creator),
-                    title: title.clone(),
-                    body: body.clone(),
-                    updated_at_ms: now_ms,
-                })));
-            }
-            Op::EditPage { id, base_version, body } => {
-                let k = key(Table::Page, id);
-                let row = check_base(k.clone(), snap.get(&k)?, *base_version)?;
-                let Row::Page(mut p) = row else { return Err(PlanError::Missing(k)) };
-                p.header.version += 1;
-                p.body = body.clone();
-                p.updated_at_ms = now_ms;
-                out.push(Mutation::Put(Row::Page(p)));
-            }
-            Op::DeletePage { id, base_version } => {
-                let k = key(Table::Page, id);
-                check_base(k.clone(), snap.get(&k)?, *base_version)?;
-                out.push(Mutation::Delete(k));
-            }
             Op::AddEdge { id, from, to, kind } => {
                 must_be_new(key(Table::Edge, id))?;
                 out.push(Mutation::Put(Row::Edge(EdgeRow {
@@ -406,6 +400,7 @@ pub fn plan<S: Snapshot>(
                     from: from.clone(),
                     to: to.clone(),
                     kind: kind.clone(),
+                    block_id: None,
                 })));
             }
             Op::RemoveEdge { id, base_version } => {
@@ -430,11 +425,14 @@ pub fn plan<S: Snapshot>(
                 out.push(Mutation::Put(Row::Source(s)));
             }
             // Planned together below, since they depend on each other and on the claims above.
+            Op::CreatePage { .. } | Op::EditPage { .. } | Op::DeletePage { .. } | Op::RenamePage { .. } | Op::RevertPage { .. } => {}
             Op::DefineEntityType { .. } | Op::CreateEntity { .. } | Op::SetEntityAliases { .. } | Op::MergeEntities { .. } | Op::SplitEntity { .. } => {}
         }
     }
     let entities = crate::entity::plan_entities(snap, ops, &out, creator, changeset, now_ms, edge_id)?;
     out.extend(entities);
+    let pages = crate::page::plan_pages(snap, ops, creator, changeset, now_ms, edge_id)?;
+    out.extend(pages);
     // A contradiction is kept and linked, so both claims stay visible.
     for (new_claim, old_claim) in contradictions {
         out.push(Mutation::Put(Row::Edge(EdgeRow {
@@ -442,6 +440,7 @@ pub fn plan<S: Snapshot>(
             from: new_claim.clone(),
             to: old_claim.clone(),
             kind: CONTRADICTS.into(),
+            block_id: None,
         })));
     }
     Ok(out)
@@ -525,7 +524,7 @@ pub fn kinds_of<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Vec<OpKind>, StoreE
                 _ => OpKind::EditClaim,
             },
             Op::CreatePage { .. } => OpKind::CreatePage,
-            Op::EditPage { .. } => OpKind::EditPage,
+            Op::EditPage { .. } | Op::RenamePage { .. } | Op::RevertPage { .. } => OpKind::EditPage,
             Op::DeletePage { .. } => OpKind::Delete,
             Op::AddEdge { .. } => OpKind::AddLink,
             Op::RemoveEdge { .. } => OpKind::RemoveLink,
@@ -636,6 +635,8 @@ mod tests {
             id: ObjectId("p".into()),
             title: "t".into(),
             body: "b".into(),
+            slug: None,
+            redirects: vec![],
         };
         assert!(validate_schema(std::slice::from_ref(&page), "why", "k").passed);
         assert!(!validate_schema(&[], "why", "k").passed);

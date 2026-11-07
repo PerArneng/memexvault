@@ -2,6 +2,7 @@ use crate::ObjectId;
 use crate::entity::{EntityRow, EntityTypeRow};
 use crate::governance::{ChangeSetState, Epistemic, Op, RiskDecision, Stance, ValidatorResult};
 use crate::jobs::JobRow;
+use crate::page::{BlockRow, RevisionRow, SlugRow};
 use crate::rendition::{Anchor, RenditionRow};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -20,10 +21,13 @@ pub enum Table {
     Rendition,
     EntityType,
     Entity,
+    Block,
+    Slug,
+    Revision,
 }
 
 impl Table {
-    pub const ALL: [Table; 11] = [
+    pub const ALL: [Table; 14] = [
         Table::Source,
         Table::Page,
         Table::Edge,
@@ -35,6 +39,9 @@ impl Table {
         Table::Rendition,
         Table::EntityType,
         Table::Entity,
+        Table::Block,
+        Table::Slug,
+        Table::Revision,
     ];
 }
 
@@ -83,6 +90,12 @@ pub struct PageRow {
     pub title: String,
     pub body: String,
     pub updated_at_ms: i64,
+    /// Where links reach it. Empty only on a page from before spec 022, until its first edit.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub slug: String,
+    /// Its old slugs, oldest first, which still lead here.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub redirects: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +104,9 @@ pub struct EdgeRow {
     pub from: ObjectId,
     pub to: ObjectId,
     pub kind: String,
+    /// The block a page link was written in, which is its evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_id: Option<ObjectId>,
 }
 
 /// A located span of a document. Spec 015 fills in its anchors.
@@ -189,6 +205,9 @@ pub enum Row {
     Rendition(RenditionRow),
     EntityType(EntityTypeRow),
     Entity(EntityRow),
+    Block(BlockRow),
+    Slug(SlugRow),
+    Revision(RevisionRow),
 }
 
 impl Row {
@@ -205,6 +224,9 @@ impl Row {
             Row::Rendition(r) => &r.header,
             Row::EntityType(r) => &r.header,
             Row::Entity(r) => &r.header,
+            Row::Block(r) => &r.header,
+            Row::Slug(r) => &r.header,
+            Row::Revision(r) => &r.header,
         }
     }
 
@@ -221,6 +243,9 @@ impl Row {
             Row::Rendition(_) => Table::Rendition,
             Row::EntityType(_) => Table::EntityType,
             Row::Entity(_) => Table::Entity,
+            Row::Block(_) => Table::Block,
+            Row::Slug(_) => Table::Slug,
+            Row::Revision(_) => Table::Revision,
         };
         RowKey {
             table,

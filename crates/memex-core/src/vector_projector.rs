@@ -69,7 +69,7 @@ struct VaultState {
     build: Option<Build>,
 }
 
-const SCAN_ORDER: [Table; 3] = [Table::Segment, Table::Assertion, Table::Entity];
+const SCAN_ORDER: [Table; 5] = [Table::Segment, Table::Assertion, Table::Entity, Table::Page, Table::Block];
 
 /// One projector per server. Its state is only progress: all of it comes back from the index and the log after a restart.
 #[derive(Debug, Default)]
@@ -95,6 +95,8 @@ fn event_ops<S: Snapshot>(snap: &S, events: &[Event]) -> Result<Vec<IndexOp>, Pr
                         DocKind::Segment => touched.segments.insert(doc.id),
                         DocKind::Claim => touched.assertions.insert(doc.id),
                         DocKind::Entity => touched.entities.insert(doc.id),
+                        DocKind::Page => touched.pages.insert(doc.id),
+                        DocKind::Block => touched.blocks.insert(doc.id),
                     };
                 }
             }
@@ -111,6 +113,14 @@ fn event_ops<S: Snapshot>(snap: &S, events: &[Event]) -> Result<Vec<IndexOp>, Pr
     let entities: Vec<ObjectId> = touched.entities.into_iter().collect();
     for chunk in entities.chunks(PAGE_LIMIT) {
         ops.extend(crate::entity::entity_ops(snap, chunk)?);
+    }
+    let pages: Vec<ObjectId> = touched.pages.into_iter().collect();
+    for chunk in pages.chunks(PAGE_LIMIT) {
+        ops.extend(crate::page::page_ops(snap, chunk)?);
+    }
+    let blocks: Vec<ObjectId> = touched.blocks.into_iter().collect();
+    for chunk in blocks.chunks(PAGE_LIMIT) {
+        ops.extend(crate::page::block_ops(snap, chunk)?);
     }
     Ok(ops)
 }
@@ -255,6 +265,8 @@ where
             let ops = match page.first() {
                 Some(Row::Assertion(_)) => assertion_ops(snap, &ids)?,
                 Some(Row::Entity(_)) => crate::entity::entity_ops(snap, &ids)?,
+                Some(Row::Page(_)) => crate::page::page_ops(snap, &ids)?,
+                Some(Row::Block(_)) => crate::page::block_ops(snap, &ids)?,
                 _ => segment_ops(snap, &ids)?,
             };
             let plan = plan_ops(snap, index, vault, &build.model.name, ops)?;

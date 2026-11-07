@@ -126,6 +126,39 @@ impl Snapshot for PostgresSnapshot<'_> {
         self.inner.edges_touching(ids, kind).map_err(|e| translate(&self.vault, e))
     }
 
+    fn blocks_of(&self, pages: &[ObjectId], limit: usize) -> Result<Vec<memex_types::BlockRow>, StoreError> {
+        self.inner.blocks_of(pages, limit).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn headings_of(&self, pages: &[ObjectId]) -> Result<Vec<memex_types::BlockRow>, StoreError> {
+        self.inner.headings_of(pages).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn page_summaries(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::PageRow>, StoreError> {
+        self.inner.page_summaries(after, limit).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn revisions_of(&self, page: &ObjectId, after: Option<u32>, limit: usize) -> Result<Vec<memex_types::RevisionRow>, StoreError> {
+        self.inner.revisions_of(page, after, limit).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn edges_linked(
+        &self,
+        ids: &[ObjectId],
+        kinds: &[&str],
+        direction: memex_types::EdgeDirection,
+        after: Option<&ObjectId>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::EdgeRow>, StoreError> {
+        self.inner
+            .edges_linked(ids, kinds, direction, after, limit)
+            .map_err(|e| translate(&self.vault, e))
+    }
+
+    fn unresolved_links(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::EdgeRow>, StoreError> {
+        self.inner.unresolved_links(after, limit).map_err(|e| translate(&self.vault, e))
+    }
+
     fn sections_of(&self, sections: &[(ObjectId, String)], limit: usize) -> Result<Vec<SegmentRow>, StoreError> {
         self.inner.sections_of(sections, limit).map_err(|e| translate(&self.vault, e))
     }

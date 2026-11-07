@@ -69,7 +69,7 @@ pub fn past_state<S: Snapshot>(snap: &S, vault: &VaultId, as_of: AsOf) -> Result
 /// Every current document in a replayed vault that passes the filter.
 pub fn past_docs<S: Snapshot>(snap: &S, filter: &LexicalFilter) -> Result<Vec<IndexDoc>, StoreError> {
     let mut out = vec![];
-    for table in [Table::Segment, Table::Assertion, Table::Entity] {
+    for table in [Table::Segment, Table::Assertion, Table::Entity, Table::Page, Table::Block] {
         let mut after: Option<ObjectId> = None;
         loop {
             let page = snap.rows(table, after.as_ref())?;
@@ -79,6 +79,8 @@ pub fn past_docs<S: Snapshot>(snap: &S, filter: &LexicalFilter) -> Result<Vec<In
             let ops = match table {
                 Table::Segment => segment_ops(snap, &ids)?,
                 Table::Entity => crate::entity::entity_ops(snap, &ids)?,
+                Table::Page => crate::page::page_ops(snap, &ids)?,
+                Table::Block => crate::page::block_ops(snap, &ids)?,
                 _ => assertion_ops(snap, &ids)?,
             };
             out.extend(ops.into_iter().filter_map(|op| match op {

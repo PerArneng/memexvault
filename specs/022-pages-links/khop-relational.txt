@@ -1,0 +1,151 @@
+
+running 1 test
+embedder: 2 query sessions at 4 threads
+reranker: 2 sessions at 4 threads
+test relational_khop has been running for over 60 seconds
+t-golden-rel: 200000 segments stored in 137 s
+t-golden-rel: indexed 385 s after the start
+t-golden-rel: 2080 pages stored in 10 s
+t-golden-rel: 2080 passages reuse stored vectors, embedding 4160 other texts
+t-golden-rel: embedded 34 s after the start
+t-golden-rel: pages indexed 50 s after the start
+
+the rule fires on 22/40 relational and 31/200 other answerable questions
+off rel-001 rank None expanded 0
+off rel-002 rank None expanded 0
+off rel-003 rank Some(13) expanded 0
+off rel-004 rank Some(12) expanded 0
+off rel-005 rank Some(3) expanded 0
+off rel-006 rank None expanded 0
+off rel-007 rank None expanded 0
+off rel-008 rank None expanded 0
+off rel-009 rank None expanded 0
+off rel-010 rank Some(9) expanded 0
+off rel-011 rank Some(5) expanded 0
+off rel-012 rank None expanded 0
+off rel-013 rank None expanded 0
+off rel-014 rank None expanded 0
+off rel-015 rank None expanded 0
+off rel-016 rank None expanded 0
+off rel-017 rank None expanded 0
+off rel-018 rank None expanded 0
+off rel-019 rank None expanded 0
+off rel-020 rank None expanded 0
+off rel-021 rank None expanded 0
+off rel-022 rank None expanded 0
+off rel-023 rank None expanded 0
+off rel-024 rank None expanded 0
+off rel-025 rank None expanded 0
+off rel-026 rank Some(7) expanded 0
+off rel-027 rank None expanded 0
+off rel-028 rank None expanded 0
+off rel-029 rank None expanded 0
+off rel-030 rank Some(3) expanded 0
+off rel-031 rank None expanded 0
+off rel-032 rank None expanded 0
+off rel-033 rank None expanded 0
+off rel-034 rank None expanded 0
+off rel-035 rank None expanded 0
+off rel-036 rank None expanded 0
+off rel-037 rank None expanded 0
+off rel-038 rank Some(5) expanded 0
+off rel-039 rank None expanded 0
+off rel-040 rank None expanded 0
+== k-hop off
+relational  20.0% (  8/ 40)  nDCG@10 0.060  MRR 0.037
+golden      97.5% (195/200)  nDCG@10 0.846  MRR 0.815
+on rel-001 rank Some(3) expanded 7
+on rel-002 rank Some(13) expanded 10
+on rel-003 rank Some(3) expanded 7
+on rel-004 rank Some(3) expanded 7
+on rel-005 rank Some(1) expanded 10
+on rel-006 rank Some(6) expanded 7
+on rel-007 rank None expanded 0
+on rel-008 rank Some(16) expanded 10
+on rel-009 rank None expanded 8
+on rel-010 rank Some(1) expanded 7
+on rel-011 rank Some(1) expanded 10
+on rel-012 rank Some(4) expanded 7
+on rel-013 rank Some(13) expanded 8
+on rel-014 rank None expanded 8
+on rel-015 rank Some(1) expanded 7
+on rel-016 rank None expanded 0
+on rel-017 rank None expanded 8
+on rel-018 rank None expanded 8
+on rel-019 rank Some(14) expanded 8
+on rel-020 rank None expanded 8
+on rel-021 rank None expanded 0
+on rel-022 rank None expanded 0
+on rel-023 rank Some(3) expanded 7
+on rel-024 rank Some(19) expanded 8
+on rel-025 rank Some(11) expanded 8
+on rel-026 rank Some(1) expanded 10
+on rel-027 rank None expanded 0
+on rel-028 rank Some(7) expanded 7
+on rel-029 rank None expanded 8
+on rel-030 rank Some(1) expanded 10
+on rel-031 rank Some(16) expanded 8
+on rel-032 rank Some(13) expanded 8
+on rel-033 rank Some(13) expanded 7
+on rel-034 rank Some(18) expanded 8
+on rel-035 rank None expanded 8
+on rel-036 rank Some(18) expanded 8
+on rel-037 rank None expanded 8
+on rel-038 rank Some(1) expanded 10
+on rel-039 rank None expanded 0
+on rel-040 rank Some(16) expanded 8
+== k-hop on
+relational  65.0% ( 26/ 40)  nDCG@10 0.253  MRR 0.243
+golden      97.5% (195/200)  nDCG@10 0.846  MRR 0.815
+rule rel-001 rank Some(3) expanded 7
+rule rel-002 rank None expanded 0
+rule rel-003 rank Some(13) expanded 0
+rule rel-004 rank Some(3) expanded 7
+rule rel-005 rank Some(1) expanded 10
+rule rel-006 rank Some(6) expanded 7
+rule rel-007 rank None expanded 0
+rule rel-008 rank None expanded 0
+rule rel-009 rank None expanded 8
+rule rel-010 rank Some(9) expanded 0
+rule rel-011 rank Some(1) expanded 10
+rule rel-012 rank None expanded 0
+rule rel-013 rank Some(13) expanded 8
+rule rel-014 rank None expanded 0
+rule rel-015 rank None expanded 0
+rule rel-016 rank None expanded 0
+rule rel-017 rank None expanded 0
+rule rel-018 rank None expanded 0
+rule rel-019 rank None expanded 0
+rule rel-020 rank None expanded 8
+rule rel-021 rank None expanded 0
+rule rel-022 rank None expanded 0
+rule rel-023 rank Some(3) expanded 7
+rule rel-024 rank Some(19) expanded 8
+rule rel-025 rank Some(11) expanded 8
+rule rel-026 rank Some(7) expanded 0
+rule rel-027 rank None expanded 0
+rule rel-028 rank Some(7) expanded 7
+rule rel-029 rank None expanded 0
+rule rel-030 rank Some(3) expanded 0
+rule rel-031 rank Some(16) expanded 8
+rule rel-032 rank Some(13) expanded 8
+rule rel-033 rank None expanded 0
+rule rel-034 rank Some(18) expanded 8
+rule rel-035 rank None expanded 0
+rule rel-036 rank Some(18) expanded 8
+rule rel-037 rank None expanded 0
+rule rel-038 rank Some(1) expanded 10
+rule rel-039 rank None expanded 0
+rule rel-040 rank None expanded 0
+== k-hop rule
+relational  47.5% ( 19/ 40)  nDCG@10 0.158  MRR 0.136
+golden      97.5% (195/200)  nDCG@10 0.846  MRR 0.815
+hybrid k-hop off: p50 21.5 ms, p95 27.3 ms, n=1200 (busy machine)
+hybrid k-hop on: p50 21.6 ms, p95 32.4 ms, n=1200 (busy machine)
+hybrid k-hop rule: p50 21.6 ms, p95 30.5 ms, n=1200 (busy machine)
+p95 on / off = 1.185, rule / off = 1.115
+test relational_khop ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 534.99s
+
+exit 0

@@ -276,11 +276,12 @@ fn a_watermark_moves_on_events_with_nothing_to_index_only_eventually() {
     w.put(Row::Segment(segment("s1", None, None, "word")));
     w.settle();
     let at = w.index.watermark(&w.v, Generation::Live).unwrap();
-    w.put(Row::Page(memex_types::PageRow {
-        header: header("p", 1),
-        title: "t".into(),
-        body: "b".into(),
-        updated_at_ms: 0,
+    w.put(Row::Edge(memex_types::EdgeRow {
+        header: header("e", 1),
+        from: ObjectId("a".into()),
+        to: ObjectId("b".into()),
+        kind: "k".into(),
+        block_id: None,
     }));
     w.step();
     assert_eq!(w.index.watermark(&w.v, Generation::Live).unwrap(), at, "no document waits on this");

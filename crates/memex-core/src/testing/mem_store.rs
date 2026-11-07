@@ -1,7 +1,7 @@
 use crate::{CommitItem, PAGE_LIMIT, Receipt, Snapshot, Store, StoreError, WriterLease};
 use memex_types::{
-    AssertionRow, ChangeSetRow, EdgeRow, Event, EvidenceRow, JobRow, JobState, Mutation, ObjectId, RenditionRow, Row, RowKey, SegmentRow, SourceRow, Status,
-    Table, VaultId,
+    AssertionRow, BlockKind, BlockRow, CLAIM_REF, ChangeSetRow, EdgeDirection, EdgeRow, Event, EvidenceRow, JobRow, JobState, Mutation, ObjectId, PageRow,
+    RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SourceRow, Status, Table, VaultId, WIKI_LINK, slug_of_target,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -161,6 +161,125 @@ impl Snapshot for MemSnapshot<'_> {
                 Row::Edge(e) if e.kind == kind && e.header.status == Status::Active && (ids.contains(&e.from) || ids.contains(&e.to)) => Some(e.clone()),
                 _ => None,
             })
+            .collect())
+    }
+
+    fn blocks_of(&self, pages: &[ObjectId], limit: usize) -> Result<Vec<BlockRow>, StoreError> {
+        self.count();
+        let mut found: Vec<BlockRow> = self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::Block(b) if pages.contains(&b.page_id) => Some(b.clone()),
+                _ => None,
+            })
+            .collect();
+        found.sort_by(|a, b| (&a.page_id, a.position).cmp(&(&b.page_id, b.position)));
+        found.truncate(limit);
+        Ok(found)
+    }
+
+    fn headings_of(&self, pages: &[ObjectId]) -> Result<Vec<BlockRow>, StoreError> {
+        let mut found = self.blocks_of(pages, usize::MAX)?;
+        found.retain(|b| b.kind == BlockKind::Heading);
+        Ok(found)
+    }
+
+    fn page_summaries(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<PageRow>, StoreError> {
+        self.count();
+        Ok(self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::Page(p) if after.is_none_or(|a| &p.header.id > a) => {
+                    let mut p = p.clone();
+                    p.body.clear();
+                    Some(p)
+                }
+                _ => None,
+            })
+            .take(limit)
+            .collect())
+    }
+
+    fn revisions_of(&self, page: &ObjectId, after: Option<u32>, limit: usize) -> Result<Vec<RevisionRow>, StoreError> {
+        self.count();
+        let mut found: Vec<RevisionRow> = self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::Revision(x) if &x.page_id == page && after.is_none_or(|a| x.revision > a) => {
+                    let mut x = x.clone();
+                    x.blocks.clear();
+                    Some(x)
+                }
+                _ => None,
+            })
+            .collect();
+        found.sort_by_key(|r| r.revision);
+        found.truncate(limit);
+        Ok(found)
+    }
+
+    fn edges_linked(
+        &self,
+        ids: &[ObjectId],
+        kinds: &[&str],
+        direction: EdgeDirection,
+        after: Option<&ObjectId>,
+        limit: usize,
+    ) -> Result<Vec<EdgeRow>, StoreError> {
+        self.count();
+        Ok(self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::Edge(e)
+                    if e.header.status == Status::Active
+                        && kinds.contains(&e.kind.as_str())
+                        && after.is_none_or(|a| &e.header.id > a)
+                        && match direction {
+                            EdgeDirection::From => ids.contains(&e.from),
+                            EdgeDirection::To => ids.contains(&e.to),
+                            EdgeDirection::Both => ids.contains(&e.from) || ids.contains(&e.to),
+                        } =>
+                {
+                    Some(e.clone())
+                }
+                _ => None,
+            })
+            .take(limit)
+            .collect())
+    }
+
+    fn unresolved_links(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<EdgeRow>, StoreError> {
+        self.count();
+        let exists = |table, id: &str| {
+            self.state.rows.contains_key(&RowKey {
+                table,
+                id: ObjectId(id.to_string()),
+            })
+        };
+        Ok(self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::Edge(e) if after.is_none_or(|a| &e.header.id > a) => {
+                    let broken = match e.kind.as_str() {
+                        WIKI_LINK => slug_of_target(&e.to).is_some_and(|s| !exists(Table::Slug, s)),
+                        CLAIM_REF => !exists(Table::Assertion, &e.to.0),
+                        _ => false,
+                    };
+                    broken.then(|| e.clone())
+                }
+                _ => None,
+            })
+            .take(limit)
             .collect())
     }
 

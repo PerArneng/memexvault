@@ -160,6 +160,8 @@ pub fn reduce<S: Snapshot>(snap: &S, e: &Event) -> Result<Vec<Mutation>, ReduceE
                 title: p.title,
                 body: p.body,
                 updated_at_ms: e.time_ms,
+                slug: String::new(),
+                redirects: vec![],
             }))])
         }
         "page.edited" => {
@@ -194,6 +196,7 @@ pub fn reduce<S: Snapshot>(snap: &S, e: &Event) -> Result<Vec<Mutation>, ReduceE
                 from: p.from,
                 to: p.to,
                 kind: p.kind,
+                block_id: None,
             }))])
         }
         "edge.unlinked" => {

@@ -132,8 +132,10 @@ fn page_key(p: &str) -> RowKey {
 
 fn create_page(p: &str) -> Op {
     Op::CreatePage {
+        slug: None,
+        redirects: vec![],
         id: id(p),
-        title: "T".into(),
+        title: format!("Title {p}"),
         body: "B".into(),
     }
 }

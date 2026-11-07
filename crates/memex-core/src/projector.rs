@@ -99,7 +99,7 @@ pub struct LexicalProjector {
     vaults: HashMap<VaultId, VaultState>,
 }
 
-const SCAN_ORDER: [Table; 3] = [Table::Segment, Table::Assertion, Table::Entity];
+const SCAN_ORDER: [Table; 5] = [Table::Segment, Table::Assertion, Table::Entity, Table::Page, Table::Block];
 
 fn ids_of(set: impl IntoIterator<Item = ObjectId>) -> Vec<ObjectId> {
     set.into_iter().collect()
@@ -155,6 +155,12 @@ pub(crate) fn ops_for_events<S: Snapshot>(snap: &S, events: &[Event]) -> Result<
     }
     for chunk in ids_of(touched.entities).chunks(PAGE_LIMIT) {
         ops.extend(crate::entity::entity_ops(snap, chunk)?);
+    }
+    for chunk in ids_of(touched.pages).chunks(PAGE_LIMIT) {
+        ops.extend(crate::page::page_ops(snap, chunk)?);
+    }
+    for chunk in ids_of(touched.blocks).chunks(PAGE_LIMIT) {
+        ops.extend(crate::page::block_ops(snap, chunk)?);
     }
     Ok(ops)
 }
@@ -381,6 +387,8 @@ impl LexicalProjector {
                 let ops = match page.first() {
                     Some(Row::Assertion(_)) => assertion_ops(snap, &ids)?,
                     Some(Row::Entity(_)) => crate::entity::entity_ops(snap, &ids)?,
+                    Some(Row::Page(_)) => crate::page::page_ops(snap, &ids)?,
+                    Some(Row::Block(_)) => crate::page::block_ops(snap, &ids)?,
                     _ => segment_ops(snap, &ids)?,
                 };
                 index.write(vault, Generation::Building, &ops)?;
