@@ -62,6 +62,7 @@ export type ApiFailure =
   /** An answer that isn't our API, such as a proxy's error page. */
   | { readonly kind: "protocol"; readonly status: number; readonly message: string };
 
+export * from "./documents";
 export * from "./wiki";
 
 /**

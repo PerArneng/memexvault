@@ -59,6 +59,23 @@ export const QUERY_KEYS = {
   wikiDiff: (vault: string, id: string, from: number, to: number) => ["wiki", vault, "diff", id, from, to] as const,
   wikiSlug: (vault: string, slug: string) => ["wiki", vault, "slug", slug] as const,
   wikiClaim: (vault: string, id: string) => ["wiki", vault, "claim", id] as const,
+  /** Everything about one vault's sources, so a change can refresh all of it. */
+  documents: (vault: string) => ["documents", vault] as const,
+  sources: (vault: string) => ["documents", vault, "sources"] as const,
+  source: (vault: string, id: string) => ["documents", vault, "source", id] as const,
+  sourceVersions: (vault: string, id: string) => ["documents", vault, "versions", id] as const,
+  renditions: (vault: string, id: string) => ["documents", vault, "renditions", id] as const,
+  pageList: (vault: string, id: string) => ["documents", vault, "pages", id] as const,
+  pageWords: (vault: string, rendition: string) => ["documents", vault, "words", rendition] as const,
+  segments: (vault: string, rendition: string) => ["documents", vault, "segments", rendition] as const,
+  segment: (vault: string, id: string) => ["documents", vault, "segment", id] as const,
+  sourceClaims: (vault: string, id: string) => ["documents", vault, "claims", id] as const,
+  flaggedPages: (vault: string) => ["documents", vault, "flagged"] as const,
+  lineage: (vault: string, claim: string) => ["documents", vault, "lineage", claim] as const,
+  changeOrigin: (vault: string, changeset: string) => ["documents", vault, "origin", changeset] as const,
+  derivation: (vault: string, rendition: string, segment: string) => ["documents", vault, "derivation", rendition, segment] as const,
+  media: (vault: string, id: string) => ["documents", vault, "media", id] as const,
+  transcript: (vault: string, id: string, fromMs: number | null) => ["documents", vault, "transcript", id, fromMs] as const,
   // A changeset's author never changes, so this one can stay cached across writes.
   wikiAttribution: (vault: string, changeset: string) => ["attribution", vault, changeset] as const,
 };

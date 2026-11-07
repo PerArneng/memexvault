@@ -1,8 +1,23 @@
 import {
+  changeOriginFromWire,
+  citingClaimsFromWire,
+  claimLineageFromWire,
+  derivationPageFromWire,
   failureFromWire,
+  flaggedPagesFromWire,
   identityFromWire,
   lineageStepFromWire,
+  mediaFromWire,
   objectsFromWire,
+  pageListFromWire,
+  pageWordsFromWire,
+  proposalOfTrust,
+  renditionFromWire,
+  segmentFromWire,
+  segmentPageFromWire,
+  sourceFromWire,
+  sourcePageFromWire,
+  transcriptFromWire,
   vaultFromWire,
   vaultPageFromWire,
   wikiAttributionFromWire,
@@ -126,6 +141,27 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
         const step = lineageStepFromWire(id, l);
         return { claim: step.claim, supersededBy: step.supersededBy };
       }),
+    listSources: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/sources", { params: { path: { id: vault }, query: page(cursor) } }), sourcePageFromWire),
+    getSource: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/sources/{sid}", { params: { path: { id: vault, sid: id } } }), sourceFromWire),
+    listSourceVersions: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/sources/{sid}/versions", { params: { path: { id: vault, sid: id } } }), (r) => r.items.map(sourceFromWire)),
+    listRenditions: (vault, source) => attempt(() => client.GET("/api/v1/vaults/{id}/sources/{sid}/renditions", { params: { path: { id: vault, sid: source } } }), (r) => r.items.map(renditionFromWire)),
+    listPageWords: (vault, rendition) => attempt(() => client.GET("/api/v1/vaults/{id}/renditions/{rid}", { params: { path: { id: vault, rid: rendition } } }), pageWordsFromWire),
+    listSegments: (vault, rendition, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/renditions/{rid}/segments", { params: { path: { id: vault, rid: rendition }, query: page(cursor) } }), segmentPageFromWire),
+    getSegment: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/segments/{seg}", { params: { path: { id: vault, seg: id } } }), segmentFromWire),
+    listFlaggedPages: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/flagged-pages", { params: { path: { id: vault }, query: page(cursor) } }), flaggedPagesFromWire),
+    listPages: (vault, source) => attempt(() => client.GET("/api/v1/vaults/{id}/sources/{sid}/pages", { params: { path: { id: vault, sid: source } } }), pageListFromWire),
+    checkPageImage: (vault, source, pageIndex, dpi) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/sources/{sid}/pages/{page}/image", { params: { path: { id: vault, sid: source, page: pageIndex }, query: { dpi } }, parseAs: "stream" }), none),
+    listSourceClaims: (vault, source, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/sources/{sid}/claims", { params: { path: { id: vault, sid: source }, query: page(cursor) } }), citingClaimsFromWire),
+    getLineage: (vault, claim) => attempt(() => client.GET("/api/v1/vaults/{id}/assertions/{aid}/lineage", { params: { path: { id: vault, aid: claim } } }), (l) => claimLineageFromWire(claim, l)),
+    getChangeOrigin: (vault, changesetId) => attempt(() => client.GET("/api/v1/vaults/{id}/changesets/{cs}", { params: { path: { id: vault, cs: changesetId } } }), changeOriginFromWire),
+    listDerivations: (vault, rendition, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/renditions/{rid}/derivations", { params: { path: { id: vault, rid: rendition }, query: page(cursor) } }), derivationPageFromWire),
+    getMedia: (vault, source) => attempt(() => client.GET("/api/v1/vaults/{id}/sources/{sid}/media", { params: { path: { id: vault, sid: source } } }), mediaFromWire),
+    getTranscript: (vault, source, { fromMs, cursor, words }) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/sources/{sid}/transcript", { params: { path: { id: vault, sid: source }, query: { limit: 200, words, ...(fromMs === null ? {} : { from_ms: fromMs }), ...(cursor === null ? {} : { cursor }) } } }), transcriptFromWire),
+    reprocessSource: (vault, source) => attempt(() => client.POST("/api/v1/vaults/{id}/sources/{sid}/reprocess", { params: { path: { id: vault, sid: source } } }), none),
+    setSourceTrust: (vault, source, change) =>
+      attempt(() => client.POST("/api/v1/vaults/{id}/proposals", { params: { path: { id: vault } }, body: { ops: [proposalOfTrust(source, change.baseVersion, change.tier) as never], rationale: change.rationale, idempotency_key: change.idempotencyKey } }), wikiWriteFromWire),
     health: (timeoutMs) => attempt(() => client.GET("/api/v1/health", { signal: AbortSignal.timeout(timeoutMs) }), none),
   };
 };

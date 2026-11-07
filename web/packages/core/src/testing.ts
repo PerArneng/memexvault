@@ -1,5 +1,5 @@
 import { epochMs, vaultId } from "@memex/types";
-import type { EpochMs, Grant, Identity, ObjectSummary, Page, Vault, VaultId, WikiClaim, WikiPage, WikiPageSummary, WikiRevision, WikiWrite } from "@memex/types";
+import type { ChangeOrigin, ClaimLineage, Derivation, DocumentSource, EpochMs, FlaggedPage, Grant, Identity, MediaFacts, ObjectSummary, Page, PageList, PageWord, Rendition, Segment, Transcript, Vault, VaultId, WikiClaim, WikiPage, WikiPageSummary, WikiRevision, WikiWrite } from "@memex/types";
 import { failed, ok } from "./api";
 import type { Api, ApiFailure, ApiResult } from "./api";
 import type { Clock } from "./clock";
@@ -91,6 +91,26 @@ export interface FakeApiSeed {
   readonly wikiPageSize?: number;
   /** Writes wait for review, as an agent's do. */
   readonly wikiWritesPending?: boolean;
+  /** Everything the document screens read. Anything left out is not found. */
+  readonly documents?: DocumentsSeed;
+}
+
+export interface DocumentsSeed {
+  readonly sources?: readonly DocumentSource[];
+  /** Sources per list page, to exercise cursors. */
+  readonly sourcePageSize?: number;
+  readonly renditions?: Readonly<Record<string, readonly Rendition[]>>;
+  readonly pages?: Readonly<Record<string, PageList>>;
+  readonly words?: Readonly<Record<string, readonly PageWord[]>>;
+  readonly segments?: Readonly<Record<string, readonly Segment[]>>;
+  readonly flagged?: readonly FlaggedPage[];
+  readonly lineage?: Readonly<Record<string, ClaimLineage>>;
+  readonly origins?: Readonly<Record<string, ChangeOrigin>>;
+  readonly derivations?: Readonly<Record<string, readonly Derivation[]>>;
+  readonly media?: Readonly<Record<string, MediaFacts>>;
+  readonly transcripts?: Readonly<Record<string, Transcript>>;
+  /** What a trust change comes back as. */
+  readonly trustState?: WikiWrite["state"];
 }
 
 /** An in-memory server with seeded data. `down` and `failNext` script the bad cases. */
@@ -122,6 +142,9 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
   const replays = new Map<string, WikiWrite>();
   let losing = false;
   const wikiPageSize = seed.wikiPageSize ?? 200;
+  const docs: DocumentsSeed = seed.documents ?? {};
+  const sourceRows = (): readonly DocumentSource[] => docs.sources ?? [];
+  const found = <T>(value: T | undefined): ApiResult<T> => (value === undefined ? failed(httpFailure(404, "not_found")) : ok(value));
 
   const wikiSummary = (id: string, p: { title: string; slug: string; bodies: string[] }): WikiPageSummary => ({ id, title: p.title, slug: p.slug, redirects: [], version: p.bodies.length, creator: "pat", updatedAt: epochMs(p.bodies.length) });
   const wikiView = (id: string, p: { title: string; slug: string; bodies: string[] }, revision: number): WikiPage => ({
@@ -312,6 +335,42 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
           return ok(committed(`cs-${id}`));
         });
         return result.ok ? ok({ pageId: id, created: true, write: result.value }) : failed(result.failure);
+      }),
+    listSources: (_vault, cursor) =>
+      answer("listSources", () => {
+        const all = docs.sources ?? [];
+        const size = docs.sourcePageSize ?? 200;
+        const from = cursor === null ? 0 : Number(cursor);
+        const next = from + size;
+        return ok({ items: all.slice(from, next), nextCursor: next < all.length ? String(next) : null });
+      }),
+    getSource: (_vault, id) => answer("getSource", () => found(sourceRows().find((s) => s.id === id))),
+    listSourceVersions: (_vault, id) => answer("listSourceVersions", () => ok(sourceRows().filter((s) => s.logicalId === id || s.id === id))),
+    listRenditions: (_vault, source) => answer("listRenditions", () => ok(docs.renditions?.[source] ?? [])),
+    listPageWords: (_vault, rendition) => answer("listPageWords", () => found(docs.words?.[rendition])),
+    listSegments: (_vault, rendition) => answer("listSegments", () => ok({ items: docs.segments?.[rendition] ?? [], nextCursor: null })),
+    getSegment: (_vault, id) => answer("getSegment", () => found(Object.values(docs.segments ?? {}).flat().find((s) => s.id === id))),
+    listFlaggedPages: () => answer("listFlaggedPages", () => ok({ items: docs.flagged ?? [], nextCursor: null })),
+    listPages: (_vault, source) => answer("listPages", () => found(docs.pages?.[source])),
+    checkPageImage: () => answer("checkPageImage", () => ok(null)),
+    listSourceClaims: () => answer("listSourceClaims", () => ok({ items: [], nextCursor: null })),
+    getLineage: (_vault, claim) => answer("getLineage", () => found(docs.lineage?.[claim])),
+    getChangeOrigin: (_vault, changesetId) => answer("getChangeOrigin", () => found(docs.origins?.[changesetId])),
+    listDerivations: (_vault, rendition, cursor) =>
+      answer("listDerivations", () => {
+        const all = docs.derivations?.[rendition] ?? [];
+        return cursor === null ? ok({ items: all.slice(0, 1), nextCursor: all.length > 1 ? "more" : null }) : ok({ items: all.slice(1), nextCursor: null });
+      }),
+    getMedia: (_vault, source) => answer("getMedia", () => found(docs.media?.[source])),
+    getTranscript: (_vault, source) => answer("getTranscript", () => found(docs.transcripts?.[source])),
+    reprocessSource: () => answer("reprocessSource", () => ok(null)),
+    setSourceTrust: (_vault, source, change) =>
+      answer("setSourceTrust", () => {
+        writeKeys.push(change.idempotencyKey);
+        const known = sourceRows().find((s) => s.id === source);
+        if (known === undefined) return failed(notFound);
+        if (known.version !== change.baseVersion) return failed(httpFailure(409, "stale_version"));
+        return ok({ changesetId: "cs-trust", state: docs.trustState ?? "committed", replayed: false, refusals: docs.trustState === "rejected" ? ["refused by a validator"] : [] });
       }),
     searchClaimIds: () => answer("searchClaimIds", () => ok(seed.claimHits ?? [])),
     readClaim: (_vault, id) =>
