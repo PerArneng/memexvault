@@ -72,6 +72,7 @@ fn pg_contract() {
         "compact",
         "sections",
         "entity",
+        "wiki",
         "batch",
         "iso-a",
         "iso-b",

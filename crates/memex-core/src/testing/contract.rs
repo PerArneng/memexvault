@@ -51,10 +51,164 @@ pub fn run_all<S: Store>(store: &S, prefix: &str) {
     compact_changes_no_reads(store, &name("compact"));
     edges_and_sections_read_in_batches(store, &name("sections"));
     entity_reads(store, &name("entity"));
+    page_reads(store, &name("wiki"));
     batches_are_all_or_nothing(store, &name("batch"));
     deleting_a_vault_removes_it(store, &name("gone"));
     vaults_are_isolated(store, &name("iso-a"), &name("iso-b"));
     unknown_vault_is_refused(store, &name("never-opened"));
+}
+
+fn page_reads<S: Store>(store: &S, v: &VaultId) {
+    use memex_types::{
+        BlockKind, BlockRow, CLAIM_REF, EdgeDirection, EdgeRow, Header, PageRow, RevisionBlock, RevisionRow, SlugRow, Status, WIKI_LINK, revision_id,
+        slug_target,
+    };
+    let lease = store.open_vault(v).expect("open");
+    let header = |id: &str| Header {
+        id: ObjectId(id.into()),
+        creator: "t".into(),
+        status: Status::Active,
+        version: 1,
+        acl_id: None,
+    };
+    let page = |id: &str, slug: &str, redirects: &[&str]| {
+        Mutation::Put(Row::Page(PageRow {
+            header: header(id),
+            title: format!("Title of {id}"),
+            body: "a long body".into(),
+            updated_at_ms: 5,
+            slug: slug.into(),
+            redirects: redirects.iter().map(|r| (*r).to_string()).collect(),
+        }))
+    };
+    let block = |id: &str, page: &str, position: u32, kind: BlockKind| {
+        Mutation::Put(Row::Block(BlockRow {
+            header: header(id),
+            page_id: ObjectId(page.into()),
+            position,
+            kind,
+            text: format!("text of {id}"),
+            heading: None,
+        }))
+    };
+    let slug = |slug: &str, page: &str| {
+        Mutation::Put(Row::Slug(SlugRow {
+            header: header(slug),
+            page_id: ObjectId(page.into()),
+        }))
+    };
+    let edge = |id: &str, from: &str, to: ObjectId, kind: &str| {
+        Mutation::Put(Row::Edge(EdgeRow {
+            header: header(id),
+            from: ObjectId(from.into()),
+            to,
+            kind: kind.into(),
+            block_id: Some(ObjectId("b1".into())),
+        }))
+    };
+    let revision = |page_id: &str, revision: u32| {
+        let page_id = ObjectId(page_id.into());
+        Mutation::Put(Row::Revision(RevisionRow {
+            header: header(&revision_id(&page_id, revision).0),
+            page_id,
+            revision,
+            title: "t".into(),
+            slug: "s".into(),
+            blocks: vec![RevisionBlock {
+                id: ObjectId("b1".into()),
+                kind: BlockKind::Paragraph,
+                text: "x".into(),
+            }],
+            changeset_id: ObjectId("c".into()),
+            created_at_ms: 1,
+            restored_from: None,
+        }))
+    };
+    let mutations = vec![
+        page("p1", "first", &["old-first"]),
+        page("p2", "second", &[]),
+        block("b2", "p1", 1, BlockKind::Heading),
+        block("b1", "p1", 0, BlockKind::Paragraph),
+        block("b3", "p2", 0, BlockKind::Paragraph),
+        slug("first", "p1"),
+        slug("old-first", "p1"),
+        slug("second", "p2"),
+        edge("e1", "p2", slug_target("old-first"), WIKI_LINK),
+        edge("e2", "p2", slug_target("nowhere"), WIKI_LINK),
+        edge("e3", "p1", ObjectId("no-claim".into()), CLAIM_REF),
+        edge("e4", "p1", slug_target("second"), WIKI_LINK),
+        edge("e5", "p1", ObjectId("x".into()), "other"),
+        revision("p1", 1),
+        revision("p1", 2),
+        revision("p2", 1),
+    ];
+    store.commit(&lease, &raw_event(v, 0), &mutations).expect("commit");
+    let snap = store.snapshot(v).expect("snapshot");
+    let two = [ObjectId("p1".into()), ObjectId("p2".into())];
+    let ids = |b: Vec<BlockRow>| b.into_iter().map(|x| x.header.id.0).collect::<Vec<_>>();
+    assert_eq!(ids(snap.blocks_of(&two, 10).expect("blocks")), ["b1", "b2", "b3"], "by page and position");
+    assert_eq!(ids(snap.blocks_of(&two, 1).expect("blocks")), ["b1"], "a limit holds");
+    assert_eq!(ids(snap.headings_of(&two).expect("headings")), ["b2"]);
+    let Some(Row::Page(full)) = snap.get(&page_key("p1")).expect("get") else {
+        panic!("no page");
+    };
+    assert_eq!(
+        (full.slug.as_str(), full.redirects.as_slice(), full.body.as_str()),
+        ("first", &["old-first".to_string()][..], "a long body")
+    );
+    let summaries = snap.page_summaries(None, 10).expect("pages");
+    assert_eq!(summaries.iter().map(|p| p.header.id.0.as_str()).collect::<Vec<_>>(), ["p1", "p2"]);
+    assert!(summaries.iter().all(|p| p.body.is_empty()), "a list carries no bodies");
+    assert_eq!(summaries[0].slug, "first");
+    assert_eq!(summaries[0].redirects, ["old-first"]);
+    assert_eq!(snap.page_summaries(Some(&ObjectId("p1".into())), 10).expect("pages").len(), 1);
+    let revs = snap.revisions_of(&ObjectId("p1".into()), None, 10).expect("revisions");
+    assert_eq!(revs.iter().map(|r| r.revision).collect::<Vec<_>>(), [1, 2]);
+    assert!(revs.iter().all(|r| r.blocks.is_empty()), "a list carries no blocks");
+    assert_eq!(snap.revisions_of(&ObjectId("p1".into()), Some(1), 10).expect("revisions").len(), 1);
+    let full_revision = snap
+        .get(&RowKey {
+            table: Table::Revision,
+            id: revision_id(&ObjectId("p1".into()), 2),
+        })
+        .expect("get");
+    assert!(matches!(full_revision, Some(Row::Revision(r)) if r.blocks.len() == 1), "a read of one has them");
+    let edge_ids = |e: Vec<EdgeRow>| e.into_iter().map(|x| x.header.id.0).collect::<Vec<_>>();
+    let p2 = [ObjectId("p2".into())];
+    assert_eq!(
+        edge_ids(snap.edges_linked(&p2, &[WIKI_LINK], EdgeDirection::From, None, 10).expect("edges")),
+        ["e1", "e2"]
+    );
+    assert_eq!(
+        edge_ids(
+            snap.edges_linked(&p2, &[WIKI_LINK], EdgeDirection::From, Some(&ObjectId("e1".into())), 10)
+                .expect("edges")
+        ),
+        ["e2"]
+    );
+    assert_eq!(
+        edge_ids(snap.edges_linked(&p2, &[WIKI_LINK], EdgeDirection::From, None, 1).expect("edges")),
+        ["e1"]
+    );
+    let ends = [ObjectId("p1".into()), slug_target("old-first")];
+    assert_eq!(
+        edge_ids(snap.edges_linked(&ends, &[WIKI_LINK], EdgeDirection::To, None, 10).expect("edges")),
+        ["e1"]
+    );
+    assert_eq!(
+        edge_ids(snap.edges_linked(&ends, &[WIKI_LINK, CLAIM_REF], EdgeDirection::Both, None, 10).expect("edges")),
+        ["e1", "e3", "e4"]
+    );
+    let read = snap.edges_linked(&p2, &[WIKI_LINK], EdgeDirection::From, None, 1).expect("edges");
+    assert_eq!(read[0].block_id, Some(ObjectId("b1".into())), "an edge keeps its block");
+    assert_eq!(
+        edge_ids(snap.unresolved_links(None, 10).expect("unresolved")),
+        ["e2", "e3"],
+        "a slug nobody holds, and a claim that doesn't exist"
+    );
+    assert_eq!(edge_ids(snap.unresolved_links(Some(&ObjectId("e2".into())), 10).expect("unresolved")), ["e3"]);
+    drop(snap);
+    store.close_vault(&lease).expect("close");
 }
 
 fn entity_reads<S: Store>(store: &S, v: &VaultId) {

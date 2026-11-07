@@ -691,6 +691,180 @@ async fn new_widget(w: &World, base: &str, key: &str, name: &str, seg: &str, pri
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_page_goes_through_its_whole_life_over_http() {
+    let w = world();
+    let base = format!("/api/v1/vaults/{}", w.a);
+    let post = |path: String, body: Value| {
+        let (s, t) = (w.s.clone(), w.admin.clone());
+        async move { call(&s, "POST", &path, Some(&t), Some(body)).await }
+    };
+    let get = |path: String| {
+        let (s, t) = (w.s.clone(), w.admin.clone());
+        async move { call(&s, "GET", &path, Some(&t), None).await }
+    };
+    let (status, created, _) = post(
+        format!("{base}/pages"),
+        json!({"title": "First Page", "body": "# Hello\n\nSee [[Second Page]] and {{claim:nope}}.\n", "rationale": "r", "idempotency_key": "a"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(created["result"]["changeset"]["state"], "committed");
+    let first = created["page_id"].as_str().unwrap().to_string();
+    let (_, second, _) = post(
+        format!("{base}/pages"),
+        json!({"title": "Second Page", "body": "Back to [[First Page]].", "rationale": "r", "idempotency_key": "b"}),
+    )
+    .await;
+    let second = second["page_id"].as_str().unwrap().to_string();
+
+    let (status, page, _) = get(format!("{base}/pages/{first}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!((page["slug"].as_str(), page["revision"].as_u64()), (Some("first-page"), Some(1)));
+    assert_eq!(page["blocks"][0]["kind"], "heading");
+    assert_eq!(page["claims"][0]["status"], "missing");
+    let (_, list, _) = get(format!("{base}/pages?limit=1")).await;
+    assert_eq!(list["items"].as_array().unwrap().len(), 1);
+    assert!(list["next_cursor"].is_string());
+
+    // A stale edit is a conflict that carries the current row, and a good one is a new revision.
+    let (status, edited, _) = post(
+        format!("{base}/pages/{first}/edit"),
+        json!({"base_version": 1, "body": "Changed, see [[Second Page]].", "rationale": "r", "idempotency_key": "c"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{edited}");
+    let (status, stale, _) = post(
+        format!("{base}/pages/{first}/edit"),
+        json!({"base_version": 1, "body": "late", "rationale": "r", "idempotency_key": "d"}),
+    )
+    .await;
+    assert_eq!((status, stale["error"]["code"].as_str()), (StatusCode::CONFLICT, Some("stale_version")));
+    let (_, old, _) = get(format!("{base}/pages/{first}?revision=1")).await;
+    assert_eq!((old["revision"].as_u64(), old["current_revision"].as_u64()), (Some(1), Some(2)));
+    let (_, revisions, _) = get(format!("{base}/pages/{first}/revisions")).await;
+    assert_eq!(revisions["items"].as_array().unwrap().len(), 2);
+    let (_, diff, _) = get(format!("{base}/pages/{first}/diff?from=1&to=2")).await;
+    assert!(!diff["blocks"].as_array().unwrap().is_empty());
+
+    // A rename keeps links working, and the old slug redirects.
+    let (status, renamed, _) = post(
+        format!("{base}/pages/{first}/rename"),
+        json!({"base_version": 2, "title": "Renamed Page", "rationale": "r", "idempotency_key": "e"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{renamed}");
+    let (_, redirect, _) = get(format!("{base}/pages/by-slug/first-page")).await;
+    assert_eq!(
+        (redirect["redirected"].as_bool(), redirect["current_slug"].as_str()),
+        (Some(true), Some("renamed-page"))
+    );
+    let (_, back, _) = get(format!("{base}/pages/{first}/backlinks")).await;
+    assert_eq!(back["items"][0]["from_page"], second.as_str());
+    assert_eq!(back["items"][0]["via_slug"], "first-page");
+    let (_, out, _) = get(format!("{base}/pages/{second}/links")).await;
+    assert_eq!(
+        (out["items"][0]["to_page"].as_str(), out["items"][0]["resolved"].as_bool()),
+        (Some(first.as_str()), Some(true))
+    );
+
+    // A revert is a new revision holding the old words.
+    let (status, reverted, _) = post(
+        format!("{base}/pages/{first}/revert"),
+        json!({"base_version": 3, "revision": 1, "rationale": "r", "idempotency_key": "f"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reverted}");
+    let (_, now, _) = get(format!("{base}/pages/{first}")).await;
+    assert_eq!(now["body"], old["body"]);
+    assert_eq!(now["blocks"], old["blocks"]);
+    assert_eq!(now["current_revision"], 4);
+
+    let (_, broken, _) = get(format!("{base}/pages/unresolved-links")).await;
+    assert_eq!(broken["items"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        (broken["items"][0]["kind"].as_str(), broken["items"][0]["target"].as_str()),
+        (Some("claim_ref"), Some("nope"))
+    );
+
+    // Export and import between vaults.
+    let res = router(w.s.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("{base}/pages/{second}/export"))
+                .header("authorization", format!("Bearer {}", w.admin))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers()["content-type"], "text/markdown; charset=utf-8");
+    let bytes = axum::body::to_bytes(res.into_body(), 1_000_000).await.unwrap();
+    let file = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(file.starts_with("---\ntitle: \"Second Page\""), "{file}");
+    let (status, again, _) = post(
+        format!("{base}/pages/import"),
+        json!({"markdown": file, "rationale": "r", "idempotency_key": "g"}),
+    )
+    .await;
+    assert_eq!((status, again["error"]["code"].as_str()), (StatusCode::CONFLICT, Some("conflict")), "{again}");
+    let (status, imported, _) = post(
+        format!("{base}/pages/import"),
+        json!({"markdown": file, "base_version": 1, "rationale": "r", "idempotency_key": "h"}),
+    )
+    .await;
+    assert_eq!((status, imported["created"].as_bool()), (StatusCode::OK, Some(false)), "{imported}");
+
+    // Oversized is refused with nothing written, and a delete waits for review.
+    let big = "x".repeat(memex_core::page::MAX_PAGE_BYTES + 1);
+    let (status, _, _) = post(
+        format!("{base}/pages"),
+        json!({"title": "Big", "body": big, "rationale": "r", "idempotency_key": "i"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, deleted, _) = post(
+        format!("{base}/pages/{second}/delete"),
+        json!({"base_version": 2, "rationale": "r", "idempotency_key": "j"}),
+    )
+    .await;
+    assert_eq!((status, deleted["changeset"]["state"].as_str()), (StatusCode::OK, Some("pending")), "{deleted}");
+    assert_eq!(get(format!("{base}/pages/nope")).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(get(format!("{base}/pages/{first}/diff?from=1&to=99")).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(get(format!("{base}/pages/{first}/revisions?cursor=xx")).await.0, StatusCode::BAD_REQUEST);
+    // Other kinds of search filter by the new names, and a bad expand says what's allowed.
+    assert_ne!(get(format!("{base}/search?q=x&kind=page&expand=off")).await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(get(format!("{base}/search?q=x&expand=maybe")).await.0, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn scopes_hold_on_page_routes() {
+    let w = world();
+    let base = format!("/api/v1/vaults/{}", w.a);
+    assert_eq!(call(&w.s, "GET", &format!("{base}/pages"), None, None).await.0, StatusCode::UNAUTHORIZED);
+    let (_, created, _) = call(
+        &w.s,
+        "POST",
+        &format!("{base}/pages"),
+        Some(&w.admin),
+        Some(json!({"title": "Scoped", "body": "b", "rationale": "r", "idempotency_key": "a"})),
+    )
+    .await;
+    assert_eq!(created["result"]["changeset"]["state"], "committed");
+    let reader = token_with(&w, "reader", Some(Scope::Read));
+    assert_eq!(call(&w.s, "GET", &format!("{base}/pages"), Some(&reader), None).await.0, StatusCode::OK);
+    let (status, _, _) = call(
+        &w.s,
+        "POST",
+        &format!("{base}/pages"),
+        Some(&reader),
+        Some(json!({"title": "No", "body": "b", "rationale": "r", "idempotency_key": "b"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn every_field_of_a_returned_entity_leads_to_a_source_region() {
     let w = world();
     let (base, seg) = entity_setup(&w).await;
@@ -991,6 +1165,20 @@ fn every_list_route_in_the_openapi_document_has_cursor_limit_and_sort() {
         "/api/v1/vaults/{id}/entities/{eid}/redirect",
         "/api/v1/vaults/{id}/entities/{eid}/merge",
         "/api/v1/vaults/{id}/entities/{eid}/split",
+        "/api/v1/vaults/{id}/pages",
+        "/api/v1/vaults/{id}/pages/import",
+        "/api/v1/vaults/{id}/pages/unresolved-links",
+        "/api/v1/vaults/{id}/pages/by-slug/{slug}",
+        "/api/v1/vaults/{id}/pages/{pid}",
+        "/api/v1/vaults/{id}/pages/{pid}/export",
+        "/api/v1/vaults/{id}/pages/{pid}/edit",
+        "/api/v1/vaults/{id}/pages/{pid}/rename",
+        "/api/v1/vaults/{id}/pages/{pid}/delete",
+        "/api/v1/vaults/{id}/pages/{pid}/revert",
+        "/api/v1/vaults/{id}/pages/{pid}/revisions",
+        "/api/v1/vaults/{id}/pages/{pid}/diff",
+        "/api/v1/vaults/{id}/pages/{pid}/backlinks",
+        "/api/v1/vaults/{id}/pages/{pid}/links",
         "/api/v1/vaults",
         "/api/v1/vaults/{id}",
         "/api/v1/principals",
