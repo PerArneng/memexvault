@@ -250,8 +250,8 @@ async fn an_agent_with_propose_scope_is_refused_every_direct_write_and_a_read_to
     )
     .await;
     assert!(status.is_success(), "{status} {proposed}");
-    assert_eq!(proposed["state"], "pending");
-    let cs = proposed["id"].as_str().unwrap();
+    assert_eq!(proposed["changeset"]["state"], "pending");
+    let cs = proposed["changeset"]["id"].as_str().unwrap();
     for (token, name) in [(&w.agent, "agent"), (&w.reader, "reader")] {
         for (method, path, body) in [
             ("POST", format!("/api/v1/vaults/{}/changesets/{cs}/approve", w.v), Some(json!({}))),
