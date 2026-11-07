@@ -165,14 +165,10 @@ pub fn plan_resume(request: ResumeRequest, position: i64, oldest: Option<i64>, m
 
 /// The index of the first sequence that doesn't follow the one before it, starting after `after`.
 pub fn first_gap(after: i64, seqs: impl IntoIterator<Item = u64>) -> Option<usize> {
-    let mut expected = after + 1;
-    for (i, seq) in seqs.into_iter().enumerate() {
-        if seq as i64 != expected {
-            return Some(i);
-        }
-        expected += 1;
-    }
-    None
+    seqs.into_iter()
+        .enumerate()
+        .find(|(i, seq)| *seq as i64 != after + 1 + *i as i64)
+        .map(|(i, _)| i)
 }
 
 /// Takes the report of what a job is doing, and is told when the job has ended. Workers hold this and nothing about how a report travels.

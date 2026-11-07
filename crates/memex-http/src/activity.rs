@@ -382,7 +382,14 @@ impl Hub {
 }
 
 /// The body of one stream. Closing it, by reaching the end or by the client going away, takes the client off its feed and gives back its slot.
-pub(crate) fn body_of<E>(hub: Arc<Hub>, server: Arc<Server<E>>, vault: VaultId, opened: Opened, slot: StreamSlot, peer: Option<std::net::SocketAddr>) -> axum::body::Body
+pub(crate) fn body_of<E>(
+    hub: Arc<Hub>,
+    server: Arc<Server<E>>,
+    vault: VaultId,
+    opened: Opened,
+    slot: StreamSlot,
+    peer: Option<std::net::SocketAddr>,
+) -> axum::body::Body
 where
     E: ServerEdges + Send + Sync + 'static,
     Server<E>: Send + Sync,

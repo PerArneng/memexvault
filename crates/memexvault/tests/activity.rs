@@ -5,9 +5,9 @@
 //! - **Item 5.** 6 pairs of 2,000 exact lookups over HTTP, alternating with 50 connected clients and with none. The median p95 with clients must be at most the 2 ms target. Also reported: the median over pairs of p95 with clients ÷ p95 without, which says what the streams add whatever the baseline is. RSS growth and peak connections are recorded. They have no limit in the spec, so they can't pass or fail.
 // These tests read the environment, start the binary, and print what they measured.
 #![allow(clippy::disallowed_methods, clippy::disallowed_macros)]
-#[path = "../../memex-http/tests/marker_fixture.rs"]
+#[path = "../../memex-http/tests/support/marker_fixture.rs"]
 mod marker_fixture;
-#[path = "../../memex-http/tests/sse_client.rs"]
+#[path = "../../memex-http/tests/support/sse_client.rs"]
 mod sse_client;
 
 use marker_fixture::{MARKER, fill_with_marker, plain};

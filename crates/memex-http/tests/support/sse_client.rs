@@ -1,5 +1,5 @@
 //! A small blocking client for server-sent events, on a plain socket, so a test can stop reading or go away whenever it likes and see exactly the bytes sent.
-#![allow(dead_code)]
+#![allow(dead_code, clippy::disallowed_methods)]
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::time::{Duration, Instant};

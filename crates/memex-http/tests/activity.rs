@@ -1,9 +1,9 @@
 //! The activity stream over real sockets and real HTTP, in memory: fake edges, with the server's own routing, buffers and hub. Tests on Postgres are in `memexvault/tests/activity.rs`.
 // These tests run a server and read a socket with time limits.
-#![allow(clippy::disallowed_methods)]
-#[path = "marker_fixture.rs"]
+#![allow(clippy::disallowed_methods, clippy::disallowed_macros)]
+#[path = "support/marker_fixture.rs"]
 mod marker_fixture;
-#[path = "sse_client.rs"]
+#[path = "support/sse_client.rs"]
 mod sse_client;
 
 use axum::body::{Body, to_bytes};
@@ -12,13 +12,10 @@ use marker_fixture::{MARKER, fill_with_marker, plain, reply};
 use memex_api::frame_of;
 use memex_core::testing::{FakeRasterizer, ManualClock, MemBlobStore, MemRegistry, MemStore, ScriptedAgent, SeededRandom};
 use memex_core::{
-    ActivityLimits, BufferLimits, Caller, EMBED_JOB, EXTRACT_JOB, ExtractionLimits, NewEntity, NewPage, NewToken, Proposal, RENDITION_JOB, REVIEW_JOB,
-    RenditionInput, Server, ServerEdges, Snapshot, Store, TRANSCRIBE_JOB, TriggerAudit, UploadLimits, UploadRequest,
+    ActivityLimits, BufferLimits, Caller, EMBED_JOB, EXTRACT_JOB, ExtractionLimits, NewToken, RENDITION_JOB, Server, ServerEdges, Snapshot, Store,
+    UploadLimits, UploadRequest,
 };
-use memex_types::{
-    AgentError, AgentReply, AgentUsage, Epistemic, EvidenceInput, Grant, MediaFacts, ObjectId, Op, PrincipalKind, Scope, Stance, Table, TimedDocument,
-    TimedWord, TranscribeUsage, VaultId,
-};
+use memex_types::{Grant, ObjectId, PrincipalKind, Scope, Table, VaultId};
 use serde_json::{Value, json};
 use sse_client::{Frame, Sse, open, seq_of};
 use std::collections::BTreeSet;
