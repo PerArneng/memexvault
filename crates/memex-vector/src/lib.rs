@@ -3,7 +3,7 @@ use memex_store_postgres::{Conn, PgStore, schema_of_vault};
 use memex_types::{Generation, LexicalFilter, LexicalHit, LexicalResults, ModelInfo, ObjectId, VaultId, VectorError, VectorHealth, VectorOp, VectorQuery};
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// An exact scan is faster and better than the graph below this many matches. Spec 004 measured about 0.75 µs per row on one thread, and 25 ms at p95 for 20,000 rows on 8.
 const EXACT_MAX_MATCHES: f64 = 12_000.0;
@@ -154,11 +154,49 @@ fn batch_rows(c: &mut Conn, sql: &str) -> Result<Vec<postgres::SimpleQueryRow>, 
 /// Shares the store's connection pool, since it's the same database.
 pub struct PgVectors {
     store: Arc<PgStore>,
+    marks: Mutex<LiveMarks>,
+}
+
+/// Each vault's live watermark as last read. `epoch` moves with every write, so a read that started before a write can't store what it saw after it.
+#[derive(Default)]
+struct LiveMarks {
+    epoch: u64,
+    by_vault: HashMap<VaultId, Option<u64>>,
 }
 
 impl PgVectors {
     pub fn new(store: Arc<PgStore>) -> Self {
-        Self { store }
+        Self {
+            store,
+            marks: Mutex::default(),
+        }
+    }
+
+    /// The live generation's watermark, from memory after its first read. Only this server's projector writes to a vault's index, through this value, and every write forgets the mark. A cached search reads this each time, and a round trip here was half its cost (spec 021).
+    pub fn live_mark(&self, vault: &VaultId) -> Result<Option<u64>, VectorError> {
+        let started = {
+            let marks = self.marks.lock().expect("lock");
+            if let Some(mark) = marks.by_vault.get(vault) {
+                return Ok(*mark);
+            }
+            marks.epoch
+        };
+        let mark = match self.health(vault)? {
+            VectorHealth::Ready { watermark, .. } => watermark,
+            VectorHealth::Missing => None,
+        };
+        let mut marks = self.marks.lock().expect("lock");
+        if marks.epoch == started {
+            marks.by_vault.insert(vault.clone(), mark);
+        }
+        Ok(mark)
+    }
+
+    /// Called after every write, including one that failed, as it may have reached the database before the failure.
+    pub fn forget_mark(&self, vault: &VaultId) {
+        let mut marks = self.marks.lock().expect("lock");
+        marks.epoch += 1;
+        marks.by_vault.remove(vault);
     }
 
     fn with_conn<T>(&self, work: impl FnOnce(&mut Conn) -> Result<T, VectorError>) -> Result<T, VectorError> {
@@ -269,6 +307,12 @@ impl PgVectors {
     }
 
     pub fn begin_build(&self, vault: &VaultId, model: &ModelInfo) -> Result<(), VectorError> {
+        let result = self.begin_build_now(vault, model);
+        self.forget_mark(vault);
+        result
+    }
+
+    fn begin_build_now(&self, vault: &VaultId, model: &ModelInfo) -> Result<(), VectorError> {
         let schema = schema_of_vault(vault);
         self.with_conn(|c| {
             let mut t = c.client.transaction().map_err(backend)?;
@@ -309,6 +353,12 @@ impl PgVectors {
     }
 
     pub fn apply(&self, vault: &VaultId, generation: Generation, ops: &[VectorOp], watermark: Option<u64>) -> Result<(), VectorError> {
+        let result = self.apply_now(vault, generation, ops, watermark);
+        self.forget_mark(vault);
+        result
+    }
+
+    fn apply_now(&self, vault: &VaultId, generation: Generation, ops: &[VectorOp], watermark: Option<u64>) -> Result<(), VectorError> {
         let schema = schema_of_vault(vault);
         self.with_conn(|c| {
             let g = Self::generation(c, &schema, role_of(generation))?.ok_or_else(|| VectorError::Invalid("no such generation".into()))?;
@@ -376,6 +426,12 @@ impl PgVectors {
 
     /// Builds the graph and filter indexes first, which is slow but only touches the new table, so search goes on using the old one. Building them after loading is faster, and with `fastupdate` off the source index has no pending list, which spec 019 measured costing a filtered search 14 ms per query.
     pub fn flip(&self, vault: &VaultId) -> Result<(), VectorError> {
+        let result = self.flip_now(vault);
+        self.forget_mark(vault);
+        result
+    }
+
+    fn flip_now(&self, vault: &VaultId) -> Result<(), VectorError> {
         let schema = schema_of_vault(vault);
         self.with_conn(|c| {
             let g = Self::generation(c, &schema, "building")?.ok_or_else(|| VectorError::Invalid("nothing is being built".into()))?;
@@ -412,6 +468,12 @@ impl PgVectors {
     }
 
     pub fn rollback(&self, vault: &VaultId) -> Result<(), VectorError> {
+        let result = self.rollback_now(vault);
+        self.forget_mark(vault);
+        result
+    }
+
+    fn rollback_now(&self, vault: &VaultId) -> Result<(), VectorError> {
         let schema = schema_of_vault(vault);
         self.with_conn(|c| {
             let previous = Self::generation(c, &schema, "previous")?.ok_or_else(|| VectorError::Invalid("there's no earlier generation".into()))?;

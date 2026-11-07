@@ -6,8 +6,8 @@ use moka::sync::Cache;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// What moka's own bookkeeping doesn't count: its node, hash table slot and the two `Arc`s.
-const ENTRY_OVERHEAD: u64 = 256;
+/// What moka's own bookkeeping takes per entry beyond the key and value: its nodes, hash table slot, timestamps and `Arc`s. Set from the RSS the load test measures, rather than from its source.
+const ENTRY_OVERHEAD: u64 = 512;
 /// The overshoot the spec allows, and so the largest entry a tier accepts. An insert can only go over the cap by the entry going in.
 const MAX_ENTRY_FRACTION: u64 = 20;
 /// moka empties its queues in bounded steps, so one call may not reach the cap when many writes are waiting.

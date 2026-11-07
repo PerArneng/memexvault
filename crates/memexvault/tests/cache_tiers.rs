@@ -876,6 +876,32 @@ mod pg {
         s.0.drop_vault(&v).unwrap();
     }
 
+    /// A cached search reads this mark on every hit, so it has to move with every write.
+    #[test]
+    #[ignore = "needs Postgres"]
+    fn pg_cache_the_vector_mark_follows_writes() {
+        use memex_core::VectorIndex;
+        use memex_types::{Generation, ModelInfo};
+        let s = store();
+        let (v, lease) = fresh(&s, "vector-mark");
+        let index = memexvault::edges::PgVectorIndex(memex_vector::PgVectors::new(s.0.clone()));
+        assert_eq!(index.live_mark(&v).unwrap(), None, "no generation yet");
+        let model = ModelInfo {
+            name: "m".into(),
+            dimension: 3,
+        };
+        index.begin_build(&v, &model).unwrap();
+        index.apply(&v, Generation::Building, &[], Some(3)).unwrap();
+        assert_eq!(index.live_mark(&v).unwrap(), None, "still building");
+        index.flip(&v).unwrap();
+        assert_eq!(index.live_mark(&v).unwrap(), Some(3));
+        index.apply(&v, Generation::Live, &[], Some(5)).unwrap();
+        assert_eq!(index.live_mark(&v).unwrap(), Some(5));
+        assert_eq!(index.live_mark(&v).unwrap(), Some(5), "and from memory");
+        s.close_vault(&lease).unwrap();
+        s.0.drop_vault(&v).unwrap();
+    }
+
     /// The stamp is what makes a row in the tier safe, so it has to follow every change, and agree with what the rows say.
     #[test]
     #[ignore = "needs Postgres"]

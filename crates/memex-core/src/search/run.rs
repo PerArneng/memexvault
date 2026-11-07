@@ -615,9 +615,8 @@ where
                 None
             };
             let vector = if plan.use_vector {
-                match e.vector.health(vault) {
-                    Ok(VectorHealth::Ready { watermark, .. }) => Some(watermark),
-                    Ok(VectorHealth::Missing) => Some(None),
+                match e.vector.live_mark(vault) {
+                    Ok(w) => Some(w),
                     Err(_) => return uncached,
                 }
             } else {

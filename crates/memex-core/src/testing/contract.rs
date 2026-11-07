@@ -42,6 +42,8 @@ fn raw_event(v: &VaultId, seq: u64) -> Event {
 pub fn run_all<S: Store>(store: &S, prefix: &str) {
     let name = |n: &str| vault(&format!("{prefix}{n}"));
     apply_then_read(store, &name("apply"));
+    cache_marks_follow_the_log(store, &name("marks"));
+    row_stamps_follow_contents(store, &name("stamps"));
     writer_lease_is_exclusive(store, &name("lease"));
     sequences_must_be_contiguous(store, &name("seq"));
     missing_delete_leaves_no_trace(store, &name("delete"));
@@ -674,6 +676,50 @@ fn batches_are_all_or_nothing<S: Store>(store: &S, v: &VaultId) {
         mutations: &again,
     }];
     assert!(matches!(store.commit_batch(&lease, &double), Err(StoreError::MissingRow { .. })));
+    store.close_vault(&lease).expect("close");
+}
+
+fn cache_marks_follow_the_log<S: Store>(store: &S, v: &VaultId) {
+    assert!(store.cache_marks(v).is_err(), "an unknown vault");
+    let lease = store.open_vault(v).expect("open");
+    let marks = store.cache_marks(v).expect("marks");
+    assert_eq!((marks.head, marks.generation), (None, 0));
+    apply_all(store, &lease, vec![page("p", "x")]);
+    let head = store.snapshot(v).expect("snap").head().expect("head");
+    assert_eq!(store.cache_marks(v).expect("marks").head, head);
+    assert_eq!(store.bump_cache_generation(&lease), Ok(1));
+    assert_eq!(store.bump_cache_generation(&lease), Ok(2));
+    let marks = store.cache_marks(v).expect("marks");
+    assert_eq!((marks.head, marks.generation), (head, 2), "a bump isn't an event");
+    let stale = crate::WriterLease {
+        vault: v.clone(),
+        token: lease.token + 1,
+    };
+    assert_eq!(store.bump_cache_generation(&stale), Err(StoreError::LeaseLost));
+    assert_eq!(store.cache_marks(v).expect("marks").generation, 2);
+    store.close_vault(&lease).expect("close");
+}
+
+/// A stamp has to change with the contents, and not only with the version, as a revert can reuse a version number.
+fn row_stamps_follow_contents<S: Store>(store: &S, v: &VaultId) {
+    let lease = store.open_vault(v).expect("open");
+    apply_all(store, &lease, vec![page("a", "first"), page("b", "other")]);
+    let keys = [page_key("a"), page_key("missing"), page_key("b")];
+    let stamps = || store.snapshot(v).expect("snap").row_stamps(&keys).expect("stamps");
+    let one = stamps();
+    assert!(one[0].is_some() && one[2].is_some());
+    assert_eq!(one[1], None);
+    assert_ne!(one[0], one[2]);
+    assert_eq!(one, stamps());
+    let Row::Page(mut row) = store.snapshot(v).expect("snap").get(&page_key("a")).expect("get").expect("row") else {
+        panic!("not a page");
+    };
+    row.body = "second".into();
+    let head = store.snapshot(v).expect("snap").head().expect("head").map_or(0, |h| h + 1);
+    store.commit(&lease, &raw_event(v, head), &[Mutation::Put(Row::Page(row))]).expect("commit");
+    let two = stamps();
+    assert_ne!(one[0], two[0], "the same version with other text");
+    assert_eq!(one[2], two[2], "an untouched row");
     store.close_vault(&lease).expect("close");
 }
 

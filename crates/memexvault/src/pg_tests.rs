@@ -63,6 +63,8 @@ fn pg_contract() {
     let s = store();
     for n in [
         "apply",
+        "marks",
+        "stamps",
         "lease",
         "seq",
         "delete",

@@ -20,6 +20,13 @@ pub trait Embedder {
 /// A vector index, and the stored embeddings it's built from. Only the projector writes to the index.
 pub trait VectorIndex {
     fn health(&self, vault: &VaultId) -> Result<VectorHealth, VectorError>;
+    /// The live generation's watermark, for a cached search, which asks on every read. A backend whose writes all pass through it can answer from memory.
+    fn live_mark(&self, vault: &VaultId) -> Result<Option<u64>, VectorError> {
+        Ok(match self.health(vault)? {
+            VectorHealth::Ready { watermark, .. } => watermark,
+            VectorHealth::Missing => None,
+        })
+    }
     /// The last event the generation covers. `Ok(None)` also means there's no such generation.
     fn watermark(&self, vault: &VaultId, generation: memex_types::Generation) -> Result<Option<u64>, VectorError>;
     /// Starts an empty building generation for this model, discarding any unfinished one.

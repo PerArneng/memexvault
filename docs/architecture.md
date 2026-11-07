@@ -389,16 +389,24 @@ measurement: only spec 033 proves the 1M goal.
 
 ## Caches
 
-Each tier has a configurable byte cap. Tantivy's mmap stays with the OS page cache.
+Each tier has a configurable byte cap, and 0 turns it off. Tantivy's mmap stays with the OS page cache. Spec 021 has the measurements.
 
-| Tier | Contents | Key includes |
-|---|---|---|
-| Query (RAM, moka) | Evidence packages | Projection watermark, as_of, scope |
-| Inference (RAM) | Query embeddings, rerank scores | Content hash, model |
-| Objects (RAM) | Pages, entities, segment text | Id, version |
-| Disk (LRU files) | Page images, word tables | Blob hash, DPI, renderer |
+| Tier | Setting, default | Contents | Key includes |
+|---|---|---|---|
+| Query (RAM, moka) | `MEMEX_CACHE_QUERY_BYTES`, 256 MiB | Evidence packages | The log's head, the index watermarks, or the past event for `as_of`, and the whole request |
+| Inference (RAM, moka) | `MEMEX_CACHE_INFERENCE_BYTES`, 64 MiB | Query embeddings, rerank scores | Model, and a hash of the query or of the query and all its passages |
+| Objects (RAM, moka) | `MEMEX_CACHE_OBJECT_BYTES`, 256 MiB | Segments, entities and pages the fence reads | Id, and a stamp of the row's contents |
+| Disk (LRU files) | `MEMEX_CACHE_DISK_BYTES`, 2 GiB | Page images, word tables | Blob hash, and DPI, renderer and highlights for an image |
 
-Every key also includes a vault generation, which erasure bumps. That covers the one case the key design doesn't.
+Every key starts with the vault and its generation, which erasure bumps. That covers the one case the rest of a key doesn't. A key holds everything its value depends on, so a stale value is unreachable and ages out. Rules behind this:
+
+- **The head is in the query key.** A watermark alone would let a package outlive a retraction until the index catches up. So any event misses, and hits need a quiet log.
+- **A row's stamp isn't its version.** Reverting a ChangeSet restores a row with its old version number, and the next edit uses that number again for new content. Postgres hashes the row, so the row doesn't cross the network.
+- **Marks are read before a hit is served,** in one statement. The keyword index's watermark is in memory, and so is the vector index's, as only this server's projector writes it. If they can't be read, nothing comes from a cache, and the search reports the failure as it would have. A hit reads no rows.
+- **Not kept:** a degraded answer, a `debug` search (its timings are its own) and a `min_seq` search.
+- **Eviction is LRU,** not moka's default TinyLFU, which would hold on to popular keys that can never be read again. An entry over a twentieth of its tier's cap isn't kept, so a tier can only pass its cap by that much, and only until the eviction that follows.
+- **The disk tier** keeps its files in each vault's `cache/` folder, under one cap, and each file holds its key and a digest. A file that fails either is a miss and is deleted.
+- **A bump** (`Server::bump_cache_generation`) is durable first, then drops the vault's RAM entries and files, so erased content doesn't stay on disk. `GET /api/v1/caches` shows counts and sizes to server admins.
 
 ## Left out
 

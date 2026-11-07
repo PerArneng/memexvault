@@ -1164,12 +1164,16 @@ fn cache_tiers_replay() {
         q.rerank = rerank;
         q
     };
+    let compare = std::env::var("MEMEX_CACHE_REPLAY_ONLY").is_err();
     for (name, mode, rerank) in [
         ("hybrid", SearchMode::Hybrid, false),
         ("lexical", SearchMode::Lexical, false),
         ("vector", SearchMode::Vector, false),
         ("hybrid+rerank", SearchMode::Hybrid, true),
-    ] {
+    ]
+    .into_iter()
+    .filter(|_| compare)
+    {
         let plain: Vec<EvidencePackage> = requests.iter().map(|q| run(&rig, &with_mode(q, mode, rerank)).expect("search")).collect();
         for (label, settings) in [
             ("all on", mix(on, on, on)),
@@ -1204,6 +1208,14 @@ fn cache_tiers_replay() {
     // Item 2: a replay. The first pass is cold and the rest should hit. Hits are timed apart from misses by the counters.
     let c = Arc::new(TieredCaches::open(mix(on, on, on), &disk).expect("caches"));
     let stats = |c: &TieredCaches| c.stats().into_iter().find(|t| t.tier == "query").expect("query");
+    // No caches at all, right before the same requests with them, as the objects tier adds a store call to a miss.
+    let mut plain: Vec<f64> = vec![];
+    for q in &requests {
+        let t = Instant::now();
+        run(&rig, q).expect("search");
+        plain.push(t.elapsed().as_secs_f64() * 1000.0);
+    }
+    report("no caches, 1 client", plain);
     let mut cold: Vec<f64> = vec![];
     for q in &requests {
         let t = Instant::now();
