@@ -976,7 +976,7 @@ impl PgSnapshot<'_> {
         );
         let after = after.map_or(-1, |a| a as i32);
         let rows = self.with_statement(&sql, |c, st| c.query(st, &[&page.0, &after, &(limit as i64)]))?;
-        Ok(rows.iter().filter_map(|r| json_revision(r)).collect())
+        Ok(rows.iter().filter_map(json_revision).collect())
     }
 
     pub fn edges_linked(

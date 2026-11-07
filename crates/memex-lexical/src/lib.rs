@@ -23,7 +23,7 @@ use tantivy::tokenizer::TextAnalyzer;
 use tantivy::{DocAddress, Index, IndexReader, IndexWriter, ReloadPolicy, Score, Searcher, TantivyDocument, TantivyError, Term};
 
 /// Bump this when the schema or analysis changes. An older generation is then rebuilt, not misread.
-const SCHEMA_VERSION: u64 = 3;
+const SCHEMA_VERSION: u64 = 4;
 
 #[derive(Debug, Clone, Copy)]
 pub struct WriterBudget {

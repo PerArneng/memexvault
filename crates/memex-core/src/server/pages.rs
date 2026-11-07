@@ -610,6 +610,13 @@ impl<E: ServerEdges> Server<E> {
         };
         match (existing, base_version) {
             (Some(page_id), Some(base)) => {
+                let current = page_row(&self.engine.store().snapshot(vault)?, &page_id)?;
+                if current.title != doc.title {
+                    return Err(ServerError::Invalid(format!(
+                        "this file's title is '{}' and the page's is '{}': an import changes only the body, so rename the page first",
+                        doc.title, current.title
+                    )));
+                }
                 let op = Op::EditPage {
                     id: page_id.clone(),
                     base_version: base,

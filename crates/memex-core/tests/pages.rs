@@ -497,6 +497,23 @@ fn a_new_page_is_searchable_by_its_title_and_its_blocks() {
 }
 
 #[test]
+fn a_past_page_is_found_as_of_the_event_it_held_those_words() {
+    let w = world();
+    let id = w.create("Past Page", "the old wombat words");
+    let at = w.head().unwrap();
+    w.edit(&id, 1, "new words only").unwrap();
+    let mut q = SearchRequest::new("wombat");
+    q.mode = SearchMode::Lexical;
+    q.as_of = Some(memex_types::AsOf::Seq(at));
+    let p = w.s.search(&w.reader, &w.v, &q).unwrap();
+    assert_eq!(p.items[0].kind, ItemKind::Block);
+    assert_eq!(p.items[0].page_id.as_ref(), Some(&id));
+    q.as_of = None;
+    w.settle();
+    assert!(w.s.search(&w.reader, &w.v, &q).unwrap().items.is_empty());
+}
+
+#[test]
 fn a_page_reaches_the_vector_index_through_its_embed_jobs() {
     let w = world();
     let id = w.create("Vector Handbook", "# Part\n\nThe paragraph that gets embedded.\n");
@@ -860,6 +877,11 @@ fn export_then_import_reproduces_content_and_links_in_another_vault() {
     let out = w.s.import_page(&w.admin, &other, &edited, Some(1), "r".into(), "again2".into()).unwrap();
     assert!(!out.created);
     assert!(w.s.get_wiki_page(&w.admin, &other, &made[0].1, None).unwrap().content.body.contains("Now see"));
+    let retitled = edited.replace("Ålborg Notes", "Other Title");
+    assert!(matches!(
+        w.s.import_page(&w.admin, &other, &retitled, Some(2), "r".into(), "retitled".into()),
+        Err(ServerError::Invalid(_))
+    ));
     assert!(matches!(
         w.s.import_page(&w.admin, &other, "no front matter or heading", None, "r".into(), "bad".into()),
         Err(ServerError::Invalid(_))
