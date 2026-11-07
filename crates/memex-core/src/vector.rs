@@ -224,6 +224,13 @@ pub fn embed_requests(model: &str, missing: &[MissingEmbedding]) -> Vec<EmbedReq
         .collect()
 }
 
+/// The segments an embed job holds, whatever state it's in.
+pub fn embed_doc_ids(job: &JobRow) -> Vec<ObjectId> {
+    serde_json::from_value::<EmbedInput>(job.input.clone()).map_or(vec![], |i| {
+        i.docs.into_iter().filter(|d| d.kind == memex_types::DocKind::Segment).map(|d| d.id).collect()
+    })
+}
+
 /// The objects a finished embed job has made searchable, or nothing for any other job.
 pub fn embedded_by(job: &JobRow) -> Vec<EmbedDocRef> {
     if job.kind != EMBED_JOB || job.state != memex_types::JobState::Done {

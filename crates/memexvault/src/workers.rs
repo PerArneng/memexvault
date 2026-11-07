@@ -56,6 +56,8 @@ pub fn run_one<E: ServerEdges>(server: &Server<E>, handler: &dyn JobHandler, kin
                 waiting: false,
             })
         });
+        // Whatever came of it, there's nothing more to say about this attempt.
+        memex_core::Progress::finished(server, &vault, &job.header.id);
         let recorded = match outcome {
             Ok(results) => server.complete_job(&vault, &job, results),
             Err(f) if f.waiting => server.wait_job(&vault, &job, &f.message),

@@ -160,6 +160,10 @@ fn with_candidates<S: Snapshot>(snap: &S, types: &[EntityTypeRow], items: Vec<Ex
         .collect()
 }
 
+fn row_total(segments: usize) -> u32 {
+    segments as u32
+}
+
 fn fresh_row(rendition: &ObjectId, source: &ObjectId, job: &ObjectId, budget: u64, now: i64) -> ExtractionRow {
     ExtractionRow {
         header: header(rendition.clone(), EXTRACTOR),
@@ -563,7 +567,21 @@ impl<E: ServerEdges> Server<E> {
             }
         };
         row.batches_failed = 0;
+        let report = |done: u32| {
+            crate::Progress::report(
+                self,
+                vault,
+                memex_types::ProgressUpdate {
+                    job_id: job.header.id.clone(),
+                    source_id: Some(source_id.clone()),
+                    stage: memex_types::Stage::Extraction,
+                    done: u64::from(done),
+                    total: Some(u64::from(row_total(segments.len()))),
+                },
+            );
+        };
         for batch in extraction::plan_batches(pending, limits.batch_tokens) {
+            report(row.segments_done);
             row.updated_at_ms = self.now();
             let input = extraction::batch_input(&batch);
             let estimated = prompt.estimated_tokens + extraction::estimated_tokens(&input);

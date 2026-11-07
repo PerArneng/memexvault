@@ -1524,6 +1524,69 @@ impl PgSnapshot<'_> {
             .collect())
     }
 
+    /// One statement however many documents, for a page of the live board. The newest rendition of each comes with its extraction, the job behind that, and the pending ChangeSets citing it, which are counted once for all of them.
+    pub fn document_facts(&self, sources: &[ObjectId]) -> Result<Vec<memex_types::DocumentFacts>, PgError> {
+        let ids: Vec<&str> = sources.iter().map(|i| i.0.as_str()).collect();
+        let sql = format!(
+            "WITH wanted AS (SELECT ord, id FROM unnest($1::text[]) WITH ORDINALITY AS w(id, ord)),
+                  latest AS (SELECT w.ord, r.id, r.row FROM wanted w
+                             LEFT JOIN LATERAL (SELECT id, row FROM {s}.renditions WHERE source_id = w.id ORDER BY id DESC LIMIT 1) r ON true),
+                  pending AS (SELECT rid, count(*) AS n FROM {s}.changesets c, unnest(c.rendition_ids) AS rid
+                              WHERE c.state = 'pending' AND rid = ANY(SELECT id FROM latest WHERE id IS NOT NULL) GROUP BY rid)
+             SELECT l.row AS rendition, x.row AS extraction, j.row AS job, COALESCE(p.n, 0) AS pending
+             FROM latest l
+             LEFT JOIN {s}.extractions x ON x.id = l.id
+             LEFT JOIN {s}.jobs j ON j.id = x.row->'extraction'->>'job_id'
+             LEFT JOIN pending p ON p.rid = l.id
+             ORDER BY l.ord",
+            s = self.schema
+        );
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&ids]))?;
+        let cell = |r: &postgres::Row, name: &str| -> Option<Row> { r.get::<_, Option<Value>>(name).and_then(|v| serde_json::from_value(v).ok()) };
+        Ok(sources
+            .iter()
+            .zip(&rows)
+            .map(|(source, r)| memex_types::DocumentFacts {
+                source_id: source.clone(),
+                rendition: if let Some(Row::Rendition(x)) = cell(r, "rendition") { Some(x) } else { None },
+                extraction: if let Some(Row::Extraction(x)) = cell(r, "extraction") { Some(x) } else { None },
+                extraction_job: if let Some(Row::Job(x)) = cell(r, "job") { Some(x) } else { None },
+                pending_review: r.get::<_, i64>("pending") as u64,
+            })
+            .collect())
+    }
+
+    /// One statement, which moves no job's row and no segment's text.
+    pub fn open_embed_sources(&self, limit: usize) -> Result<Vec<(ObjectId, JobState)>, PgError> {
+        let sql = format!(
+            "SELECT DISTINCT seg.source_id, j.state FROM {s}.jobs j
+             CROSS JOIN LATERAL jsonb_array_elements(j.row->'job'->'input'->'docs') AS d(doc)
+             JOIN {s}.segments seg ON seg.id = d.doc->>'id'
+             WHERE j.kind = 'embed' AND j.state IN ('queued', 'running', 'dead') AND d.doc->>'kind' = 'segment'
+             LIMIT $1",
+            s = self.schema
+        );
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&(limit as i64)]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| {
+                let state = match r.get::<_, &str>(1) {
+                    "queued" => JobState::Queued,
+                    "running" => JobState::Running,
+                    "dead" => JobState::Dead,
+                    _ => return None,
+                };
+                Some((ObjectId(r.get(0)), state))
+            })
+            .collect())
+    }
+
+    pub fn event_time(&self, seq: u64) -> Result<Option<i64>, PgError> {
+        let sql = format!("SELECT time_ms FROM {}.events WHERE seq = $1", self.schema);
+        let row = self.with_statement(&sql, |c, st| c.query_opt(st, &[&(seq as i64)]))?;
+        Ok(row.map(|r| r.get(0)))
+    }
+
     pub fn events(&self, after: Option<u64>) -> Result<Vec<Event>, PgError> {
         let from = after.map_or(-1, |a| a as i64);
         let sql = format!(

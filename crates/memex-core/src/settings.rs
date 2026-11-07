@@ -91,6 +91,7 @@ pub struct Settings {
     /// What a combination's Wilson bound has to reach to earn auto-commit, in thousandths.
     pub auto_commit_threshold_permille: u16,
     pub transcribe: TranscribeSettings,
+    pub activity: crate::ActivityLimits,
 }
 
 /// How recordings are transcribed.
@@ -190,6 +191,7 @@ impl Default for Settings {
             audit: crate::audit::AuditLimits::default(),
             auto_commit_threshold_permille: (crate::review::DEFAULT_THRESHOLD * 1000.0) as u16,
             transcribe: TranscribeSettings::default(),
+            activity: crate::ActivityLimits::default(),
         }
     }
 }
@@ -433,6 +435,14 @@ impl Settings {
         t.max_seconds = count("MEMEX_TRANSCRIBE_MAX_SECONDS", text("MEMEX_TRANSCRIBE_MAX_SECONDS")?, t.max_seconds as usize)? as u64;
         t.max_rss_mb = count("MEMEX_TRANSCRIBE_MAX_RSS_MB", text("MEMEX_TRANSCRIBE_MAX_RSS_MB")?, t.max_rss_mb as usize)? as u64;
         t.stall_seconds = count("MEMEX_TRANSCRIBE_STALL_S", text("MEMEX_TRANSCRIBE_STALL_S")?, t.stall_seconds as usize)? as u64;
+        let a = &mut s.activity;
+        a.max_streams = count("MEMEX_ACTIVITY_MAX_STREAMS", text("MEMEX_ACTIVITY_MAX_STREAMS")?, a.max_streams)?;
+        a.buffer.max_frames = count("MEMEX_ACTIVITY_BUFFER_FRAMES", text("MEMEX_ACTIVITY_BUFFER_FRAMES")?, a.buffer.max_frames)?;
+        a.buffer.max_bytes = count("MEMEX_ACTIVITY_BUFFER_BYTES", text("MEMEX_ACTIVITY_BUFFER_BYTES")?, a.buffer.max_bytes)?;
+        a.poll_ms = count("MEMEX_ACTIVITY_POLL_MS", text("MEMEX_ACTIVITY_POLL_MS")?, a.poll_ms as usize)? as u64;
+        a.heartbeat_ms = count("MEMEX_ACTIVITY_HEARTBEAT_S", text("MEMEX_ACTIVITY_HEARTBEAT_S")?, (a.heartbeat_ms / 1000) as usize)? as u64 * 1000;
+        a.recheck_ms = count("MEMEX_ACTIVITY_RECHECK_MS", text("MEMEX_ACTIVITY_RECHECK_MS")?, a.recheck_ms as usize)? as u64;
+        a.stall_ms = count("MEMEX_ACTIVITY_STALL_S", text("MEMEX_ACTIVITY_STALL_S")?, (a.stall_ms / 1000) as usize)? as u64 * 1000;
         // Naming the API is the only thing that turns it on. A key on its own does nothing.
         if s.backends.transcriber == "gemini" {
             let because = "with MEMEX_BACKEND_TRANSCRIBER=gemini".to_string();
@@ -742,8 +752,11 @@ mod tests {
             ("MEMEX_TRANSCRIBE_MAX_SECONDS", "60"),
             ("MEMEX_TRANSCRIBE_MAX_RSS_MB", "900"),
             ("MEMEX_TRANSCRIBE_STALL_S", "5"),
+            ("MEMEX_ACTIVITY_MAX_STREAMS", "3"),
+            ("MEMEX_ACTIVITY_STALL_S", "7"),
         ])
         .unwrap();
+        assert_eq!((s.activity.max_streams, s.activity.stall_ms), (3, 7000));
         assert_eq!(
             (
                 s.transcribe.threads,

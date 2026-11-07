@@ -1,5 +1,5 @@
 use memex_types::{
-    AssertionRow, AuditCheckRow, AuditOutcome, BlockRow, ChangeSetRow, DerivationRow, DocKind, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event,
+    AssertionRow, AuditCheckRow, AuditOutcome, BlockRow, ChangeSetRow, DerivationRow, DocKind, DocumentFacts, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event,
     EvidenceRow, FieldFilter, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, QueueCount, RenditionRow, ReviewFilter, RevisionRow, Row, RowKey,
     SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
 };
@@ -183,6 +183,71 @@ pub trait Snapshot {
                 }
             }
         }
+    }
+    /// What the live board needs about each of these documents, in the same order. One store call in a real backend, as a page of the board holds up to 200.
+    fn document_facts(&self, sources: &[ObjectId]) -> Result<Vec<DocumentFacts>, StoreError> {
+        let mut out = Vec::with_capacity(sources.len());
+        for source in sources {
+            let rendition = self.renditions_of(source)?.into_iter().next_back();
+            let extraction = match &rendition {
+                Some(r) => match self.get(&RowKey {
+                    table: Table::Extraction,
+                    id: r.header.id.clone(),
+                })? {
+                    Some(Row::Extraction(x)) => Some(x),
+                    _ => None,
+                },
+                None => None,
+            };
+            let extraction_job = match &extraction {
+                Some(x) => match self.get(&RowKey {
+                    table: Table::Job,
+                    id: x.job_id.clone(),
+                })? {
+                    Some(Row::Job(j)) => Some(j),
+                    _ => None,
+                },
+                None => None,
+            };
+            let pending_review = match &rendition {
+                Some(r) => self.pending_citing_rendition(&r.header.id, None, PAGE_LIMIT)?.len() as u64,
+                None => 0,
+            };
+            out.push(DocumentFacts {
+                source_id: source.clone(),
+                rendition,
+                extraction,
+                extraction_job,
+                pending_review,
+            });
+        }
+        Ok(out)
+    }
+    /// Each document a queued, running or dead embedding job holds segments of, with that job's state, at most `limit` pairs. One store call in a real backend, which needn't move the jobs' rows.
+    fn open_embed_sources(&self, limit: usize) -> Result<Vec<(ObjectId, JobState)>, StoreError> {
+        let mut out = vec![];
+        for state in [JobState::Queued, JobState::Running, JobState::Dead] {
+            for job in self.jobs(Some(crate::EMBED_JOB), Some(state), None, limit)? {
+                let keys: Vec<RowKey> = crate::vector::embed_doc_ids(&job)
+                    .into_iter()
+                    .map(|id| RowKey { table: Table::Segment, id })
+                    .collect();
+                for row in self.get_many(&keys)?.into_iter().flatten() {
+                    if let Row::Segment(s) = row
+                        && !out.contains(&(s.source_id.clone(), state))
+                    {
+                        out.push((s.source_id, state));
+                    }
+                }
+            }
+        }
+        out.truncate(limit);
+        Ok(out)
+    }
+    /// When this event was written, if the log holds it.
+    fn event_time(&self, seq: u64) -> Result<Option<i64>, StoreError> {
+        let after = seq.checked_sub(1);
+        Ok(self.events(after)?.first().filter(|e| e.seq == seq).map(|e| e.time_ms))
     }
     /// Whether any audit has already given this claim a correct sample.
     fn claim_counted_correct(&self, claim: &ObjectId) -> Result<bool, StoreError> {
