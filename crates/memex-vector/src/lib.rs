@@ -585,6 +585,7 @@ mod tests {
     #[test]
     fn filters_become_literals() {
         let f = LexicalFilter {
+            attr: None,
             kinds: vec![memex_types::DocKind::Claim],
             source_ids: vec![ObjectId("a'; DROP TABLE x; --".into())],
             epistemic: vec!["verified".into()],

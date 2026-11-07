@@ -1,4 +1,6 @@
 //! Pure: request and response types for the HTTP API, and their translation from domain data. No web framework.
+mod entities;
+pub use entities::*;
 use memex_types::{
     AsOf, AssertionRow, ChangeSetRow, Citation, Conflict, DocKind, Event, EvidenceItem, EvidencePackage, EvidenceRow, FacetCount, Facets, Grant, JobRow,
     LexicalFilter, LexicalResults, ObjectId, Op, Principal, PrincipalKind, RenditionRow, Scope, SearchDebug, SearchMode, SearchRequest, SegmentRow,
@@ -870,7 +872,7 @@ impl LexicalSearchParams {
         }
         let kinds = match self.kind.as_deref() {
             None => vec![],
-            Some(k) => vec![DocKind::parse(k).ok_or_else(|| format!("kind must be segment or claim, not {k}"))?],
+            Some(k) => vec![DocKind::parse(k).ok_or_else(|| format!("kind must be segment, claim or entity, not {k}"))?],
         };
         let filter = LexicalFilter {
             kinds,
@@ -952,6 +954,8 @@ pub struct SearchParams {
     pub debug: Option<bool>,
     /// Add counts for the typed filters, over the candidates found.
     pub facets: Option<bool>,
+    /// `<type>.<field>`: search within one entity field. Keyword only, since the vector index has no fields.
+    pub attr: Option<String>,
 }
 
 fn csv(value: Option<String>) -> Vec<String> {
@@ -979,13 +983,23 @@ impl SearchParams {
         };
         let kinds = csv(self.kind)
             .iter()
-            .map(|k| DocKind::parse(k).ok_or_else(|| format!("kind must be segment or claim, not {k}")))
+            .map(|k| DocKind::parse(k).ok_or_else(|| format!("kind must be segment, claim or entity, not {k}")))
             .collect::<Result<_, _>>()?;
         let as_of = match (self.as_of, self.as_of_ms) {
             (Some(_), Some(_)) => return Err("give as_of or as_of_ms, not both".into()),
             (Some(seq), None) => Some(AsOf::Seq(seq)),
             (None, Some(ms)) => Some(AsOf::Time(ms)),
             (None, None) => None,
+        };
+        let attr = match self.attr.as_deref() {
+            None => None,
+            Some(a) => {
+                let (type_name, field) = a.split_once('.').ok_or_else(|| format!("attr must be <type>.<field>, not {a}"))?;
+                Some(memex_types::AttrScope {
+                    type_name: type_name.into(),
+                    field: field.into(),
+                })
+            }
         };
         Ok((
             SearchRequest {
@@ -998,6 +1012,7 @@ impl SearchParams {
                     valid_at_ms: self.valid_at_ms,
                     types: csv(self.doc_type),
                     trust_tiers: csv(self.trust_tier),
+                    attr,
                 },
                 limit: limit as usize,
                 budget_tokens: budget as usize,

@@ -193,6 +193,38 @@ pub const VAULT_MIGRATIONS: &[&str] = &[
     DELETE FROM {s}.vector_generations;
     CREATE INDEX ON {s}.segments (rendition_id, (row->'segment'->>'heading'));
 ",
+    // Spec 023: types, entities, and a table of their values for exact and range filters. A row in the last is deleted with its entity.
+    "
+    CREATE TABLE {s}.entity_types (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL,
+        name text COLLATE \"C\" NOT NULL,
+        version_no integer NOT NULL,
+        UNIQUE (name, version_no)
+    );
+    CREATE TABLE {s}.entities (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL,
+        type_name text COLLATE \"C\" NOT NULL,
+        current boolean NOT NULL
+    );
+    CREATE INDEX ON {s}.entities (type_name, id) WHERE current;
+    CREATE TABLE {s}.entity_fields (
+        entity_id text COLLATE \"C\" NOT NULL REFERENCES {s}.entities ON DELETE CASCADE,
+        type_name text COLLATE \"C\" NOT NULL,
+        field text COLLATE \"C\" NOT NULL,
+        text_value text COLLATE \"C\",
+        number_value double precision,
+        time_value bigint
+    );
+    CREATE INDEX ON {s}.entity_fields (entity_id);
+    CREATE INDEX ON {s}.entity_fields (type_name, field, text_value, entity_id) WHERE text_value IS NOT NULL;
+    CREATE INDEX ON {s}.entity_fields (type_name, field, number_value, entity_id) WHERE number_value IS NOT NULL;
+    CREATE INDEX ON {s}.entity_fields (type_name, field, time_value, entity_id) WHERE time_value IS NOT NULL;
+    CREATE INDEX ON {s}.entity_fields (type_name, field, entity_id) INCLUDE (number_value, time_value);
+    CREATE INDEX ON {s}.entity_fields (text_value, entity_id) WHERE text_value IS NOT NULL;
+    CREATE INDEX ON {s}.assertions (subject, id) WHERE active;
+",
 ];
 
 pub const LATEST_SERVER_VERSION: i32 = SERVER_MIGRATIONS.len() as i32;

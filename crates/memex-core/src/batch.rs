@@ -102,6 +102,53 @@ impl<S: Snapshot> Snapshot for Pending<'_, S> {
     }
 
     /// Committed rows only, as with `rows`.
+    fn assertions_about(&self, subjects: &[String]) -> Result<Vec<AssertionRow>, StoreError> {
+        self.base.assertions_about(subjects)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn entity_type_versions(&self, names: &[String]) -> Result<Vec<memex_types::EntityTypeRow>, StoreError> {
+        self.base.entity_type_versions(names)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn latest_entity_types(&self, after: Option<&str>, limit: usize) -> Result<Vec<memex_types::EntityTypeRow>, StoreError> {
+        self.base.latest_entity_types(after, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn entities_of_type(&self, type_name: &str, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::EntityRow>, StoreError> {
+        self.base.entities_of_type(type_name, after, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn entities_matching(
+        &self,
+        type_name: &str,
+        filters: &[memex_types::FieldFilter],
+        after: Option<&ObjectId>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::EntityRow>, StoreError> {
+        self.base.entities_matching(type_name, filters, after, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn entities_with_value(&self, text: &str, limit: usize) -> Result<Vec<memex_types::ValueMatch>, StoreError> {
+        self.base.entities_with_value(text, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
+    fn shared_values(
+        &self,
+        type_name: &str,
+        fields: &[String],
+        after: Option<(&str, &str)>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::SharedValue>, StoreError> {
+        self.base.shared_values(type_name, fields, after, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
     fn edges_touching(&self, ids: &[ObjectId], kind: &str) -> Result<Vec<memex_types::EdgeRow>, StoreError> {
         self.base.edges_touching(ids, kind)
     }

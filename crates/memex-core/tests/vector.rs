@@ -324,6 +324,7 @@ fn the_document_title_is_part_of_what_gets_embedded() {
         valid_to_ms: None,
         doc_type: None,
         trust_tiers: vec![],
+        attrs: vec![],
     };
     assert_eq!(embedding_text(&doc, Some("Manual")), "Manual\nbody");
     assert_eq!(embedding_text(&doc, Some("")), "body");

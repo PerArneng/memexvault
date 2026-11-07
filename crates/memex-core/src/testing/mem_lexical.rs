@@ -191,7 +191,16 @@ impl LexicalIndex for MemLexical {
             .values()
             .filter(|d| passes(d, query))
             .filter_map(|d| {
-                let doc_words = words(&d.text);
+                let scoped = query.filter.attr.as_ref().and_then(|scope| {
+                    d.attrs
+                        .iter()
+                        .find(|a| a.type_name == scope.type_name && a.field == scope.field)
+                        .map(|a| a.text.as_str())
+                });
+                if query.filter.attr.is_some() && scoped.is_none() {
+                    return None;
+                }
+                let doc_words = words(scoped.unwrap_or(&d.text));
                 let score: f32 = query.terms.iter().map(|t| score_term(&doc_words, t)).sum();
                 (score > 0.0).then(|| LexicalHit {
                     id: d.id.clone(),

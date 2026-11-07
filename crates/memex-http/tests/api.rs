@@ -634,6 +634,326 @@ async fn the_proposal_flow_over_http() {
     );
 }
 
+fn schema_v1() -> Value {
+    json!({"type": "object", "additionalProperties": false, "required": ["name"], "properties": {
+        "name": {"type": "string", "identity": true, "searchable": true, "filterable": true},
+        "price": {"type": "number", "filterable": true},
+        "made": {"type": "string", "format": "date", "filterable": true},
+        "notes": {"type": "string", "searchable": true}
+    }})
+}
+
+async fn entity_setup(w: &World) -> (String, String) {
+    let base = format!("/api/v1/vaults/{}", w.a.0);
+    let (status, out, _) = call(
+        &w.s,
+        "POST",
+        &format!("{base}/entity-types"),
+        Some(&w.admin),
+        Some(json!({"name": "Widget", "schema": schema_v1(), "rationale": "r", "idempotency_key": "t1"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(out["changeset"]["state"], "committed", "{out}");
+    let seg = {
+        let (_, up) = upload_raw(&w.s, &w.a.0, Some(&w.admin), "name=w.pdf", b"%PDF-1.7 pretend widget sheet".to_vec()).await;
+        let sid = up["source"]["id"].as_str().unwrap().to_string();
+        let source = memex_types::ObjectId(sid.clone());
+        let job = w.s.claim_job(&w.a, "rendition", "w").unwrap().unwrap();
+        let rows = w.s.build_rendition(&w.a, &source, memex_core::RenditionInput::Pdf(pdf_doc(), vec![])).unwrap();
+        assert!(w.s.complete_job(&w.a, &job, rows).unwrap());
+        let (_, rs, _) = call(&w.s, "GET", &format!("{base}/sources/{sid}/renditions"), Some(&w.admin), None).await;
+        let rid = rs["items"][0]["id"].as_str().unwrap().to_string();
+        let (_, segs, _) = call(&w.s, "GET", &format!("{base}/renditions/{rid}/segments"), Some(&w.admin), None).await;
+        segs["items"][0]["id"].as_str().unwrap().to_string()
+    };
+    (base, seg)
+}
+
+async fn new_widget(w: &World, base: &str, key: &str, name: &str, seg: &str, price: f64) -> String {
+    let (status, out, _) = call(
+        &w.s,
+        "POST",
+        &format!("{base}/entities"),
+        Some(&w.admin),
+        Some(json!({
+            "type": "Widget", "aliases": [format!("{name} alias")], "rationale": "r", "idempotency_key": key,
+            "fields": [
+                {"field": "name", "value": name, "evidence": [{"segment_id": seg, "quote": "Staden ligger"}]},
+                {"field": "price", "value": price, "evidence": [{"segment_id": seg, "quote": "vid kusten"}]}
+            ]
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(out["changeset"]["state"], "committed", "{out}");
+    out["entity_id"].as_str().unwrap().to_string()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn every_field_of_a_returned_entity_leads_to_a_source_region() {
+    let w = world();
+    let (base, seg) = entity_setup(&w).await;
+    let t = Some(w.admin.as_str());
+    let id = new_widget(&w, &base, "w1", "Pump", &seg, 12.5).await;
+    let (status, e, _) = call(&w.s, "GET", &format!("{base}/entities/{id}"), t, None).await;
+    assert_eq!(status, StatusCode::OK, "{e}");
+    assert_eq!(e["fields"].as_array().unwrap().len(), 2);
+    for f in e["fields"].as_array().unwrap() {
+        let claim = &f["current"];
+        let evidence = claim["evidence"].as_array().unwrap();
+        assert_eq!(evidence.len(), 1, "{f}");
+        assert_eq!(evidence[0]["source_name"], "w.pdf");
+        assert_eq!(evidence[0]["page_from"], 0);
+        let aid = claim["assertion_id"].as_str().unwrap();
+        let (status, lineage, _) = call(&w.s, "GET", &format!("{base}/assertions/{aid}/lineage"), t, None).await;
+        assert_eq!(status, StatusCode::OK, "{lineage}");
+        let region = &lineage["evidence"][0];
+        assert_eq!(region["broken"], false);
+        assert!(!region["rects"].as_array().unwrap().is_empty(), "the region has rectangles: {region}");
+        let eid = evidence[0]["evidence_id"].as_str().unwrap();
+        let (status, highlight, _) = call(&w.s, "GET", &format!("{base}/assertions/{aid}/evidence/{eid}/highlight"), t, None).await;
+        assert_eq!(status, StatusCode::OK, "{highlight}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn two_sources_disagree_and_both_show_with_the_choice_and_why() {
+    let w = world();
+    let (base, seg) = entity_setup(&w).await;
+    let t = Some(w.admin.as_str());
+    let id = new_widget(&w, &base, "w1", "Pump", &seg, 10.0).await;
+    let (status, out, _) = call(
+        &w.s,
+        "POST",
+        &format!("{base}/entities/{id}/edit"),
+        t,
+        Some(json!({"base_version": 1, "fields": [{"field": "price", "value": 20.0, "evidence": [{"segment_id": seg, "quote": "Staden"}]}], "rationale": "second source", "idempotency_key": "w2"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(out["changeset"]["state"], "committed", "{out}");
+    assert_eq!(out["contradictions"].as_array().unwrap().len(), 1);
+    let (_, e, _) = call(&w.s, "GET", &format!("{base}/entities/{id}"), t, None).await;
+    let price = e["fields"].as_array().unwrap().iter().find(|f| f["field"] == "price").unwrap();
+    assert_eq!(price["value"], 20.0);
+    assert!(price["why"].as_str().unwrap().contains("newer"), "{price}");
+    assert_eq!(price["conflicts"].as_array().unwrap().len(), 1);
+    assert_eq!(price["conflicts"][0]["value"], 10.0);
+    assert_eq!(price["conflicts"][0]["evidence"][0]["quote"], "vid kusten");
+    let (_, list, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget"), t, None).await;
+    assert_eq!(list["items"][0]["conflicted_fields"], json!(["price"]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn typed_filters_find_entities_and_bad_ones_say_why() {
+    let w = world();
+    let (base, seg) = entity_setup(&w).await;
+    let t = Some(w.admin.as_str());
+    let cheap = new_widget(&w, &base, "w1", "Pump", &seg, 10.0).await;
+    let dear = new_widget(&w, &base, "w2", "Valve", &seg, 500.0).await;
+    let ids = |v: &Value| {
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["id"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    let (_, all, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget"), t, None).await;
+    assert_eq!(ids(&all), [cheap.clone(), dear.clone()]);
+    let (_, under, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&filter=price:lt:100"), t, None).await;
+    assert_eq!(ids(&under), std::slice::from_ref(&cheap));
+    let (_, exact, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&filter=name:eq:VALVE"), t, None).await;
+    assert_eq!(ids(&exact), std::slice::from_ref(&dear), "text compares folded");
+    let (_, both, _) = call(
+        &w.s,
+        "GET",
+        &format!("{base}/entities?type=Widget&filter=price:gte:10&filter=name:eq:pump"),
+        t,
+        None,
+    )
+    .await;
+    assert_eq!(ids(&both), std::slice::from_ref(&cheap));
+    let (_, page, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&limit=1"), t, None).await;
+    assert_eq!(ids(&page), std::slice::from_ref(&cheap));
+    let cursor = page["next_cursor"].as_str().unwrap();
+    let (_, rest, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&limit=1&cursor={cursor}"), t, None).await;
+    assert_eq!(ids(&rest), std::slice::from_ref(&dear));
+    for bad in [
+        "filter=price:lt:cheap",
+        "filter=notes:eq:x",
+        "filter=nope:eq:x",
+        "filter=price%3C100",
+        "filter=name:lt:x",
+        "nope=1",
+    ] {
+        let (status, body, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&{bad}"), t, None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}: {body}");
+    }
+    assert_eq!(call(&w.s, "GET", &format!("{base}/entities?type=Nope"), t, None).await.0, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_preview_matches_what_a_submission_does() {
+    let w = world();
+    let base = format!("/api/v1/vaults/{}", w.a.0);
+    let t = Some(w.admin.as_str());
+    let v1 = schema_v1();
+    let mut additive = v1.clone();
+    additive["properties"]["color"] = json!({"type": "string", "searchable": true});
+    let mut breaking = additive.clone();
+    breaking["properties"]["price"] = json!({"type": "string"});
+    let mut remote = additive.clone();
+    remote["properties"]["x"] = json!({"$ref": "https://example.com/s.json"});
+    let cases = [
+        ("Fresh", None, v1.clone(), "new", "auto_commit", "committed"),
+        ("Fresh", Some(1), additive.clone(), "additive", "auto_commit", "committed"),
+        ("Fresh", Some(2), breaking.clone(), "breaking", "review", "pending"),
+        ("Fresh", Some(2), remote.clone(), "breaking", "reject", "rejected"),
+        ("Fresh", Some(2), additive.clone(), "additive", "reject", "rejected"),
+        ("Product", Some(1), json!({"type": "object"}), "breaking", "reject", "rejected"),
+        ("Other", None, json!({"type": "object"}), "new", "reject", "rejected"),
+    ];
+    for (i, (name, base_version, schema, change, decision, state)) in cases.into_iter().enumerate() {
+        let (status, p, _) = call(&w.s, "POST", &format!("{base}/entity-types/{name}/preview"), t, Some(json!({"schema": schema}))).await;
+        assert_eq!(status, StatusCode::OK, "{p}");
+        assert_eq!(p["change"], change, "case {i}: {p}");
+        assert_eq!(p["decision"], decision, "case {i}: {p}");
+        let (status, out, _) = call(
+            &w.s,
+            "POST",
+            &format!("{base}/entity-types"),
+            t,
+            Some(json!({"name": name, "base_version": base_version, "schema": schema, "rationale": "r", "idempotency_key": format!("k{i}")})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{out}");
+        assert_eq!(out["risk"], decision, "case {i}: {out}");
+        assert_eq!(out["changeset"]["state"], state, "case {i}: {out}");
+    }
+    let (_, history, _) = call(&w.s, "GET", &format!("{base}/entity-types/Fresh/versions"), t, None).await;
+    let changes: Vec<&str> = history["items"].as_array().unwrap().iter().map(|h| h["change"].as_str().unwrap()).collect();
+    assert_eq!(changes, ["new", "additive"], "the breaking one is still waiting");
+    let (_, types, _) = call(&w.s, "GET", &format!("{base}/entity-types"), t, None).await;
+    let names: Vec<&str> = types["items"].as_array().unwrap().iter().map(|h| h["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["Decision", "Fresh", "Organization", "Person", "Product", "Project"]);
+    assert_eq!(
+        call(&w.s, "GET", &format!("{base}/entity-types/Nope/versions"), t, None).await.0,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn merge_and_split_wait_for_review_redirect_and_revert() {
+    let w = world();
+    let (base, seg) = entity_setup(&w).await;
+    let t = Some(w.admin.as_str());
+    let a = new_widget(&w, &base, "w1", "Pump", &seg, 10.0).await;
+    let b = new_widget(&w, &base, "w2", "pump", &seg, 20.0).await;
+    let (_, same, _) = call(&w.s, "GET", &format!("{base}/entities/same-as?type=Widget"), t, None).await;
+    let groups = same["items"].as_array().unwrap();
+    assert_eq!(groups.len(), 2, "the shared name and alias are suggestions: {same}");
+    assert_eq!(groups[0]["entity_ids"], json!([a.clone(), b.clone()]));
+    let before = call(&w.s, "GET", &format!("{base}/entities/{b}"), t, None).await.1;
+    let (_, m, _) = call(
+        &w.s,
+        "POST",
+        &format!("{base}/entities/{a}/merge"),
+        t,
+        Some(json!({"into": b, "rationale": "the same pump", "idempotency_key": "m1"})),
+    )
+    .await;
+    assert_eq!(m["changeset"]["state"], "pending", "{m}");
+    let cs = m["changeset"]["id"].as_str().unwrap();
+    assert_eq!(
+        call(&w.s, "GET", &format!("{base}/entities/{a}/redirect"), t, None).await.1["current_id"],
+        a.as_str()
+    );
+    let (status, approved, _) = call(&w.s, "POST", &format!("{base}/changesets/{cs}/approve"), t, Some(json!({"reason": "yes"}))).await;
+    assert_eq!(status, StatusCode::OK, "{approved}");
+    let (_, r, _) = call(&w.s, "GET", &format!("{base}/entities/{a}/redirect"), t, None).await;
+    assert_eq!(r["current_id"], b.as_str());
+    assert_eq!(r["chain"], json!([a.clone()]));
+    let (_, old, _) = call(&w.s, "GET", &format!("{base}/entities/{a}"), t, None).await;
+    assert_eq!(old["id"], b.as_str());
+    assert_eq!(old["redirected_from"], a.as_str());
+    let (_, same, _) = call(&w.s, "GET", &format!("{base}/entities/same-as?type=Widget"), t, None).await;
+    assert_eq!(same["items"].as_array().unwrap().len(), 0, "merged, so nothing is left to suggest: {same}");
+    let (status, rev, _) = call(&w.s, "POST", &format!("{base}/changesets/{cs}/revert"), t, Some(json!({"reason": "no"}))).await;
+    assert_eq!(status, StatusCode::OK, "{rev}");
+    let mut after = call(&w.s, "GET", &format!("{base}/entities/{b}"), t, None).await.1;
+    let mut was = before.clone();
+    for v in [&mut after, &mut was] {
+        v.as_object_mut().unwrap().remove("updated_at_ms");
+    }
+    assert_eq!(after, was, "a revert restores the state");
+    assert_eq!(
+        call(&w.s, "GET", &format!("{base}/entities/{a}/redirect"), t, None).await.1["current_id"],
+        a.as_str()
+    );
+    // Split: the price moves to a new entity, which needs its own name.
+    let price = before["fields"].as_array().unwrap().iter().find(|f| f["field"] == "price").unwrap()["current"]["assertion_id"].clone();
+    let (status, s, _) = call(
+        &w.s,
+        "POST",
+        &format!("{base}/entities/{b}/split"),
+        t,
+        Some(json!({"base_version": after["version"], "moved": [price], "aliases": ["pump alias"], "fields": [{"field": "name", "value": "Another pump"}], "rationale": "two things", "idempotency_key": "s1"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{s}");
+    assert_eq!(s["changeset"]["state"], "pending", "{s}");
+    let cs = s["changeset"]["id"].as_str().unwrap();
+    let new_id = s["entity_id"].as_str().unwrap();
+    assert_eq!(call(&w.s, "GET", &format!("{base}/entities/{new_id}"), t, None).await.0, StatusCode::NOT_FOUND);
+    let (status, approved, _) = call(&w.s, "POST", &format!("{base}/changesets/{cs}/approve"), t, Some(json!({}))).await;
+    assert_eq!(status, StatusCode::OK, "{approved}");
+    let (_, split_off, _) = call(&w.s, "GET", &format!("{base}/entities/{new_id}"), t, None).await;
+    let fields = split_off["fields"].as_array().unwrap();
+    assert_eq!(fields.len(), 2, "{split_off}");
+    let moved = fields.iter().find(|f| f["field"] == "price").unwrap();
+    assert_eq!(moved["value"], 20.0);
+    assert_eq!(moved["current"]["evidence"][0]["quote"], "vid kusten", "evidence moves with the claim");
+    let (_, stayed, _) = call(&w.s, "GET", &format!("{base}/entities/{b}"), t, None).await;
+    assert!(stayed["fields"].as_array().unwrap().iter().all(|f| f["field"] != "price"), "{stayed}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn scopes_hold_on_entity_routes() {
+    let w = world();
+    let (base, seg) = entity_setup(&w).await;
+    let id = new_widget(&w, &base, "w1", "Pump", &seg, 10.0).await;
+    let reader = token_with(&w, "ent-r", Some(Scope::Read));
+    let outsider = token_with(&w, "ent-none", None);
+    let write = json!({"type": "Widget", "fields": [{"field": "name", "value": "x"}], "rationale": "r", "idempotency_key": "k"});
+    assert_eq!(
+        call(&w.s, "GET", &format!("{base}/entities?type=Widget"), Some(&reader), None).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&w.s, "POST", &format!("{base}/entities"), Some(&reader), Some(write.clone())).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(&w.s, "GET", &format!("{base}/entities/{id}"), Some(&outsider), None).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(call(&w.s, "GET", &format!("{base}/entity-types"), None, None).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        call(
+            &w.s,
+            "POST",
+            &format!("{base}/entity-types/Widget/preview"),
+            Some(&reader),
+            Some(json!({"schema": {}}))
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+}
+
 #[test]
 fn every_list_route_in_the_openapi_document_has_cursor_limit_and_sort() {
     let doc = serde_json::to_value(openapi()).unwrap();
@@ -652,14 +972,25 @@ fn every_list_route_in_the_openapi_document_has_cursor_limit_and_sort() {
         }
     }
     assert_eq!(
-        lists, 13,
-        "vaults, principals, tokens, changesets, changes, contradictions, sources, jobs, segments, re-anchor failures, flagged pages and two claim lists"
+        lists, 16,
+        "vaults, principals, tokens, changesets, changes, contradictions, sources, jobs, segments, re-anchor failures, flagged pages, two claim lists, entity types, entities and same-as suggestions"
     );
     // Every route the router serves is documented.
     for p in [
         "/api/v1/health",
         "/api/v1/version",
         "/api/v1/whoami",
+        "/api/v1/vaults/{id}/entity-types",
+        "/api/v1/vaults/{id}/entity-types/{name}/versions",
+        "/api/v1/vaults/{id}/entity-types/{name}/preview",
+        "/api/v1/vaults/{id}/entities",
+        "/api/v1/vaults/{id}/entities/resolve",
+        "/api/v1/vaults/{id}/entities/same-as",
+        "/api/v1/vaults/{id}/entities/{eid}",
+        "/api/v1/vaults/{id}/entities/{eid}/edit",
+        "/api/v1/vaults/{id}/entities/{eid}/redirect",
+        "/api/v1/vaults/{id}/entities/{eid}/merge",
+        "/api/v1/vaults/{id}/entities/{eid}/split",
         "/api/v1/vaults",
         "/api/v1/vaults/{id}",
         "/api/v1/principals",

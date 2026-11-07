@@ -45,6 +45,7 @@ fn doc(id: &str, language: Option<&str>, text: &str) -> IndexOp {
         valid_to_ms: None,
         doc_type: None,
         trust_tiers: vec![],
+        attrs: vec![],
     })
 }
 
@@ -363,7 +364,7 @@ fn a_generation_from_an_older_schema_is_rebuilt() {
     };
     let meta = base.join("gen-1").join("meta.json");
     let text = fs::read_to_string(&meta).unwrap();
-    let older = text.replace("\\\"schema\\\":2", "\\\"schema\\\":1");
+    let older = text.replace("\\\"schema\\\":3", "\\\"schema\\\":2");
     assert_ne!(text, older, "the payload's format changed, so this test needs updating");
     fs::write(&meta, older).unwrap();
     let l = index(&dir);
@@ -405,5 +406,6 @@ fn searching_during_commits_never_fails() {
         l.commit(&v(), Generation::Live, Some(i)).unwrap();
     }
     assert!(reader.join().unwrap() >= 500);
-    fs::remove_dir_all(dir).unwrap();
+    // Background merges may still be writing here, and that says nothing about searching.
+    let _ = fs::remove_dir_all(dir);
 }

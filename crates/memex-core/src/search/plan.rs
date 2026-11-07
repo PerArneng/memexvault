@@ -23,9 +23,12 @@ pub struct QueryPlan {
     pub dropped_terms: usize,
 }
 
-/// A UUID, which is what every object's id is.
+/// A UUID, or the 32 hex digits the server generates for objects.
 pub fn is_object_id(text: &str) -> bool {
     let bytes = text.as_bytes();
+    if bytes.len() == 32 {
+        return bytes.iter().all(u8::is_ascii_hexdigit);
+    }
     bytes.len() == 36
         && bytes.iter().enumerate().all(|(i, b)| match i {
             8 | 13 | 18 | 23 => *b == b'-',
@@ -87,6 +90,11 @@ pub fn plan_query(text: &str, filter: &LexicalFilter, mode: SearchMode) -> Resul
         SearchMode::Lexical => (true, false),
         SearchMode::Vector => (false, true),
     };
+    // The vector index knows nothing of an entity's fields, so a search within one is keyword only.
+    let use_vector = use_vector && filter.attr.is_none();
+    if !use_lexical && !use_vector {
+        return Err(QueryError::VectorHasNoFields);
+    }
     let (terms, dropped_terms) = if use_lexical { cut_terms(parse_terms(text)?) } else { (vec![], 0) };
     let trimmed = text.trim();
     let exact_id = is_object_id(trimmed).then(|| ObjectId(trimmed.to_string()));

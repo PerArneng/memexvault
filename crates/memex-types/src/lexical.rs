@@ -8,6 +8,7 @@ use std::fmt;
 pub enum DocKind {
     Segment,
     Claim,
+    Entity,
 }
 
 impl DocKind {
@@ -15,6 +16,7 @@ impl DocKind {
         match self {
             Self::Segment => "segment",
             Self::Claim => "claim",
+            Self::Entity => "entity",
         }
     }
 
@@ -22,9 +24,25 @@ impl DocKind {
         match s {
             "segment" => Some(Self::Segment),
             "claim" => Some(Self::Claim),
+            "entity" => Some(Self::Entity),
             _ => None,
         }
     }
+}
+
+/// One field of an entity, searchable on its own as well as through the document's text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttrValue {
+    pub type_name: String,
+    pub field: String,
+    pub text: String,
+}
+
+/// Limits a keyword search to one field of one entity type. The vector index has no fields, so a search with a scope is keyword only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttrScope {
+    pub type_name: String,
+    pub field: String,
 }
 
 /// One searchable object. Only current objects are in the index, so it has no status.
@@ -39,12 +57,16 @@ pub struct IndexDoc {
     pub epistemic: Option<String>,
     pub valid_from_ms: Option<i64>,
     pub valid_to_ms: Option<i64>,
-    /// What sort of thing it is within its kind: a segment's media type, or a claim's predicate.
+    /// What sort of thing it is within its kind: a segment's media type, a claim's predicate, or an entity's type.
     pub doc_type: Option<String>,
     /// The trust tiers of the sources behind it. A claim can cite several.
     pub trust_tiers: Vec<String>,
+    /// An entity's searchable fields. Other kinds have none.
+    pub attrs: Vec<AttrValue>,
 }
 
+// Ops are written in small batches on a path that does IO, so the size of the larger variant doesn't matter here.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IndexOp {
     /// Replaces any document with this id.
@@ -70,6 +92,7 @@ pub struct LexicalFilter {
     pub valid_at_ms: Option<i64>,
     pub types: Vec<String>,
     pub trust_tiers: Vec<String>,
+    pub attr: Option<AttrScope>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

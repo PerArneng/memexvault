@@ -280,6 +280,147 @@ impl Snapshot for MemSnapshot<'_> {
         }))
     }
 
+    fn assertions_about(&self, subjects: &[String]) -> Result<Vec<AssertionRow>, StoreError> {
+        self.count();
+        Ok(self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::Assertion(a) if a.header.status == Status::Active && subjects.contains(&a.subject) => Some(a.clone()),
+                _ => None,
+            })
+            .collect())
+    }
+
+    fn entity_type_versions(&self, names: &[String]) -> Result<Vec<memex_types::EntityTypeRow>, StoreError> {
+        self.count();
+        let mut out: Vec<memex_types::EntityTypeRow> = self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::EntityType(t) if names.contains(&t.name) => Some(t.clone()),
+                _ => None,
+            })
+            .collect();
+        out.sort_by(|a, b| (&a.name, a.version_no).cmp(&(&b.name, b.version_no)));
+        Ok(out)
+    }
+
+    fn latest_entity_types(&self, after: Option<&str>, limit: usize) -> Result<Vec<memex_types::EntityTypeRow>, StoreError> {
+        self.count();
+        let mut latest: BTreeMap<String, memex_types::EntityTypeRow> = BTreeMap::new();
+        for r in self.state.rows.values() {
+            if let Row::EntityType(t) = r
+                && after.is_none_or(|a| t.name.as_str() > a)
+                && latest.get(&t.name).is_none_or(|c| c.version_no < t.version_no)
+            {
+                latest.insert(t.name.clone(), t.clone());
+            }
+        }
+        Ok(latest.into_values().take(limit).collect())
+    }
+
+    fn entities_of_type(&self, type_name: &str, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::EntityRow>, StoreError> {
+        self.count();
+        Ok(self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::Entity(e) if e.is_current() && e.type_name == type_name && after.is_none_or(|a| &e.header.id > a) => Some(e.clone()),
+                _ => None,
+            })
+            .take(limit)
+            .collect())
+    }
+
+    fn entities_matching(
+        &self,
+        type_name: &str,
+        filters: &[memex_types::FieldFilter],
+        after: Option<&ObjectId>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::EntityRow>, StoreError> {
+        self.count();
+        Ok(self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::Entity(e)
+                    if e.is_current()
+                        && e.type_name == type_name
+                        && after.is_none_or(|a| &e.header.id > a)
+                        && filters
+                            .iter()
+                            .all(|f| e.field(&f.field).is_some_and(|x| x.lookups.iter().any(|l| l.passes(f.op, &f.value)))) =>
+                {
+                    Some(e.clone())
+                }
+                _ => None,
+            })
+            .take(limit)
+            .collect())
+    }
+
+    fn entities_with_value(&self, text: &str, limit: usize) -> Result<Vec<memex_types::ValueMatch>, StoreError> {
+        self.count();
+        let mut out = vec![];
+        for r in self.state.rows.values() {
+            let Row::Entity(e) = r else { continue };
+            for v in e.value_rows() {
+                if v.text.as_deref() == Some(text) {
+                    out.push(memex_types::ValueMatch {
+                        entity_id: e.header.id.clone(),
+                        type_name: e.type_name.clone(),
+                        field: v.field,
+                    });
+                }
+            }
+        }
+        out.truncate(limit);
+        Ok(out)
+    }
+
+    fn shared_values(
+        &self,
+        type_name: &str,
+        fields: &[String],
+        after: Option<(&str, &str)>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::SharedValue>, StoreError> {
+        self.count();
+        let mut groups: BTreeMap<(String, String), Vec<ObjectId>> = BTreeMap::new();
+        for r in self.state.rows.values() {
+            let Row::Entity(e) = r else { continue };
+            if e.type_name != type_name {
+                continue;
+            }
+            for v in e.value_rows() {
+                if let Some(text) = v.text
+                    && fields.contains(&v.field)
+                    && after.is_none_or(|(f, t)| (v.field.as_str(), text.as_str()) > (f, t))
+                {
+                    let ids = groups.entry((v.field, text)).or_default();
+                    if !ids.contains(&e.header.id) {
+                        ids.push(e.header.id.clone());
+                    }
+                }
+            }
+        }
+        Ok(groups
+            .into_iter()
+            .filter(|(_, ids)| ids.len() > 1)
+            .take(limit)
+            .map(|((field, text), mut entity_ids)| {
+                entity_ids.truncate(crate::MAX_SHARED_IDS);
+                memex_types::SharedValue { field, text, entity_ids }
+            })
+            .collect())
+    }
+
     fn assertions_matching(&self, hashes: &[String], pairs: &[(String, String)]) -> Result<Vec<AssertionRow>, StoreError> {
         self.count();
         Ok(self

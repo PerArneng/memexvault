@@ -173,7 +173,16 @@ is traceable to its evidence. Search uses:
 - a rendered text card that gets embedded, and
 - a Postgres table of `(type, field, text, number, time, id)` with B-tree indexes for exact and range filters.
 
-A new type therefore needs no restart, reindex or schema migration.
+A new type therefore needs no restart, reindex or schema migration. Spec 023 settled the details:
+
+- **Field values are Assertions** whose subject is `entity:<id>`, so proposals, validators, evidence and review apply to them unchanged. The row, the card and the field table are all derived, and go back together on a revert.
+- **Current value.** Among a field's active claims: higher epistemic status, then a person over a machine, then the newest. A claim's confidence plays no part. The row records why, and keeps the claims that lost.
+- **Schemas** are closed objects (`additionalProperties: false`) in draft 2020-12, with at most 200 fields per type and 500 types per vault. Only local `$ref`s are allowed, and `jsonschema` is built without its retrieval features. Anything `classify_change` can't show to be additive counts as breaking.
+- **Seed types** (Decision, Organization, Person, Product, Project) are built in as version 1 rather than written to each vault's log. Never edit one: a change is a new version.
+- **Filters** are typed: `type=Product&filter=price:lt:100`. Text compares folded, and values over 512 bytes aren't in the field table. The table holds every scalar value, so a new `filterable` annotation needs no backfill.
+- **A field scope** (`attr=<type>.<field>`) searches the tantivy JSON field. It's keyword only, since the vector index has no fields, and `as_of` refuses it.
+- **Merges** keep the source's claims where they are: the target lists it in `merged_from`, and the source redirects while the merge stands. A split supersedes the moved claims with copies about the new entity. A revert refuses if a touched row has changed since, like any other.
+- **A person.** An agent can't approve or revert a merge, a split or a breaking change, or approve a type an agent proposed, whatever its scope.
 
 ### Time
 
@@ -275,12 +284,13 @@ Intent is classified by deterministic rules, with no LLM on the read path:
 
 `GET /api/v1/vaults/{id}/search` is the one search API. Spec 020 has its measurements: recall@20 97.5% on the golden set at 200k, and p95 31 ms with 1 client, but 81 ms with 8, against the ≤50 ms target, which spec 062 reviews. The rules behind it:
 
-- **Filters** are kind, type, source, trust tier, epistemic status and valid time. Type is a segment's media type or a claim's predicate, and spec 023 adds entity types. The fence checks them again on current rows, so a changed trust tier can't leak.
+- **Filters** are kind, type, source, trust tier, epistemic status and valid time. Type is a segment's media type, a claim's predicate or an entity's type. Kind includes `entity`. The fence checks them again on current rows, so a changed trust tier can't leak.
 - **A failed signal degrades the search.** Hybrid answers from the other signal and names the failed one in `degraded`. If both fail, it returns 503, and it never serves unfenced results.
 - **`min_seq`** is read-your-writes for the keyword index. The vector index has seen the event by then, but new text may still wait for its embedding job, and keyword search finds it meanwhile. A sequence the log hasn't reached is a 400, and one the indexes don't reach in time is a 503 with the code `not_caught_up`.
 - **`as_of`** takes an event or a time, and the log answers it. Past rows aren't in any index, so the events up to that point are replayed into memory and scanned for keywords, with no stemming, vectors or reranking. Its cost grows with the log, so at most two run at once, and more return 429.
 - **Budgets are estimates**, at 4 characters per token, since the read path has no tokenizer. A text is never cut, because a shortened quote can't be verified. An item that doesn't fit ends the page.
 - **Cursors** hold a rank and don't expire. A page read after writes reflects the ranking at that moment.
+- **Entity lookup** is the third signal: a query that is exactly an identity value or alias counts as a first-place hit for that entity, at one more store call per search.
 - **Segment citations** give offsets and pages, not rectangles, because rectangles would need the word table on every search. Claim citations carry their stored rectangles.
 
 ## API conventions

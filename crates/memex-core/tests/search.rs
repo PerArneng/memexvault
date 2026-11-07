@@ -561,6 +561,7 @@ impl Direct {
                     valid_to_ms: None,
                     doc_type: None,
                     trust_tiers: vec![],
+                    attrs: vec![],
                 }));
                 vector.push(VectorOp::Upsert(VectorDoc {
                     id: oid(id),
@@ -766,6 +767,7 @@ fn reranking_is_opt_in_and_reorders_only_the_top() {
             valid_to_ms: None,
             doc_type: None,
             trust_tiers: vec![],
+            attrs: vec![],
         })
     };
     let (keyword_best, cross_best) = ("shared shared shared shared", "shared and best");
