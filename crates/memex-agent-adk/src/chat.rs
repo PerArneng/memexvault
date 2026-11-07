@@ -9,7 +9,7 @@ use adk_session::{CreateRequest, InMemorySessionService, SessionService};
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use memex_types::{AgentError, AgentUsage, ChatEnd, ChatHost, ChatRequest, ChatStop, RunnerEvent, RunnerPart, ToolDefinition, estimate_tokens};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -351,10 +351,11 @@ impl AdkAgent {
 }
 
 #[cfg(test)]
-#[allow(clippy::disallowed_methods)] // A stand-in server, which waits on real sockets and the clock.
+#[allow(clippy::disallowed_methods, clippy::disallowed_macros)] // A stand-in server, which waits on real sockets and the clock, and prints what it measured.
 mod tests {
     use super::*;
     use crate::LlmEndpoint;
+    use serde_json::json;
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
     use std::sync::atomic::AtomicBool;

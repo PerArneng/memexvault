@@ -655,7 +655,7 @@ mod tests {
         assert!(!INSTRUCTION.contains('{'), "ADK would read this as a template variable");
         let digest = Sha256::digest(CHAT_TOOLS_JSON.as_bytes());
         let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(hex, "PIN");
+        assert_eq!(hex, "2093488fbd6b8726600db4cb10553c47af762d85d910da6f98af87ba3cf4fb96", "a change here is a new prompt, on purpose or not");
     }
 
     #[test]

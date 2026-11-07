@@ -1,0 +1,6 @@
+{"runId":"run-1","threadId":"thread-1","type":"RUN_STARTED"}
+{"messageId":"run-1-m1","role":"assistant","type":"TEXT_MESSAGE_START"}
+{"delta":"Hel","messageId":"run-1-m1","type":"TEXT_MESSAGE_CONTENT"}
+{"delta":"lo ✓ å","messageId":"run-1-m1","type":"TEXT_MESSAGE_CONTENT"}
+{"messageId":"run-1-m1","type":"TEXT_MESSAGE_END"}
+{"runId":"run-1","threadId":"thread-1","type":"RUN_FINISHED"}

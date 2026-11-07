@@ -950,6 +950,7 @@ impl Store for MemStore {
         self.check_lease(lease)?;
         self.leases.lock().expect("lock").remove(&lease.vault);
         self.vaults.lock().expect("lock").remove(&lease.vault);
+        self.chat.lock().expect("lock").remove(&lease.vault);
         Ok(())
     }
 

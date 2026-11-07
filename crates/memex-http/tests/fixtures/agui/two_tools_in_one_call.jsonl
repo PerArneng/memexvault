@@ -1,0 +1,13 @@
+{"runId":"run-1","threadId":"thread-1","type":"RUN_STARTED"}
+{"toolCallId":"t0-c0","toolCallName":"search","type":"TOOL_CALL_START"}
+{"delta":"{\"q\":\"a\"}","toolCallId":"t0-c0","type":"TOOL_CALL_ARGS"}
+{"toolCallId":"t0-c0","type":"TOOL_CALL_END"}
+{"toolCallId":"t0-c1","toolCallName":"search","type":"TOOL_CALL_START"}
+{"delta":"{\"q\":\"a\"}","toolCallId":"t0-c1","type":"TOOL_CALL_ARGS"}
+{"toolCallId":"t0-c1","type":"TOOL_CALL_END"}
+{"content":"{\"error\":{\"code\":\"unavailable\",\"message\":\"the vector index is still being built\"}}","messageId":"run-1-r1","role":"tool","toolCallId":"t0-c0","type":"TOOL_CALL_RESULT"}
+{"content":"{\"error\":{\"code\":\"unavailable\",\"message\":\"the vector index is still being built\"}}","messageId":"run-1-r2","role":"tool","toolCallId":"t0-c1","type":"TOOL_CALL_RESULT"}
+{"messageId":"run-1-m3","role":"assistant","type":"TEXT_MESSAGE_START"}
+{"delta":"Done.","messageId":"run-1-m3","type":"TEXT_MESSAGE_CONTENT"}
+{"messageId":"run-1-m3","type":"TEXT_MESSAGE_END"}
+{"runId":"run-1","threadId":"thread-1","type":"RUN_FINISHED"}
