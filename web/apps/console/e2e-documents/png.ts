@@ -60,11 +60,11 @@ export interface Bounds {
   readonly bottom: number;
 }
 
-/** The box around every pixel that differs between two images of the same size. */
-export const changedBounds = (a: Pixels, b: Pixels, threshold: number): Bounds | null => {
+/** The box around every pixel that differs between two images of the same size, inside `within`, so nothing else on screen can count. */
+export const changedBounds = (a: Pixels, b: Pixels, threshold: number, within: Bounds): Bounds | null => {
   let found: { left: number; top: number; right: number; bottom: number } | null = null;
-  for (let y = 0; y < a.height; y += 1) {
-    for (let x = 0; x < a.width; x += 1) {
+  for (let y = Math.max(0, Math.floor(within.top)); y < Math.min(a.height, Math.ceil(within.bottom)); y += 1) {
+    for (let x = Math.max(0, Math.floor(within.left)); x < Math.min(a.width, Math.ceil(within.right)); x += 1) {
       const offset = (y * a.width + x) * a.channels;
       let most = 0;
       for (let c = 0; c < 3; c += 1) most = Math.max(most, Math.abs((a.data[offset + c] ?? 0) - (b.data[offset + c] ?? 0)));
