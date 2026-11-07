@@ -1957,7 +1957,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Your own threads, the most recently updated first. Nobody can list another's, whatever their scope. */
+        /** Your own threads, the most recently updated first, so the only `sort` here is `updated`. Nobody can list another's, whatever their scope. */
         get: {
             parameters: {
                 query?: {

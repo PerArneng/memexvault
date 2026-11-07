@@ -23,7 +23,7 @@ everywhere it spread, with zero hits for the purged text.
   and index entries, invalidates derived claims and pages, bumps the vault generation, compacts storage, and appends an `Erased`
   event with no content.
 - Metrics and a status API: lag, queue depth, sizes and cache stats.
-- Erasure gets an impact preview route listing what it would remove. The cascade is a list of steps, so spec 049 can add chat threads. A route lists claims invalidated by erasure. Whole-vault deletion from spec 012 runs through the same cascade and drops the vault's schema, blobs and indexes.
+- Erasure gets an impact preview route listing what it would remove. The cascade is a list of steps, so spec 049 can add chat threads. Spec 049 has landed: a step must call `Server::erase_chat_threads_citing` after a source's rows are gone, then compact, and decide what to do with `segment_ids` on `chat_run` Derivations, which are ids and no text. Spec 049's item 6 ran only by calling that function directly. A route lists claims invalidated by erasure. Whole-vault deletion from spec 012 runs through the same cascade and drops the vault's schema, blobs and indexes.
 
 - Erasure also covers what spec 019 stores: rows in `embeddings` for erased text, vectors in every generation, and the old generation kept for rollback. `compact` must include those tables, and `drop_vault` should set a lock timeout (spec 018).
 
