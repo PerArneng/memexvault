@@ -57,10 +57,12 @@ export const ConflictView = ({ mine, theirs, baseBody, baseVersion, saving, onSa
   const count = conflictCount(hunks);
   return (
     <section aria-label="Conflict" data-testid="conflict-view" className="flex flex-col gap-3">
+      <h2 className="text-lg font-medium">Editing {theirs.title}: a conflict</h2>
       <Callout tone="warning" title="This page changed while you were editing, and your version hasn't been saved.">
         You started from revision {baseVersion}. It's now at revision {theirs.currentRevision}, last saved by {theirs.creator} at {formatTime(theirs.updatedAt)}. Your text is safe as a draft in this browser.
         {baseBody === null && " The revision you started from can't be read, so every difference counts as a conflict."}
       </Callout>
+      <h3 className="font-medium">Both versions</h3>
       <div className="flex gap-3">
         <Text label="Your version" text={mine} />
         <Text label={`Current version, revision ${String(theirs.currentRevision)}`} text={theirs.body} />

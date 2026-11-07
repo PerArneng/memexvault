@@ -153,7 +153,8 @@ const STYLED: Components = {
   ul: ({ children }) => <ul className="my-2 list-disc pl-5">{children}</ul>,
   ol: ({ children }) => <ol className="my-2 list-decimal pl-5">{children}</ol>,
   blockquote: ({ children }) => <blockquote className="my-2 border-l-2 border-border-strong pl-3 text-text-muted">{children}</blockquote>,
-  pre: ({ children }) => <pre className="my-2 overflow-auto rounded-md bg-surface-raised p-2 font-mono text-xs">{children}</pre>,
+  // It can scroll sideways, and a keyboard has to be able to do that too.
+  pre: ({ children }) => <pre tabIndex={0} className="my-2 overflow-auto rounded-md bg-surface-raised p-2 font-mono text-xs">{children}</pre>,
   code: ({ children }) => <code className="rounded-sm bg-surface-raised px-0.5 font-mono text-xs">{children}</code>,
   hr: () => <hr className="my-3 border-border" />,
   table: ({ children }) => <table className="my-2 border-collapse text-sm">{children}</table>,

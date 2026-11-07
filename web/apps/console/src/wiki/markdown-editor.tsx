@@ -98,7 +98,8 @@ const MarkdownEditor = ({ label, initial, onChange, onSave, suggest }: MarkdownE
           syntaxHighlighting(HIGHLIGHT),
           autocompletion({ override: [source], activateOnTyping: true, icons: false, defaultKeymap: false }),
           keymap.of([{ key: "Mod-s", preventDefault: true, run: () => { latest.current.onSave(); return true; } }, ...completionKeymap, ...historyKeymap, ...defaultKeymap]),
-          EditorView.contentAttributes.of({ "aria-label": label }),
+          // The tab index says out loud what `contenteditable` already gives, as axe doesn't count that as focusable.
+          EditorView.contentAttributes.of({ "aria-label": label, tabindex: "0" }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) latest.current.onChange(update.state.doc.toString());
           }),

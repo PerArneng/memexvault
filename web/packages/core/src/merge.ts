@@ -68,7 +68,10 @@ export const threeWayMerge = (baseBody: string, mineBody: string, theirsBody: st
   const between = (b: readonly string[], m: readonly string[], t: readonly string[]) => {
     if (same(m, t) || same(b, t)) agreed(m);
     else if (same(b, m)) agreed(t);
-    else {
+    else if (b.length > 1 && m.length === b.length && t.length === b.length) {
+      // Edited in place on both sides, which the server's block matching also treats as the same blocks, so each pairs off by position.
+      b.forEach((block, i) => between([block], m.slice(i, i + 1), t.slice(i, i + 1)));
+    } else {
       hunks.push({ kind: "conflict", id: conflicts, base: b, mine: m, theirs: t });
       conflicts += 1;
     }

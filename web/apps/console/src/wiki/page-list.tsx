@@ -63,7 +63,7 @@ export const PageList = ({ identity, vault, view, filter, onReview }: { readonly
   };
 
   return (
-    <section aria-label="Pages" className="flex flex-col gap-3">
+    <section aria-label="All pages" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-2">
         <div className="w-64">
           <Input label="Filter by title or slug" value={filter} onChange={(e) => go(wikiPath(vault, { kind: "list", view, filter: e.target.value }), true)} />

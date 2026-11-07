@@ -18,6 +18,12 @@ describe("threeWayMerge", () => {
     ]);
   });
 
+  it("pairs off blocks edited in place, so neighbouring changes don't become one conflict", () => {
+    const hunks = threeWayMerge(body("a", "b", "c"), body("a mine", "b mine", "c"), body("a", "b theirs", "c theirs"));
+    expect(conflictCount(hunks)).toBe(1);
+    expect(mergedBody(hunks, { 0: "both" })).toBe(body("a mine", "b mine", "b theirs", "c theirs"));
+  });
+
   it("agrees when both made the same change", () => {
     const hunks = threeWayMerge(body("a"), body("same"), body("same"));
     expect(conflictCount(hunks)).toBe(0);

@@ -59,11 +59,11 @@ export const useLinkResolver = (vault: VaultId): LinkResolver => {
   return useMemo(() => ({ index: pageIndex(data.pages), complete: !data.truncated }), [data]);
 };
 
-/** After a write, what's cached about this vault's pages is out of date. Any page read goes too, so nothing shows the old text first. */
+/** After a write, what's cached about this vault's pages is out of date. A read not on screen goes, so opening it can't show the old text first, and one on screen refetches. */
 export const useRefreshWiki = (vault: VaultId) => {
   const queryClient = useQueryClient();
   return useCallback(async () => {
-    queryClient.removeQueries({ queryKey: [...QUERY_KEYS.wiki(vault), "page"] });
+    queryClient.removeQueries({ queryKey: [...QUERY_KEYS.wiki(vault), "page"], type: "inactive" });
     await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.wiki(vault) });
     await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.objects(vault) });
   }, [queryClient, vault]);

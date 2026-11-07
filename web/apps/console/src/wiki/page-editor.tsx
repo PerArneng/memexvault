@@ -2,15 +2,15 @@ import { draftStanding, rankPages } from "@memex/core";
 import type { Draft, SaveOutcome } from "@memex/core";
 import type { VaultId, WikiClaim, WikiPage } from "@memex/types";
 import { Button, Input, Skeleton, SplitPane } from "@memex/ui";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { useEngine } from "../engine-context";
+import { useConnectivity, useEngine } from "../engine-context";
 import { QueryView } from "../shell/query-view";
 import { QUERY_KEYS, unwrap } from "../query";
 import { ConflictView } from "./conflict-view";
 import type { EditorOption } from "./markdown-editor";
 import { ClaimEvidence, PageMarkdown, useClaimsFor } from "./page-markdown";
-import { AppLink, Callout, DEFAULT_NOTE, failureText, formatTime, useGo, useLinkResolver, useRefreshWiki, useWikiPages, wikiPath } from "./wiki-common";
+import { AppLink, Callout, DEFAULT_NOTE, failureText, formatTime, useGo, useLinkResolver, useRefreshWiki, wikiPath } from "./wiki-common";
 
 // CodeMirror is most of this screen's weight, and the reader doesn't need it.
 const MarkdownEditor = lazy(() => import("./markdown-editor"));
@@ -42,13 +42,14 @@ const useDraftKeeper = (vault: VaultId, page: string) => {
 
 const useSuggest = (vault: VaultId, page: WikiPage | null) => {
   const engine = useEngine();
-  const { data } = useWikiPages(vault);
-  const pages = data?.pages;
+  const queryClient = useQueryClient();
   const onPage = page?.claims;
   return useCallback(
     async (kind: "link" | "claim", query: string): Promise<readonly EditorOption[]> => {
       if (kind === "link") {
-        return rankPages(pages ?? [], query).map(({ page: p, viaRedirect }) => ({ value: viaRedirect ?? p.slug, label: p.title, detail: viaRedirect === null ? p.slug : `${viaRedirect}, now ${p.slug}` }));
+        // Waits for the list if typing got here first, or the first `[[` would offer nothing.
+        const { pages } = await queryClient.ensureQueryData({ queryKey: QUERY_KEYS.wikiPages(vault), queryFn: async () => unwrap(await engine.listWikiPages(vault)) });
+        return rankPages(pages, query).map(({ page: p, viaRedirect }) => ({ value: p.slug, label: p.title, detail: viaRedirect === null ? p.slug : `${viaRedirect}, now ${p.slug}` }));
       }
       // With nothing typed there's nothing to search for, and the page's own claims are the likely ones.
       if (query.trim() === "") {
@@ -57,7 +58,7 @@ const useSuggest = (vault: VaultId, page: WikiPage | null) => {
       const found = await engine.suggestClaims(vault, query);
       return found.ok ? found.value.map((c) => ({ value: c.id, label: c.label, detail: c.id })) : [];
     },
-    [engine, vault, pages, onPage],
+    [engine, queryClient, vault, onPage],
   );
 };
 
@@ -215,7 +216,7 @@ const EditorForm = ({ vault, page, initialTitle, onReview }: FormProps) => {
             </Suspense>
           }
           end={
-            <div data-testid="preview" aria-label="Preview">
+            <div data-testid="preview" role="region" aria-label="Preview" tabIndex={0} className="h-full overflow-auto">
               <PageMarkdown vault={vault} source={deferred} resolver={resolver} claims={claims} />
               <ClaimEvidence vault={vault} source={deferred} claims={claims} />
             </div>
@@ -226,7 +227,7 @@ const EditorForm = ({ vault, page, initialTitle, onReview }: FormProps) => {
       <div className="flex items-center gap-2">
         <Button variant="primary" disabled={saving || !dirty} onClick={requestSave}>{saving ? "Saving" : "Save"}</Button>
         <AppLink to={page === null ? wikiPath(vault, { kind: "list", view: "list", filter: "" }) : readPath(page.id)} className="inline-flex h-8 items-center px-3 text-sm text-text-muted hover:text-text">Close</AppLink>
-        {dirty && restored === null && <Button variant="ghost" onClick={discardDraft}>Discard changes</Button>}
+        {dirty && !showRestored && <Button variant="ghost" onClick={discardDraft}>Discard changes</Button>}
         <span className="text-xs text-text-muted">Ctrl or Cmd + S saves. Type [[ or {"{{"}claim: to link. Unsaved text stays in this browser.</span>
       </div>
     </section>
@@ -238,9 +239,11 @@ export const NewPage = ({ vault, initialTitle, onReview }: { readonly vault: Vau
 /** The base version has to be fresh, so a cached read isn't enough to start from. */
 export const EditPage = ({ vault, id, onReview }: { readonly vault: VaultId; readonly id: string; readonly onReview: FormProps["onReview"] }) => {
   const engine = useEngine();
+  const connectivity = useConnectivity();
   const started = useRef(false);
   const query = useQuery({ queryKey: QUERY_KEYS.wikiPage(vault, id, null), queryFn: async () => unwrap(await engine.getWikiPage(vault, id, null)), staleTime: 0, refetchOnMount: "always", refetchOnReconnect: false });
-  if (!started.current && !query.isFetchedAfterMount && query.isFetching) return <Skeleton className="h-96 w-full" />;
+  // Only cached text needs holding back, as `QueryView` already says what's happening when there's none, including when offline.
+  if (!started.current && !query.isFetchedAfterMount && query.isFetching && query.data !== undefined && connectivity.status !== "offline") return <Skeleton className="h-96 w-full" />;
   started.current = true;
   return <QueryView query={query} label="this page">{(page) => <EditorForm key={page.id} vault={vault} page={page} initialTitle="" onReview={onReview} />}</QueryView>;
 };

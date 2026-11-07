@@ -192,7 +192,8 @@ const Body = ({ identity, vault, page, onReview }: { readonly identity: Identity
             <span>·</span>
             {change === undefined ? <span>{page.creator}</span> : <ChangeAuthor vault={vault} changesetId={change.changesetId} fallback={change.creator} />}
             <span>{formatTime(change?.createdAt ?? page.updatedAt)}</span>
-            {page.restoredFrom !== null && <span>Restored from revision {page.restoredFrom}</span>}
+            {/* The page read doesn't say this for the current revision, and the revision's own row does. */}
+            {(change?.restoredFrom ?? page.restoredFrom) !== null && <span>Restored from revision {change?.restoredFrom ?? page.restoredFrom}</span>}
             {page.redirects.length > 0 && <span>Also reached as {page.redirects.join(", ")}</span>}
           </p>
         </header>
