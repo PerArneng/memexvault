@@ -57,8 +57,9 @@ pub use server::{
     AutoCommitEntry, AutoCommitTable, BacklinkView, BatchDecision, ClaimEvidence, ClaimRef, ClaimRefStatus, ClaimReference, CreatedSession, CreatedToken,
     EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, EvidenceLineage, ExtractJobError, ExtractionReport, FieldInput, ImportedPage,
     Lineage, MediaInfo, MeetingView, NeighborView, NewEntity, NewPage, NewToken, OutgoingLink, PIPELINE_VERSION, PageChange, PageDiff, PageList, PageRedirect,
-    PageRevisionView, PageView, ParticipantView, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT, Redirect, RenditionInput, ReviewDetail,
-    ReviewEvidence, ReviewItem, SearchEdges, Server, ServerEdges, ServerError, SplitRequest, TRANSCRIBE_JOB, TranscriptPage, TypeDecision, UnresolvedLink,
+    PageRevisionView, PageView, ParticipantLink, ParticipantView, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT, Redirect, RenditionInput,
+    ReviewDetail, ReviewEvidence, ReviewItem, SearchEdges, Server, ServerEdges, ServerError, SplitRequest, TRANSCRIBE_JOB, TranscriptPage, TranscriptWindow,
+    TypeDecision, UnresolvedLink,
 };
 pub use session::{LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, SESSION_TTL_MS};
 pub use settings::{Backends, CacheSettings, LlmSettings, Settings, SettingsError, TranscribeApi, TranscribeSettings};

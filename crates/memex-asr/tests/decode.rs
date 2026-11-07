@@ -16,13 +16,20 @@ fn temp(name: &str) -> PathBuf {
 }
 
 fn pcm_of(path: &std::path::Path) -> Vec<f32> {
-    std::fs::read(path).unwrap().chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect()
+    std::fs::read(path)
+        .unwrap()
+        .chunks_exact(4)
+        .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+        .collect()
 }
 
 /// When the tone starts, in ms. It's steady, so the first loud 10 ms show it.
 fn onset_ms(pcm: &[f32]) -> i64 {
     let hop = 160;
-    let first = pcm.chunks(hop).position(|c| c.iter().map(|s| s.abs()).fold(0.0, f32::max) > 0.1).expect("a tone");
+    let first = pcm
+        .chunks(hop)
+        .position(|c| c.iter().map(|s| s.abs()).fold(0.0, f32::max) > 0.1)
+        .expect("a tone");
     first as i64 * 10
 }
 

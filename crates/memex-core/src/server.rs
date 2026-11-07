@@ -3,7 +3,7 @@ mod extraction;
 mod meeting;
 mod pages;
 mod review;
-pub use self::meeting::{MediaInfo, MeetingView, ParticipantView, TranscriptPage};
+pub use self::meeting::{MediaInfo, MeetingView, ParticipantLink, ParticipantView, TranscriptPage, TranscriptWindow};
 pub use entities::{
     ClaimEvidence, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, FieldInput, NewEntity, Redirect, SplitRequest, TypeDecision,
 };

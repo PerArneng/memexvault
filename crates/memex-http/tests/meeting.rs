@@ -4,7 +4,9 @@ use axum::http::{Request, StatusCode};
 use memex_core::testing::{ManualClock, MemBlobStore, MemRegistry, MemStore, SeededRandom};
 use memex_core::{NewToken, RenditionInput, Server, ServerEdges, TRANSCRIBE_JOB};
 use memex_http::router;
-use memex_types::{Epistemic, EvidenceInput, Grant, MediaFacts, ObjectId, Op, PrincipalKind, Scope, Stance, TimedDocument, TimedWord, TranscribeUsage, VaultId};
+use memex_types::{
+    Epistemic, EvidenceInput, Grant, MediaFacts, ObjectId, Op, PrincipalKind, Scope, Stance, TimedDocument, TimedWord, TranscribeUsage, VaultId,
+};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -132,7 +134,15 @@ fn doc(words: Vec<TimedWord>) -> TimedDocument {
 }
 
 async fn upload(w: &World, query: &str, bytes: Vec<u8>) -> Value {
-    let (status, body, _) = raw(w, "POST", &format!("/api/v1/vaults/{}/sources?{query}", w.v.0), &w.admin, &[], Body::from(bytes)).await;
+    let (status, body, _) = raw(
+        w,
+        "POST",
+        &format!("/api/v1/vaults/{}/sources?{query}", w.v.0),
+        &w.admin,
+        &[],
+        Body::from(bytes),
+    )
+    .await;
     assert!(status.is_success(), "{status}: {}", String::from_utf8_lossy(&body));
     serde_json::from_slice(&body).unwrap()
 }
@@ -192,14 +202,30 @@ async fn the_original_stays_unchanged_and_each_recording_type_is_accepted() {
     let up = upload(&w, "name=a.wav", bytes.clone()).await;
     let id = up["source"]["id"].as_str().unwrap();
     assert_eq!(up["source"]["media_type"], "audio/wav");
-    let (status, got, _) = raw(&w, "GET", &format!("/api/v1/vaults/{}/sources/{id}/stream", w.v.0), &w.admin, &[], Body::empty()).await;
+    let (status, got, _) = raw(
+        &w,
+        "GET",
+        &format!("/api/v1/vaults/{}/sources/{id}/stream", w.v.0),
+        &w.admin,
+        &[],
+        Body::empty(),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(got, bytes, "byte for byte");
     let (status, limits) = call(&w, "GET", &format!("/api/v1/vaults/{}/upload-limits", w.v.0), &w.admin, None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(limits["allowed_media_types"].as_array().unwrap().iter().any(|t| t == "video/webm"));
     // A bad language hint isn't passed on to anything.
-    let (status, _, _) = raw(&w, "POST", &format!("/api/v1/vaults/{}/sources?name=b.wav&language=../x", w.v.0), &w.admin, &[], Body::from(wav(1))).await;
+    let (status, _, _) = raw(
+        &w,
+        "POST",
+        &format!("/api/v1/vaults/{}/sources?name=b.wav&language=../x", w.v.0),
+        &w.admin,
+        &[],
+        Body::from(wav(1)),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
@@ -259,7 +285,10 @@ async fn a_claim_cites_a_time_range_and_the_transcript_and_provenance_agree() {
     let quotes = ["flyttades till", "Jaså, när då?", "Pumpen flyttades till Malmö. Jaså,"];
     let mut checked = 0;
     for quote in quotes {
-        let segment = segments.iter().find(|s| s["text"].as_str().unwrap().split_whitespace().collect::<Vec<_>>().join(" ").contains(quote)).unwrap();
+        let segment = segments
+            .iter()
+            .find(|s| s["text"].as_str().unwrap().split_whitespace().collect::<Vec<_>>().join(" ").contains(quote))
+            .unwrap();
         let (assertion, evidence) = claim(&w, segment["id"].as_str().unwrap(), quote).await;
         let (status, l) = call(&w, "GET", &format!("/api/v1/vaults/{}/assertions/{assertion}/lineage", w.v.0), &w.admin, None).await;
         assert_eq!(status, StatusCode::OK, "{l}");
@@ -267,7 +296,14 @@ async fn a_claim_cites_a_time_range_and_the_transcript_and_provenance_agree() {
         assert_eq!(e["broken"], false);
         assert_eq!(e["media_type"], "audio/wav");
         let (t0, t1) = (e["t_start_ms"].as_i64().unwrap(), e["t_end_ms"].as_i64().unwrap());
-        let (_, h) = call(&w, "GET", &format!("/api/v1/vaults/{}/assertions/{assertion}/evidence/{evidence}/highlight", w.v.0), &w.admin, None).await;
+        let (_, h) = call(
+            &w,
+            "GET",
+            &format!("/api/v1/vaults/{}/assertions/{assertion}/evidence/{evidence}/highlight", w.v.0),
+            &w.admin,
+            None,
+        )
+        .await;
         assert_eq!((h["t_start_ms"].as_i64(), h["t_end_ms"].as_i64()), (Some(t0), Some(t1)));
         assert!(h["rects"].as_array().unwrap().is_empty());
 
@@ -360,7 +396,12 @@ async fn the_stream_is_for_recordings_and_follows_scope() {
         assert!(matches!(status, StatusCode::FORBIDDEN | StatusCode::NOT_FOUND), "{route}: {status}");
     }
     let res = router(w.s.clone())
-        .oneshot(Request::builder().uri(format!("/api/v1/vaults/{vault}/sources/{id}/stream")).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/vaults/{vault}/sources/{id}/stream"))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
@@ -379,7 +420,9 @@ async fn media_facts_appear_once_transcribed() {
     let (status, _) = call(&w, "GET", &format!("/api/v1/vaults/{}/sources/{id}/transcript", w.v.0), &w.admin, None).await;
     assert_eq!(status, StatusCode::CONFLICT, "not transcribed yet");
     let job = w.s.claim_job(&w.v, TRANSCRIBE_JOB, "w").unwrap().unwrap();
-    let rows = w.s.build_rendition(&w.v, &ObjectId(id.clone()), RenditionInput::Timed(doc(the_words()))).unwrap();
+    let rows =
+        w.s.build_rendition(&w.v, &ObjectId(id.clone()), RenditionInput::Timed(doc(the_words())))
+            .unwrap();
     assert!(w.s.complete_job(&w.v, &job, rows).unwrap());
     let (_, m) = call(&w, "GET", &path, &w.admin, None).await;
     assert_eq!(m["duration_ms"], 60_000);
@@ -484,7 +527,14 @@ async fn meeting_metadata_reads_writes_and_links_through_proposals() {
     assert!(m["participants"][1]["entity_id"].is_null());
 
     // The recording is on the Person's graph, and a revert takes it off.
-    let (status, n) = call(&w, "GET", &format!("/api/v1/vaults/{}/objects/{}/neighborhood?kinds=meeting_participant", w.v.0, person.0), &w.admin, None).await;
+    let (status, n) = call(
+        &w,
+        "GET",
+        &format!("/api/v1/vaults/{}/objects/{}/neighborhood?kinds=meeting_participant", w.v.0, person.0),
+        &w.admin,
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{n}");
     assert!(n.to_string().contains(&id), "{n}");
     w.s.revert(&c, &w.v, &cs, "wrong person".into()).unwrap();
@@ -493,7 +543,14 @@ async fn meeting_metadata_reads_writes_and_links_through_proposals() {
 
     // A new version of the recording is the same meeting.
     let again = upload(&w, &format!("name=b.wav&replaces={id}"), wav(3)).await;
-    let (_, m2) = call(&w, "GET", &format!("/api/v1/vaults/{}/sources/{}/meeting", w.v.0, again["source"]["id"].as_str().unwrap()), &w.admin, None).await;
+    let (_, m2) = call(
+        &w,
+        "GET",
+        &format!("/api/v1/vaults/{}/sources/{}/meeting", w.v.0, again["source"]["id"].as_str().unwrap()),
+        &w.admin,
+        None,
+    )
+    .await;
     assert_eq!(m2["title"], "Veckomöte");
     assert_eq!(m2["participants"][0]["id"], pid.as_str());
 }
@@ -558,9 +615,14 @@ async fn a_new_transcript_moves_a_claim_to_its_new_times() {
     let job = w.s.reprocess_source(&c, &w.v, &source).unwrap();
     assert_eq!(job.kind, TRANSCRIBE_JOB);
     let held = w.s.claim_job(&w.v, TRANSCRIBE_JOB, "w").unwrap().unwrap();
-    let rows = w.s.build_rendition(&w.v, &source, RenditionInput::Timed(doc(vec![word("annat", 0, 500, None)]))).unwrap();
+    let rows =
+        w.s.build_rendition(&w.v, &source, RenditionInput::Timed(doc(vec![word("annat", 0, 500, None)])))
+            .unwrap();
     assert!(w.s.complete_job(&w.v, &held, rows).unwrap());
     let (_, l) = call(&w, "GET", &format!("/api/v1/vaults/{}/assertions/{assertion}/lineage", w.v.0), &w.admin, None).await;
     assert_eq!(l["evidence"][0]["broken"], true);
-    assert_eq!(l["evidence"][0]["superseded"], true, "what it cites is the old transcript, which still resolves");
+    assert_eq!(
+        l["evidence"][0]["superseded"], true,
+        "what it cites is the old transcript, which still resolves"
+    );
 }

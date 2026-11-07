@@ -98,7 +98,17 @@ where
     let b = body(parsed, &rid)?;
     let source_id = sid.clone();
     let out = authed(server, headers, &rid, move |s, c| {
-        s.propose_participant_link(c, &VaultId(id), &ObjectId(sid), &pid, &ObjectId(b.entity_id), b.rationale, b.idempotency_key)
+        s.propose_participant_link(
+            c,
+            &VaultId(id),
+            &ObjectId(sid),
+            memex_core::ParticipantLink {
+                participant: pid,
+                entity: ObjectId(b.entity_id),
+                rationale: b.rationale,
+                idempotency_key: b.idempotency_key,
+            },
+        )
     })
     .await?;
     Ok(Json(memex_api::MeetingProposalResult {
@@ -122,7 +132,17 @@ where
     let (from, to, after, limit) = q.validated().map_err(|m| ApiError::new(StatusCode::BAD_REQUEST, "invalid", m, &rid.0))?;
     let with_words = q.words.unwrap_or(false);
     let page = authed(server, headers, &rid, move |s, c| {
-        s.transcript(c, &VaultId(id), &ObjectId(sid), from, to, after, limit)
+        s.transcript(
+            c,
+            &VaultId(id),
+            &ObjectId(sid),
+            memex_core::TranscriptWindow {
+                from_ms: from,
+                to_ms: to,
+                after,
+                limit,
+            },
+        )
     })
     .await?;
     Ok(Json(memex_api::transcript_dto(page, with_words)))

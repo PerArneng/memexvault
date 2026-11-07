@@ -29,6 +29,24 @@ pub struct MeetingView {
     pub participants: Vec<ParticipantView>,
 }
 
+/// Which part of a transcript to read: words from `after` on, overlapping these times.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TranscriptWindow {
+    pub from_ms: i64,
+    pub to_ms: i64,
+    pub after: usize,
+    pub limit: usize,
+}
+
+/// A proposal that a participant is this Person.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParticipantLink {
+    pub participant: String,
+    pub entity: ObjectId,
+    pub rationale: String,
+    pub idempotency_key: String,
+}
+
 /// A page of a transcript.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscriptPage {
@@ -158,16 +176,13 @@ impl<E: ServerEdges> Server<E> {
     }
 
     /// Proposes that a participant is this Person, as an Edge from the recording to the entity. The read shows it once it commits, and reverting the ChangeSet takes it back.
-    pub fn propose_participant_link(
-        &self,
-        caller: &Caller,
-        vault: &VaultId,
-        id: &ObjectId,
-        participant: &str,
-        entity: &ObjectId,
-        rationale: String,
-        idempotency_key: String,
-    ) -> Result<ProposalOutcome, ServerError> {
+    pub fn propose_participant_link(&self, caller: &Caller, vault: &VaultId, id: &ObjectId, link: ParticipantLink) -> Result<ProposalOutcome, ServerError> {
+        let ParticipantLink {
+            participant,
+            entity,
+            rationale,
+            idempotency_key,
+        } = link;
         let source = self.recording(caller, vault, id)?;
         if !meeting::meeting_of(&source.metadata).participants.iter().any(|p| p.id == participant) {
             return Err(ServerError::NotFound);
@@ -182,9 +197,9 @@ impl<E: ServerEdges> Server<E> {
             _ => return Err(ServerError::Invalid(format!("there's no entity {entity}"))),
         }
         let ops = vec![Op::AddEdge {
-            id: meeting::participant_edge_id(&source.logical_id.0, participant),
+            id: meeting::participant_edge_id(&source.logical_id.0, &participant),
             from: source.logical_id.clone(),
-            to: entity.clone(),
+            to: entity,
             kind: meeting::PARTICIPANT_EDGE.into(),
         }];
         self.propose(
@@ -200,16 +215,7 @@ impl<E: ServerEdges> Server<E> {
     }
 
     /// The transcript between two times, from word `after` on. With no window it's all of it, a page at a time.
-    pub fn transcript(
-        &self,
-        caller: &Caller,
-        vault: &VaultId,
-        id: &ObjectId,
-        from_ms: i64,
-        to_ms: i64,
-        after: usize,
-        limit: usize,
-    ) -> Result<TranscriptPage, ServerError> {
+    pub fn transcript(&self, caller: &Caller, vault: &VaultId, id: &ObjectId, window: TranscriptWindow) -> Result<TranscriptPage, ServerError> {
         self.recording(caller, vault, id)?;
         let Some(current) = self.current_of(vault, id)? else {
             return Err(ServerError::Conflict("this recording hasn't been transcribed yet".into()));
@@ -217,7 +223,7 @@ impl<E: ServerEdges> Server<E> {
         let Some(index) = self.timed_of(vault, &current)? else {
             return Err(ServerError::Conflict("this recording has no timed transcript".into()));
         };
-        let (parts, next) = meeting::transcript_parts(&index, from_ms, to_ms, after, limit);
+        let (parts, next) = meeting::transcript_parts(&index, window.from_ms, window.to_ms, window.after, window.limit);
         let words = parts.iter().map(|p| index.doc.words[p.words.clone()].to_vec()).collect();
         Ok(TranscriptPage {
             rendition_id: current.header.id,
