@@ -99,10 +99,11 @@ where
     let request = resume_request(last_event_id.as_deref(), params.after.as_deref());
     let head = marks.head.map_or(-1, |h| h as i64);
     let opened = hub.open(&server, &vault, head, marks.generation, &headers, request);
-    if let Some(Extension(ConnectInfo(addr))) = peer {
+    let peer = peer.map(|Extension(ConnectInfo(addr))| addr);
+    if let Some(addr) = peer {
         hub.watch_connection(addr, limits.stall_ms);
     }
-    let mut res = activity::body_of(hub, server, vault, opened, slot).into_response();
+    let mut res = activity::body_of(hub, server, vault, opened, slot, peer).into_response();
     let h = res.headers_mut();
     h.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/event-stream"));
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));

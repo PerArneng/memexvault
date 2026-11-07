@@ -382,7 +382,7 @@ impl Hub {
 }
 
 /// The body of one stream. Closing it, by reaching the end or by the client going away, takes the client off its feed and gives back its slot.
-pub(crate) fn body_of<E>(hub: Arc<Hub>, server: Arc<Server<E>>, vault: VaultId, opened: Opened, slot: StreamSlot) -> axum::body::Body
+pub(crate) fn body_of<E>(hub: Arc<Hub>, server: Arc<Server<E>>, vault: VaultId, opened: Opened, slot: StreamSlot, peer: Option<std::net::SocketAddr>) -> axum::body::Body
 where
     E: ServerEdges + Send + Sync + 'static,
     Server<E>: Send + Sync,
@@ -390,10 +390,15 @@ where
     struct Leaving {
         feed: Arc<Feed>,
         client: Arc<Client>,
+        /// The connection outlives its stream, and whatever it serves next isn't watched.
+        watched: Option<(Arc<ConnTable>, std::net::SocketAddr)>,
         _slot: StreamSlot,
     }
     impl Drop for Leaving {
         fn drop(&mut self) {
+            if let Some((conns, peer)) = &self.watched {
+                conns.watch(*peer, 0);
+            }
             self.feed.state.lock().expect("lock").clients.retain(|c| !Arc::ptr_eq(c, &self.client));
         }
     }
@@ -405,6 +410,7 @@ where
         catchup: Option<Catchup>,
         _leaving: Leaving,
     }
+    let watched = peer.map(|p| (hub.conns(), p));
     let start = Stream {
         hub,
         server,
@@ -414,6 +420,7 @@ where
         _leaving: Leaving {
             feed: opened.feed,
             client: opened.client,
+            watched,
             _slot: slot,
         },
     };
