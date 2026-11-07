@@ -73,6 +73,7 @@ pub(crate) type App<E> = Arc<Server<E>>;
         get_rendition,
         list_segments,
         get_segment,
+        cache_stats,
         search,
         search_lexical,
         search_vector,
@@ -93,6 +94,8 @@ pub(crate) type App<E> = Arc<Server<E>>;
         ErrorDetail,
         GrantDto,
         HealthDto,
+        memex_api::CacheStatsDto,
+        memex_api::CacheTierDto,
         NameBody,
         NewPrincipalBody,
         NewTokenBody,
@@ -199,6 +202,7 @@ where
         .route("/vaults/{id}/renditions/{rid}", get(get_rendition::<E>))
         .route("/vaults/{id}/renditions/{rid}/segments", get(list_segments::<E>))
         .route("/vaults/{id}/segments/{seg}", get(get_segment::<E>))
+        .route("/caches", get(cache_stats::<E>))
         .route("/vaults/{id}/search", get(search::<E>))
         .route("/vaults/{id}/search/lexical", get(search_lexical::<E>))
         .route("/vaults/{id}/search/vector", get(search_vector::<E>))
@@ -319,6 +323,22 @@ async fn version() -> Json<VersionDto> {
     Json(VersionDto {
         version: env!("CARGO_PKG_VERSION").into(),
     })
+}
+
+#[utoipa::path(get, path = "/api/v1/caches", tag = "server", responses((status = 200, body = memex_api::CacheStatsDto), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody)))]
+async fn cache_stats<E>(
+    State(server): State<App<E>>,
+    Extension(rid): Extension<RequestId>,
+    headers: HeaderMap,
+) -> Result<Json<memex_api::CacheStatsDto>, ApiError>
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
+    let tiers = authed(server, headers, &rid, |s, c| s.cache_stats(c)).await?;
+    Ok(Json(memex_api::CacheStatsDto {
+        tiers: tiers.into_iter().map(Into::into).collect(),
+    }))
 }
 
 #[utoipa::path(get, path = "/api/v1/whoami", tag = "server", responses((status = 200, body = WhoAmI), (status = 401, body = ErrorBody)))]

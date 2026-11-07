@@ -267,6 +267,14 @@ pub const VAULT_MIGRATIONS: &[&str] = &[
         row jsonb NOT NULL
     );
 ",
+    // Spec 021: part of every cache key. Erasure bumps it, so nothing cached before can be reached again, even on disk after a restart.
+    "
+    CREATE TABLE {s}.cache_generation (
+        only_row boolean PRIMARY KEY DEFAULT true CHECK (only_row),
+        generation bigint NOT NULL
+    );
+    INSERT INTO {s}.cache_generation (generation) VALUES (0);
+",
 ];
 
 pub const LATEST_SERVER_VERSION: i32 = SERVER_MIGRATIONS.len() as i32;

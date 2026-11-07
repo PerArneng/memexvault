@@ -7,6 +7,7 @@ use memex_inference::{OnnxEmbedder, OnnxReranker};
 use memex_lexical::TantivyLexical;
 use memex_store_postgres::PgStore;
 use memex_vector::PgVectors;
+use memexvault::cache_edge::TieredCaches;
 use memexvault::edges::{AdkAgentRunner, FsBlobStore, PgVectorIndex, SystemClock, SystemSeed, TantivyIndex, llm_endpoint};
 use memexvault::pg_edge::PostgresStore;
 use memexvault::registry_edge::PostgresRegistry;
@@ -31,6 +32,7 @@ impl ServerEdges for Production {
     type Vector = PgVectorIndex;
     type Embedder = OnnxEmbedder;
     type Reranker = OnnxReranker;
+    type Caches = TieredCaches;
 }
 
 fn fail(message: impl std::fmt::Display) -> ExitCode {
@@ -228,7 +230,11 @@ fn main() -> ExitCode {
                 Ok(n) => tracing::info!(vaults = n, "writer leases held"),
                 Err(e) => return fail(e),
             }
-            let server = Arc::new(server);
+            let caches = match TieredCaches::open(settings.caches, settings.data_dir.join("vaults")) {
+                Ok(c) => c,
+                Err(e) => return fail(e),
+            };
+            let server = Arc::new(server.with_caches(caches));
             let program = match std::env::current_exe() {
                 Ok(p) => p,
                 Err(e) => return fail(e),

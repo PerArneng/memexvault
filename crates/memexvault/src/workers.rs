@@ -232,6 +232,7 @@ mod tests {
         type Vector = memex_core::testing::MemVector;
         type Embedder = memex_core::testing::FakeEmbedder;
         type Reranker = memex_core::testing::FakeReranker;
+        type Caches = memex_core::NoCaches;
     }
 
     fn setup(n: u32) -> (Arc<Server<Fakes>>, memex_types::VaultId) {

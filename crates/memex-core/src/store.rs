@@ -76,6 +76,10 @@ pub trait Snapshot {
     fn get(&self, key: &RowKey) -> Result<Option<Row>, StoreError>;
     /// One store call however many keys, in the same order as `keys`.
     fn get_many(&self, keys: &[RowKey]) -> Result<Vec<Option<Row>>, StoreError>;
+    /// A stamp of each row's contents, in the same order as `keys`, with none for a row that isn't there. The same stamp means the same row, and one store call covers all the keys. A backend can make this cheaper than reading the rows.
+    fn row_stamps(&self, keys: &[RowKey]) -> Result<Vec<Option<String>>, StoreError> {
+        Ok(self.get_many(keys)?.iter().map(|r| r.as_ref().map(crate::cache::stamp_of)).collect())
+    }
     /// Active rows in id order, after the given id, at most `PAGE_LIMIT`.
     fn rows(&self, table: Table, after: Option<&ObjectId>) -> Result<Vec<Row>, StoreError>;
     /// Events in sequence order, above `after`, at most `PAGE_LIMIT`.
@@ -163,6 +167,10 @@ pub trait Store {
     }
     /// Several events in one transaction, for group commit. All or nothing, and durable when it returns. The receipt names the last sequence.
     fn commit_batch(&self, lease: &WriterLease, batch: &[CommitItem<'_>]) -> Result<Receipt, StoreError>;
+    /// The log's head and the vault's cache generation, in one call, without a snapshot. An unknown vault is an error.
+    fn cache_marks(&self, vault: &VaultId) -> Result<crate::CacheMarks, StoreError>;
+    /// Makes every cache key of this vault unreachable, durably, and returns the new generation. Erasure calls this.
+    fn bump_cache_generation(&self, lease: &WriterLease) -> Result<u64, StoreError>;
     /// Removes the vault and all its data. The lease ends with it.
     fn delete_vault(&self, lease: &WriterLease) -> Result<(), StoreError>;
     /// Physically removes deleted data, for erasure. Reads don't change.

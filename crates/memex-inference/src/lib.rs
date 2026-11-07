@@ -14,6 +14,7 @@ pub const E5_SMALL: &str = "multilingual-e5-small";
 pub const E5_SMALL_DIMENSION: u32 = 384;
 pub const MODEL_FILE: &str = "model.onnx";
 pub const TOKENIZER_FILE: &str = "tokenizer.json";
+pub const RERANK_MODEL: &str = "mmarco-mMiniLMv2-L12-H384-v1";
 pub const RERANK_MODEL_FILE: &str = "model_qint8_arm64.onnx";
 /// Segments are 100 to 400 tokens, and spec 005 measured this limit.
 const MAX_TOKENS: usize = 256;
@@ -260,6 +261,10 @@ impl OnnxReranker {
 }
 
 impl Reranker for OnnxReranker {
+    fn model(&self) -> String {
+        RERANK_MODEL.into()
+    }
+
     fn rerank(&self, query: &str, passages: &[&str]) -> Result<Vec<f32>, RerankError> {
         if passages.is_empty() {
             return Ok(vec![]);

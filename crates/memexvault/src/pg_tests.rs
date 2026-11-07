@@ -484,6 +484,7 @@ impl memex_core::ServerEdges for JobEdges {
     type Vector = memex_core::testing::MemVector;
     type Embedder = memex_core::testing::FakeEmbedder;
     type Reranker = memex_core::testing::FakeReranker;
+    type Caches = memex_core::NoCaches;
 }
 
 fn job_server(data: &str, offset_ms: i64) -> memex_core::Server<JobEdges> {

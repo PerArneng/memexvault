@@ -3,6 +3,7 @@ mod agent;
 mod auth;
 mod batch;
 mod blob;
+pub mod cache;
 mod clock;
 mod dump;
 mod engine;
@@ -35,6 +36,7 @@ pub use agent::{AgentOutcome, AgentRunner, run_with_retry};
 pub use auth::{Caller, Decision, Operation, authorize};
 pub use batch::{BatchLimits, Pending, plan_batch};
 pub use blob::{BlobInfo, BlobStore, BlobStoreError, BlobStored, Verified, sweepable};
+pub use cache::{CacheMarks, Caches, IndexMarks, NoCaches};
 pub use clock::Clock;
 pub use dump::{Dump, canonical_dump, dump_store};
 pub use engine::{ApplyError, Engine, NewSource, RecordSourceError};
@@ -54,7 +56,7 @@ pub use server::{
     RESULT_LIMIT, Redirect, RenditionInput, SearchEdges, Server, ServerEdges, ServerError, SplitRequest, TypeDecision, UnresolvedLink,
 };
 pub use session::{LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, SESSION_TTL_MS};
-pub use settings::{Backends, LlmSettings, Settings, SettingsError};
+pub use settings::{Backends, CacheSettings, LlmSettings, Settings, SettingsError};
 pub use sources::{ALLOWED_MEDIA_TYPES, UNTRUSTED, UploadLimits, UploadOutcome, UploadRequest, sniff_media_type};
 pub use store::{CommitItem, MAX_SHARED_IDS, PAGE_LIMIT, Receipt, Snapshot, Store, StoreError, WriterLease};
 pub use upcast::{CURRENT_VERSIONS, UpcastError, upcast};

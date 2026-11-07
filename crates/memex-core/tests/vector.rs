@@ -21,6 +21,7 @@ impl ServerEdges for Fakes {
     type Vector = MemVector;
     type Embedder = FakeEmbedder;
     type Reranker = memex_core::testing::FakeReranker;
+    type Caches = memex_core::NoCaches;
 }
 
 struct World {

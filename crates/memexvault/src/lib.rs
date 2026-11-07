@@ -1,4 +1,5 @@
 //! The edges and wrappers the binary wires together. `main.rs` is the single composition root.
+pub mod cache_edge;
 pub mod edges;
 #[cfg(test)]
 mod edges_tests;

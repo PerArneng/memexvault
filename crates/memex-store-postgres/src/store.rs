@@ -318,6 +318,29 @@ impl PgStore {
         })
     }
 
+    /// The log's head and the cache generation in one statement, with no transaction to open or close. A cached search makes this call first, so it has to be cheap.
+    pub fn cache_marks(&self, vault: &VaultId) -> Result<(Option<u64>, u64), PgError> {
+        let mut conn = self.take_conn()?;
+        let schema = self.schema_of(vault, &mut conn.client)?;
+        let sql = format!("SELECT (SELECT max(seq) FROM {schema}.events), (SELECT generation FROM {schema}.cache_generation)");
+        let st = conn.statement(&sql).map_err(backend)?;
+        let row = conn.client.query_one(&st, &[]).map_err(backend)?;
+        let head: Option<i64> = row.get(0);
+        let generation: i64 = row.get(1);
+        self.give_conn(conn);
+        Ok((head.map(|h| h as u64), generation as u64))
+    }
+
+    /// Takes the vault's writer lease as its proof, like a commit.
+    pub fn bump_cache_generation(&self, lease: &PgLease) -> Result<u64, PgError> {
+        let writer = self.writer(lease)?;
+        let mut guard = writer.lock().expect("lock");
+        let Writer { schema, conn, .. } = &mut *guard;
+        let sql = format!("UPDATE {schema}.cache_generation SET generation = generation + 1 RETURNING generation");
+        let generation: i64 = conn.client.query_one(&sql, &[]).map_err(backend)?.get(0);
+        Ok(generation as u64)
+    }
+
     /// One SQL transaction for the whole batch. `batch` holds each event with its mutations. Durable when it returns.
     pub fn commit_batch(&self, lease: &PgLease, batch: &[(&Event, &[Mutation])]) -> Result<u64, PgError> {
         let last = batch.last().ok_or(PgError::EmptyBatch)?.0.seq;
@@ -877,6 +900,22 @@ impl PgSnapshot<'_> {
             for r in self.with_statement(&sql, |c, st| c.query(st, &[&ids]))? {
                 let row = row_from(table, &r);
                 found.insert(row.key(), row);
+            }
+        }
+        Ok(keys.iter().map(|k| found.get(k).cloned()).collect())
+    }
+
+    /// A hash of each row, computed in the database, so the rows themselves don't have to cross the network. One query per table the keys touch.
+    pub fn row_stamps(&self, keys: &[RowKey]) -> Result<Vec<Option<String>>, PgError> {
+        let mut found: HashMap<RowKey, String> = HashMap::new();
+        for table in Table::ALL {
+            let ids: Vec<&str> = keys.iter().filter(|k| k.table == table).map(|k| k.id.0.as_str()).collect();
+            if ids.is_empty() {
+                continue;
+            }
+            let sql = format!("SELECT t.id, md5(t::text) FROM {}.{} t WHERE t.id = ANY($1)", self.schema, table_name(table));
+            for r in self.with_statement(&sql, |c, st| c.query(st, &[&ids]))? {
+                found.insert(RowKey { table, id: ObjectId(r.get(0)) }, r.get(1));
             }
         }
         Ok(keys.iter().map(|k| found.get(k).cloned()).collect())

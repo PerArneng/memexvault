@@ -22,6 +22,8 @@ impl std::error::Error for RasterError {}
 
 /// Renders a PDF page, with highlights drawn over the given rects. Bytes go in, so it works with any blob store.
 pub trait Rasterizer {
+    /// Names what draws the pages and its version, so a new renderer doesn't get an old one's cached images.
+    fn renderer(&self) -> String;
     fn render(&self, pdf: &[u8], page: u32, dpi: u32, highlights: &[Rect]) -> Result<PageImage, RasterError>;
 }
 

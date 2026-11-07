@@ -29,6 +29,35 @@ impl Default for Backends {
     }
 }
 
+/// Each cache tier's cap in bytes. 0 turns a tier off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CacheSettings {
+    pub query_bytes: u64,
+    pub inference_bytes: u64,
+    pub object_bytes: u64,
+    pub disk_bytes: u64,
+}
+
+const MIB: u64 = 1024 * 1024;
+const GIB: u64 = 1024 * MIB;
+/// Below this a tier refuses almost every entry, as an entry can be at most a twentieth of its cap, so a smaller cap is a mistake rather than a choice.
+pub const MIN_CACHE_BYTES: u64 = MIB;
+/// More than the working assumptions could use, so a larger value is a typing error. The reference machine has 32 GB.
+pub const MAX_RAM_CACHE_BYTES: u64 = 256 * GIB;
+pub const MAX_DISK_CACHE_BYTES: u64 = 64 * 1024 * GIB;
+
+/// Together the RAM tiers take 576 MiB of the 4 GB memory target.
+impl Default for CacheSettings {
+    fn default() -> Self {
+        Self {
+            query_bytes: 256 * MIB,
+            inference_bytes: 64 * MIB,
+            object_bytes: 256 * MIB,
+            disk_bytes: 2 * GIB,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Settings {
     pub database_url: Option<String>,
@@ -48,6 +77,7 @@ pub struct Settings {
     /// The LLM that extraction sends documents to. Without one, nothing leaves the server and no extraction is queued.
     pub llm: Option<LlmSettings>,
     pub extraction: crate::ExtractionLimits,
+    pub caches: CacheSettings,
 }
 
 /// Which model answers extraction's calls.
@@ -88,6 +118,7 @@ impl Default for Settings {
             rerank_sessions: 2,
             llm: None,
             extraction: crate::ExtractionLimits::default(),
+            caches: CacheSettings::default(),
         }
     }
 }
@@ -107,6 +138,7 @@ impl fmt::Debug for Settings {
             .field("rerank_sessions", &self.rerank_sessions)
             .field("llm", &self.llm)
             .field("extraction", &self.extraction)
+            .field("caches", &self.caches)
             .finish()
     }
 }
@@ -128,6 +160,12 @@ pub enum SettingsError {
         name: &'static str,
         value: String,
     },
+    /// A cache cap that isn't a number of bytes, or is outside what's useful.
+    InvalidCacheSize {
+        name: &'static str,
+        value: String,
+        max: u64,
+    },
     /// One setting needs another that isn't set.
     Missing {
         name: &'static str,
@@ -142,6 +180,10 @@ impl fmt::Display for SettingsError {
             Self::Empty { name } => write!(f, "{name} is set but empty"),
             Self::InvalidBind { value } => write!(f, "MEMEX_HTTP_BIND must be host:port, got '{value}'"),
             Self::InvalidNumber { name, value } => write!(f, "{name} must be a whole number of at least 1, got '{value}'"),
+            Self::InvalidCacheSize { name, value, max } => write!(
+                f,
+                "{name} must be a number of bytes, either 0 to turn the tier off or from {MIN_CACHE_BYTES} to {max}, got '{value}'"
+            ),
             Self::Missing { name, because } => write!(f, "{name} is needed {because}"),
         }
     }
@@ -212,6 +254,28 @@ impl Settings {
         e.batch_tokens = count("MEMEX_EXTRACT_BATCH_TOKENS", text("MEMEX_EXTRACT_BATCH_TOKENS")?, e.batch_tokens as usize)? as u64;
         e.output_tokens = count("MEMEX_EXTRACT_OUTPUT_TOKENS", text("MEMEX_EXTRACT_OUTPUT_TOKENS")?, e.output_tokens as usize)? as u32;
         e.timeout_ms = count("MEMEX_EXTRACT_TIMEOUT_S", text("MEMEX_EXTRACT_TIMEOUT_S")?, (e.timeout_ms / 1000) as usize)? as u64 * 1000;
+        let cache_size = |name: &'static str, value: Option<String>, default: u64, max: u64| -> Result<u64, SettingsError> {
+            let Some(v) = value else { return Ok(default) };
+            v.parse::<u64>()
+                .ok()
+                .filter(|n| *n == 0 || (MIN_CACHE_BYTES..=max).contains(n))
+                .ok_or(SettingsError::InvalidCacheSize { name, value: v, max })
+        };
+        let c = &mut s.caches;
+        c.query_bytes = cache_size("MEMEX_CACHE_QUERY_BYTES", text("MEMEX_CACHE_QUERY_BYTES")?, c.query_bytes, MAX_RAM_CACHE_BYTES)?;
+        c.inference_bytes = cache_size(
+            "MEMEX_CACHE_INFERENCE_BYTES",
+            text("MEMEX_CACHE_INFERENCE_BYTES")?,
+            c.inference_bytes,
+            MAX_RAM_CACHE_BYTES,
+        )?;
+        c.object_bytes = cache_size(
+            "MEMEX_CACHE_OBJECT_BYTES",
+            text("MEMEX_CACHE_OBJECT_BYTES")?,
+            c.object_bytes,
+            MAX_RAM_CACHE_BYTES,
+        )?;
+        c.disk_bytes = cache_size("MEMEX_CACHE_DISK_BYTES", text("MEMEX_CACHE_DISK_BYTES")?, c.disk_bytes, MAX_DISK_CACHE_BYTES)?;
         s.embed_threads = count("MEMEX_EMBED_THREADS", text("MEMEX_EMBED_THREADS")?, s.embed_threads)?;
         s.embed_query_sessions = count("MEMEX_EMBED_QUERY_SESSIONS", text("MEMEX_EMBED_QUERY_SESSIONS")?, s.embed_query_sessions)?;
         s.rerank_threads = count("MEMEX_RERANK_THREADS", text("MEMEX_RERANK_THREADS")?, s.rerank_threads)?;
@@ -369,6 +433,46 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(s.llm.unwrap().base_url.as_deref(), Some("http://h/v1"));
+    }
+
+    #[test]
+    fn cache_sizes_parse_and_zero_turns_a_tier_off() {
+        assert_eq!(from(&[]).unwrap().caches, CacheSettings::default());
+        let s = from(&[
+            ("MEMEX_CACHE_QUERY_BYTES", "0"),
+            ("MEMEX_CACHE_INFERENCE_BYTES", "1048576"),
+            ("MEMEX_CACHE_OBJECT_BYTES", "2097152"),
+            ("MEMEX_CACHE_DISK_BYTES", "0"),
+        ])
+        .unwrap();
+        assert_eq!(
+            s.caches,
+            CacheSettings {
+                query_bytes: 0,
+                inference_bytes: 1 << 20,
+                object_bytes: 2 << 20,
+                disk_bytes: 0
+            }
+        );
+    }
+
+    #[test]
+    fn invalid_cache_sizes_are_refused_for_every_tier() {
+        for var in ["QUERY", "INFERENCE", "OBJECT", "DISK"] {
+            let name = format!("MEMEX_CACHE_{var}_BYTES");
+            for bad in ["-1", "many", "1.5", "64MB", "1", "1048575", "99999999999999999999", "18446744073709551615"] {
+                let e = from(&[(&name, bad)]).unwrap_err();
+                assert!(matches!(&e, SettingsError::InvalidCacheSize { value, .. } if value == bad), "{name}={bad}: {e}");
+                assert!(e.to_string().contains(&name), "{e}");
+            }
+            assert!(matches!(from(&[(&name, " ")]), Err(SettingsError::Empty { .. })));
+        }
+        let over_ram = (MAX_RAM_CACHE_BYTES + 1).to_string();
+        assert!(matches!(
+            from(&[("MEMEX_CACHE_QUERY_BYTES", &over_ram)]),
+            Err(SettingsError::InvalidCacheSize { .. })
+        ));
+        assert!(from(&[("MEMEX_CACHE_DISK_BYTES", &over_ram)]).is_ok(), "the disk has a higher limit");
     }
 
     #[test]

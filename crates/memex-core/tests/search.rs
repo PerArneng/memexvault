@@ -25,6 +25,7 @@ impl ServerEdges for Fakes {
     type Vector = MemVector;
     type Embedder = FakeEmbedder;
     type Reranker = FakeReranker;
+    type Caches = memex_core::NoCaches;
 }
 
 fn oid(s: &str) -> ObjectId {
@@ -593,6 +594,7 @@ impl Direct {
                 embedder: &self.embedder,
                 reranker: &self.reranker,
                 clock: &self.clock,
+                caches: &memex_core::NoCaches,
             },
             &self.v,
             r,
@@ -627,6 +629,7 @@ fn something_retracted_between_candidates_and_fence_is_never_returned() {
                 embedder: &d.embedder,
                 reranker: &d.reranker,
                 clock: &d.clock,
+                caches: &memex_core::NoCaches,
             },
             &d.v,
             &r,

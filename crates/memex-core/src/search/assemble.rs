@@ -1,6 +1,7 @@
 //! Fences candidates against the store and turns them into evidence items. Every read is batched, so the store calls don't grow with the number of hits.
 use super::budget::item_cost;
 use super::fusion::Fused;
+use crate::cache::{Caches, NoCaches, is_cached_table, object_key};
 use crate::entity::{current_claims, entity_doc, latest_types};
 use crate::governance::CONTRADICTS;
 use crate::lexical::{assertion_doc, claim_text, current_rendition, filter_passes, segment_doc};
@@ -45,6 +46,67 @@ fn claim_is_current(a: &AssertionRow) -> bool {
 
 fn epistemic(a: &AssertionRow) -> Option<String> {
     serde_json::to_value(a.epistemic).ok().and_then(|v| v.as_str().map(String::from))
+}
+
+/// Reads rows for the fence, through the objects tier when there is one. A row from the tier is the one this snapshot holds, as its key has the stamp the snapshot gave.
+pub struct RowReader<'a, S, Ca = NoCaches> {
+    snap: &'a S,
+    tier: Option<(&'a Ca, &'a memex_types::VaultId, u64)>,
+}
+
+impl<'a, S: Snapshot> RowReader<'a, S, NoCaches> {
+    pub fn plain(snap: &'a S) -> Self {
+        Self { snap, tier: None }
+    }
+}
+
+impl<'a, S: Snapshot, Ca: Caches> RowReader<'a, S, Ca> {
+    /// `generation` is none when it couldn't be read, and then no tier is used.
+    pub fn new(snap: &'a S, caches: &'a Ca, vault: &'a memex_types::VaultId, generation: Option<u64>) -> Self {
+        let tier = generation.filter(|_| caches.objects_on()).map(|g| (caches, vault, g));
+        Self { snap, tier }
+    }
+
+    /// One call for the stamps if any row could be in the tier, and one for what wasn't.
+    fn get_many(&self, keys: &[RowKey]) -> Result<Vec<Option<Row>>, StoreError> {
+        let Some((caches, vault, generation)) = self.tier else {
+            return self.snap.get_many(keys);
+        };
+        let (held, plain): (Vec<&RowKey>, Vec<&RowKey>) = keys.iter().partition(|k| is_cached_table(k.table));
+        if held.is_empty() {
+            return self.snap.get_many(keys);
+        }
+        let held_keys: Vec<RowKey> = held.into_iter().cloned().collect();
+        let stamps = self.snap.row_stamps(&held_keys)?;
+        let mut found: HashMap<RowKey, Row> = HashMap::with_capacity(keys.len());
+        let mut wanted: Vec<RowKey> = plain.into_iter().cloned().collect();
+        let mut to_keep: HashMap<RowKey, String> = HashMap::new();
+        for (k, stamp) in held_keys.iter().zip(&stamps) {
+            // No stamp means no row, which needs no second read.
+            let Some(stamp) = stamp else { continue };
+            let cache_key = object_key(vault, generation, k.table, &k.id, stamp);
+            match caches.get_row(&cache_key) {
+                Some(row) => {
+                    found.insert(k.clone(), row);
+                }
+                None => {
+                    wanted.push(k.clone());
+                    to_keep.insert(k.clone(), cache_key);
+                }
+            }
+        }
+        if !wanted.is_empty() {
+            for (k, row) in wanted.iter().zip(self.snap.get_many(&wanted)?) {
+                if let Some(row) = row {
+                    if let Some(cache_key) = to_keep.remove(k) {
+                        caches.put_row(cache_key, &row);
+                    }
+                    found.insert(k.clone(), row);
+                }
+            }
+        }
+        Ok(keys.iter().map(|k| found.get(k).cloned()).collect())
+    }
 }
 
 /// Everything the items need, read in a fixed number of calls.
@@ -93,17 +155,18 @@ impl Loaded {
         }
     }
 
-    fn read<S: Snapshot>(snap: &S, keys: &[RowKey], into: &mut Self) -> Result<(), StoreError> {
+    fn read<S: Snapshot, Ca: Caches>(rows: &RowReader<'_, S, Ca>, keys: &[RowKey], into: &mut Self) -> Result<(), StoreError> {
         if !keys.is_empty() {
-            into.absorb(snap.get_many(keys)?);
+            into.absorb(rows.get_many(keys)?);
         }
         Ok(())
     }
 
-    fn load<S: Snapshot>(snap: &S, candidates: &[Fused]) -> Result<Self, StoreError> {
+    fn load<S: Snapshot, Ca: Caches>(rows: &RowReader<'_, S, Ca>, candidates: &[Fused]) -> Result<Self, StoreError> {
+        let snap = rows.snap;
         let mut l = Self::default();
         let keys: Vec<RowKey> = candidates.iter().map(|c| key(table_of(c.kind), &c.id)).collect();
-        Self::read(snap, &keys, &mut l)?;
+        Self::read(rows, &keys, &mut l)?;
         l.entities.retain(|_, e| e.is_current());
         // A block's item names its page.
         let keys: Vec<RowKey> = l
@@ -115,7 +178,7 @@ impl Loaded {
             .into_iter()
             .map(|p| key(Table::Page, p))
             .collect();
-        Self::read(snap, &keys, &mut l)?;
+        Self::read(rows, &keys, &mut l)?;
         if !l.entities.is_empty() {
             // An entity's citations are the evidence behind its values, and its conflicts are the claims those values beat.
             let keys: Vec<RowKey> = l
@@ -127,7 +190,7 @@ impl Loaded {
                 .into_iter()
                 .map(|id| key(Table::Assertion, id))
                 .collect();
-            Self::read(snap, &keys, &mut l)?;
+            Self::read(rows, &keys, &mut l)?;
             let names: Vec<String> = l.entities.values().map(|e| e.type_name.clone()).collect::<BTreeSet<_>>().into_iter().collect();
             l.entity_types = latest_types(snap, &names)?;
         }
@@ -145,7 +208,7 @@ impl Loaded {
                 }
             }
             let keys: Vec<RowKey> = rivals.iter().map(|id| key(Table::Assertion, id)).collect();
-            Self::read(snap, &keys, &mut l)?;
+            Self::read(rows, &keys, &mut l)?;
             let all: Vec<ObjectId> = l.assertions.keys().cloned().collect();
             let evidence = snap.evidence_of(&all)?;
             let keys: Vec<RowKey> = evidence
@@ -156,7 +219,7 @@ impl Loaded {
                 .filter(|id| !l.segments.contains_key(*id))
                 .map(|id| key(Table::Segment, id))
                 .collect();
-            Self::read(snap, &keys, &mut l)?;
+            Self::read(rows, &keys, &mut l)?;
             for e in evidence {
                 l.evidence.entry(e.assertion_id.clone()).or_default().push(e);
             }
@@ -169,7 +232,7 @@ impl Loaded {
             }
         }
         let keys: Vec<RowKey> = wanted.into_iter().collect();
-        Self::read(snap, &keys, &mut l)?;
+        Self::read(rows, &keys, &mut l)?;
         Ok(l)
     }
 
@@ -400,10 +463,15 @@ fn finish(mut item: EvidenceItem) -> EvidenceItem {
 
 /// Keeps what's still current and still passes the filter, as of this snapshot, and builds its item. The index may be behind, and a row may have changed since it was indexed: this is the one place that decides what's returned.
 pub fn fence<S: Snapshot>(snap: &S, candidates: Vec<Fused>, filter: &LexicalFilter) -> Result<Vec<Fenced>, StoreError> {
+    fence_with(&RowReader::plain(snap), candidates, filter)
+}
+
+/// The fence, with its rows read through `rows`.
+pub fn fence_with<S: Snapshot, Ca: Caches>(rows: &RowReader<'_, S, Ca>, candidates: Vec<Fused>, filter: &LexicalFilter) -> Result<Vec<Fenced>, StoreError> {
     if candidates.is_empty() {
         return Ok(vec![]);
     }
-    let loaded = Loaded::load(snap, &candidates)?;
+    let loaded = Loaded::load(rows, &candidates)?;
     let mut out = Vec::with_capacity(candidates.len());
     for fused in candidates {
         let built = match fused.kind {
