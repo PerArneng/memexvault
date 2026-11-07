@@ -9,7 +9,6 @@ use memex_types::{
 };
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
-use std::sync::atomic::Ordering;
 
 /// One field value being proposed, with what it rests on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -197,12 +196,8 @@ impl<E: ServerEdges> Server<E> {
         let preview = entity::preview_change(&snap, name, schema)?;
         let kind = entity::schema_op_kind(&snap, name, schema)?;
         let machine = caller.principal.kind == PrincipalKind::Agent;
-        let risk = governance::risk(
-            &[kind],
-            Author { machine },
-            self.machine_auto_commit.load(Ordering::SeqCst),
-            preview.problem.is_none(),
-        );
+        // A change to a type is never something a machine can earn.
+        let risk = governance::risk(&[kind], Author { machine }, false, preview.problem.is_none());
         Ok(TypeDecision { preview, risk })
     }
 

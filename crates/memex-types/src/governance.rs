@@ -163,6 +163,8 @@ pub enum OpKind {
     EditSource,
     CreateEntity,
     EditEntity,
+    /// A claim arriving as `verified` from a machine, or citing an untrusted source. Only a person can make that so.
+    ClaimVerified,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

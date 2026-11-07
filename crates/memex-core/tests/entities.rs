@@ -821,7 +821,10 @@ fn a_merge_by_an_agent_never_auto_commits() {
     define(&w, &w.human, "Widget", None, widget_v1(), "t");
     let (a, b) = (widget(&w, "e1", "A"), widget(&w, "e2", "B"));
     for earned in [false, true] {
-        w.s.set_machine_auto_commit(earned);
+        if earned {
+            w.s.record_audit_samples(&w.v, &w.agent.principal.id, "", "entity:Widget", 100, 0, "test", "earned for this test")
+                .unwrap();
+        }
         let o = w.s.propose_merge(&w.agent, &w.v, &a, &b, "r".into(), format!("m{earned}")).unwrap();
         assert_eq!(state(&o), ChangeSetState::Pending, "earned {earned}");
         assert_eq!(o.risk, RiskDecision::Review);
@@ -856,7 +859,6 @@ fn a_merge_by_an_agent_never_auto_commits() {
     // An agent can't revert it either.
     assert!(matches!(w.s.revert(&w.agent_admin, &w.v, &cs_id(&o), "r".into()), Err(ServerError::Forbidden)));
     // Nor can it bring a type live, or approve its own.
-    w.s.set_machine_auto_commit(true);
     let o = define(&w, &w.agent, "AgentType", None, widget_v1(), "at");
     assert_eq!(state(&o), ChangeSetState::Pending);
     let preview = w.s.preview_entity_type(&w.agent, &w.v, "AgentType2", &widget_v1()).unwrap();

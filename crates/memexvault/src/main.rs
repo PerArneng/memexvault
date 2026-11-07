@@ -11,7 +11,7 @@ use memexvault::edges::{AdkAgentRunner, FsBlobStore, PgVectorIndex, SystemClock,
 use memexvault::pg_edge::PostgresStore;
 use memexvault::registry_edge::PostgresRegistry;
 use memexvault::rendition_job::{ChildRasterizer, EXIT_UNPARSEABLE, RenditionHandler, WorkerCommand};
-use memexvault::workers::{self, EmbedHandler, ExtractHandler, Pool};
+use memexvault::workers::{self, EmbedHandler, ExtractHandler, Pool, ReviewHandler};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -267,6 +267,7 @@ fn main() -> ExitCode {
                 worker,
                 ocr: Some(ocr),
             };
+            server.set_auto_commit_threshold(f64::from(settings.auto_commit_threshold_permille) / 1000.0);
             let stop = Arc::new(AtomicBool::new(false));
             // One embedding worker: its CPU use is capped by the session's threads, and identical text can't be embedded twice at once.
             let mut pools = vec![
@@ -295,6 +296,24 @@ fn main() -> ExitCode {
                     workers: 1,
                     handler: Arc::new(ExtractHandler { server: server.clone(), agent }),
                 });
+                // Each queued claim is a call, so this is asked for by name. It sees claims and quotes only, and nothing it says can commit anything.
+                if let Some(model) = &settings.reviewer_model {
+                    let reviewer = memex_core::LlmSettings {
+                        model: model.clone(),
+                        ..llm.clone()
+                    };
+                    let agent = match llm_endpoint(&reviewer).and_then(memex_agent_adk::AdkAgent::new) {
+                        Ok(a) => AdkAgentRunner(a),
+                        Err(e) => return fail(e),
+                    };
+                    server.set_reviewer(Some(settings.review));
+                    tracing::info!(model = %model, "the reviewer agent is on");
+                    pools.push(Pool {
+                        kind: memex_core::REVIEW_JOB.into(),
+                        workers: 1,
+                        handler: Arc::new(ReviewHandler { server: server.clone(), agent }),
+                    });
+                }
             }
             let mut threads = workers::start(server.clone(), pools, stop.clone());
             threads.push(workers::start_projector(server.clone(), stop.clone()));

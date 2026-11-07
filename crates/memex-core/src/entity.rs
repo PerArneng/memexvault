@@ -1107,11 +1107,9 @@ pub fn plan_entities<S: Snapshot>(
     Ok(out)
 }
 
-/// Why this ChangeSet needs a person's approval whoever holds admin scope: merges, splits, breaking schema changes, and any type an agent proposed.
+/// Why this ChangeSet needs a person's approval whoever holds admin scope: every always-review kind, and any type an agent proposed.
 pub fn needs_a_person(kinds: &[OpKind], ops: &[Op], proposer_is_machine: bool) -> bool {
-    kinds
-        .iter()
-        .any(|k| matches!(k, OpKind::MergeEntities | OpKind::SplitEntity | OpKind::BreakingSchemaChange))
+    kinds.iter().any(|k| crate::governance::ALWAYS_REVIEW.contains(k))
         || (proposer_is_machine && ops.iter().any(|op| matches!(op, Op::DefineEntityType { .. })))
 }
 

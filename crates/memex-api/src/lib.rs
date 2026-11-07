@@ -2,6 +2,7 @@
 mod entities;
 mod extraction;
 mod pages;
+mod review;
 pub use entities::*;
 pub use extraction::*;
 use memex_types::{
@@ -10,6 +11,7 @@ use memex_types::{
     SignalScores, SourceRow, TokenRow, VaultId, VaultRow,
 };
 pub use pages::*;
+pub use review::*;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -674,6 +676,14 @@ pub struct ChangeSetDto {
     pub commit_seq: Option<u64>,
     pub reverts: Option<String>,
     pub reverted_by: Option<String>,
+    /// What was proposed, when a person changed it before approving. `ops` then holds what was approved.
+    #[schema(value_type = Option<Vec<Object>>)]
+    pub original_ops: Option<Vec<serde_json::Value>>,
+    /// The model behind an extraction, or otherwise whoever proposed it. Absent from before spec 025.
+    pub extractor: Option<String>,
+    pub prompt_version: Option<String>,
+    pub item_types: Option<Vec<String>>,
+    pub source_ids: Option<Vec<String>>,
 }
 
 fn json_text<T: Serialize>(v: &T) -> String {
@@ -703,6 +713,11 @@ impl From<ChangeSetRow> for ChangeSetDto {
             commit_seq: c.commit_seq,
             reverts: c.reverts.map(|i| i.0),
             reverted_by: c.reverted_by.map(|i| i.0),
+            original_ops: c.original_ops.as_deref().map(json_list),
+            extractor: c.origin.as_ref().map(|o| o.extractor.clone()),
+            prompt_version: c.origin.as_ref().map(|o| o.prompt_version.clone()),
+            item_types: c.origin.as_ref().map(|o| o.item_types.clone()),
+            source_ids: c.origin.as_ref().map(|o| o.source_ids.iter().map(|i| i.0.clone()).collect()),
         }
     }
 }
