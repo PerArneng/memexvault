@@ -555,7 +555,9 @@ async fn a_chat_never_exceeds_the_person_asking_and_never_goes_above_propose() {
         ("delete_vault", json!({})),
         ("grant", json!({"scope": "admin"})),
     ];
-    let agent = scripted(vec![tries.iter().map(|(name, args)| ChatCall::calls(name, args.clone())).collect()]);
+    let mut calls: Vec<ChatCall> = tries.iter().map(|(name, args)| ChatCall::calls(name, args.clone())).collect();
+    calls.push(ChatCall::says("I can't do any of that."));
+    let agent = scripted(vec![calls]);
     let (status, frames, _) = w.run(&agent, &w.root, "t2", "r2", "approve it").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(types(&frames).last().unwrap(), "RUN_FINISHED");
@@ -1143,7 +1145,7 @@ async fn every_scripted_scenario_makes_a_well_ordered_stream_kept_for_schema_val
     let fail = |e: AgentError| ChatCall::new(vec![ChatStep::Text("Partly".into()), ChatStep::Fail(e)]);
     let scenarios: Vec<(&str, Option<u64>, Vec<ChatCall>)> = vec![
         ("text", None, vec![ChatCall::new(vec![ChatStep::Text("Hel".into()), ChatStep::Text("lo ✓ å".into())])]),
-        ("empty_reply", None, vec![ChatCall::new(vec![])]),
+        ("says_nothing", None, vec![ChatCall::new(vec![])]),
         ("search_then_answer", None, vec![ChatCall::calls("search", json!({"q": "bridge"})), ChatCall::says("412 m [cite:x].")]),
         ("text_then_tool", None, vec![ChatCall::new(vec![ChatStep::Text("Looking.".into()), ChatStep::Tool { name: "search".into(), args: json!({"q": "bridge"}) }]), ChatCall::says("Done.")]),
         ("two_tools_in_one_call", None, vec![ChatCall::new(vec![ChatStep::Tool { name: "search".into(), args: json!({"q": "a"}) }, ChatStep::Tool { name: "search".into(), args: json!({"q": "a"}) }]), ChatCall::says("Done.")]),
@@ -1166,6 +1168,7 @@ async fn every_scripted_scenario_makes_a_well_ordered_stream_kept_for_schema_val
             ..ChatLimits::default()
         });
         w.budgets(budget, None);
+        w.settle();
         let agent = scripted(vec![calls]);
         let (status, frames, _) = w.run(&agent, &w.root, "thread-1", "run-1", "hello").await;
         assert_eq!(status, StatusCode::OK, "{name}");

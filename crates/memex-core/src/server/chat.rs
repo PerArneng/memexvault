@@ -408,6 +408,8 @@ struct ChatRun<E: ServerEdges, T, S> {
     broken: Mutex<Option<String>>,
     thread_gone: AtomicBool,
     refused: AtomicBool,
+    /// Whether the run's latest model output was text a person can read.
+    replied: AtomicBool,
     model: Mutex<String>,
 }
 
@@ -472,8 +474,11 @@ where
     /// Ends the run in the order a client can rely on: what's kept is kept before it hears the end.
     fn finish(&self, end: ChatEnd) -> Result<(), ServerError> {
         let broken = self.broken.lock().expect("lock").clone();
+        // A model that ends with nothing to show, such as one that only reasoned, or a provider's error that came as an empty stream, would otherwise look like a quiet success.
+        let silent = !self.replied.load(Ordering::SeqCst);
         let (stop, failure) = match (&broken, &end) {
             (Some(why), _) => (None, Some(("unavailable", why.clone()))),
+            (None, ChatEnd::Finished { .. }) if silent => (None, Some(("empty_reply", "the model finished without saying anything".to_string()))),
             (None, ChatEnd::Finished { truncated: true }) => (Some("max_tokens"), None),
             (None, ChatEnd::Finished { truncated: false }) => (None, None),
             (None, ChatEnd::Stopped(_)) if self.refused.load(Ordering::SeqCst) => (Some(ChatStop::Refused.as_str()), None),
@@ -711,6 +716,11 @@ where
 
     fn event(&self, event: RunnerEvent) {
         let holds_result = event.parts.iter().any(|p| matches!(p, RunnerPart::ToolResult { .. }));
+        if holds_result {
+            self.replied.store(false, Ordering::SeqCst);
+        } else if event.parts.iter().any(|p| matches!(p, RunnerPart::Text(t) if !t.trim().is_empty())) {
+            self.replied.store(true, Ordering::SeqCst);
+        }
         let events = {
             let mut stream = self.stream.lock().expect("lock");
             let events = stream.0.on_event(&event);
@@ -776,6 +786,7 @@ where
             broken: Mutex::new(None),
             thread_gone: AtomicBool::new(false),
             refused: AtomicBool::new(false),
+            replied: AtomicBool::new(false),
             model: Mutex::new(agent.model()),
             context,
         });

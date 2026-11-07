@@ -1,0 +1,4 @@
+{"runId":"run-1","threadId":"thread-1","type":"RUN_STARTED"}
+{"messageId":"run-1-m1","role":"assistant","type":"TEXT_MESSAGE_START"}
+{"delta":"Half a","messageId":"run-1-m1","type":"TEXT_MESSAGE_CONTENT"}
+{"code":"provider","message":"The model call failed.","type":"RUN_ERROR"}

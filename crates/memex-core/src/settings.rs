@@ -610,6 +610,38 @@ mod tests {
     }
 
     #[test]
+    fn chat_is_off_unless_a_model_is_named_and_its_limits_parse() {
+        assert_eq!(from(&[]).unwrap().chat_model, None);
+        assert_eq!(from(&[]).unwrap().chat, crate::ChatLimits::default());
+        assert!(matches!(from(&[("MEMEX_CHAT_MODEL", "m")]), Err(SettingsError::Missing { .. })));
+        let s = from(&[
+            ("MEMEX_LLM_PROVIDER", "openai"),
+            ("MEMEX_LLM_MODEL", "m"),
+            ("MEMEX_LLM_BASE_URL", "http://h/v1"),
+            ("MEMEX_CHAT_MODEL", "chatty"),
+            ("MEMEX_CHAT_OUTPUT_TOKENS", "100"),
+            ("MEMEX_CHAT_THREAD_TOKENS", "200"),
+            ("MEMEX_CHAT_DAY_TOKENS", "300"),
+            ("MEMEX_CHAT_TIMEOUT_S", "4"),
+            ("MEMEX_CHAT_MODEL_CALLS", "5"),
+            ("MEMEX_CHAT_MAX_RUNS", "6"),
+        ])
+        .unwrap();
+        assert_eq!(s.chat_model.as_deref(), Some("chatty"));
+        assert_eq!(
+            s.chat,
+            crate::ChatLimits {
+                output_tokens: 100,
+                thread_tokens: 200,
+                day_tokens: 300,
+                timeout_ms: 4_000,
+                max_model_calls: 5,
+                max_runs: 6,
+            }
+        );
+    }
+
+    #[test]
     fn cache_sizes_parse_and_zero_turns_a_tier_off() {
         assert_eq!(from(&[]).unwrap().caches, CacheSettings::default());
         let s = from(&[

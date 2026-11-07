@@ -224,7 +224,7 @@ fn runner_event(ev: &Event) -> RunnerEvent {
 impl AdkAgent {
     /// Blocks until the run ends. A cancel drops the stream, which closes the provider's connection and is what stops its token use.
     pub fn chat(&self, req: &ChatRequest, host: Arc<dyn ChatHost>) -> ChatEnd {
-        self.runtime.block_on(self.chat_run(req, host))
+        self.runtime().block_on(self.chat_run(req, host))
     }
 
     async fn chat_run(&self, req: &ChatRequest, host: Arc<dyn ChatHost>) -> ChatEnd {
