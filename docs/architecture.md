@@ -184,6 +184,19 @@ A new type therefore needs no restart, reindex or schema migration. Spec 023 set
 - **Merges** keep the source's claims where they are: the target lists it in `merged_from`, and the source redirects while the merge stands. A split supersedes the moved claims with copies about the new entity. A revert refuses if a touched row has changed since, like any other.
 - **A person.** An agent can't approve or revert a merge, a split or a breaking change, or approve a type an agent proposed, whatever its scope.
 
+### Pages
+
+Spec 022 settled the details:
+
+- **Markdown is the edit format,** and a page's blocks are that Markdown split at blank lines, with each heading, rule and code fence its own block. A stored body is exactly its blocks joined, so only line endings and blank-line runs are normalized, and parsing it again gives the same blocks. An unchanged or edited block keeps its id across an edit.
+- **A slug belongs to one page,** enforced by a primary key. A rename keeps the old slug as a redirect, and no other page can take it, so a link can't change meaning.
+- **Links are Edges from a page to `slug:<slug>`** as written, with the block as evidence, and a `claim_ref` Edge runs from a page to a claim id. They're resolved when read, so a rename, a new page or a delete writes no one else's rows. Broken links are a query.
+- **A revision is immutable** and outlives its page. Reverting a page makes a new revision from an old one. Reverting a ChangeSet is the general undo, and refuses if a touched row has changed since.
+- **Claim references are read at each request,** following `superseded_by` to what stands now, so a fact can't drift. A page's search text leaves the claim out.
+- **Search documents:** a page's title and headings, and each block with words of its own, under its nearest heading.
+- **Limits:** 256 KB, 2,000 blocks and 2,000 links per page, 100 old slugs. A page over the byte limit is refused before anything reaches the log.
+- **A page from before spec 022** has no slug or blocks until its first edit, and its body stays searchable meanwhile.
+
 ### Time
 
 Valid time is nullable with a precision marker (day, month, unknown). Transaction time is the event sequence plus wall
@@ -277,14 +290,14 @@ Intent is classified by deterministic rules, with no LLM on the read path:
 
 1. Exact id or field lookups go straight to the store.
 2. Otherwise lexical and vector candidates, plus entity lookup, are fused with Reciprocal Rank Fusion.
-3. Optional k-hop expansion over Edges for relational queries.
+3. Optional k-hop expansion over Edges for relational queries. It's off unless a request asks with `expand=on`, as spec 022's measurement missed its latency condition.
 4. Hits are fenced against the store on one snapshot, taken after the candidates, so anything retracted meanwhile is gone.
 5. Optional cross-encoder rerank of the top 20.
 6. Hits are assembled into a token-budgeted evidence package with claims first, citations, conflicts and trust notes.
 
 `GET /api/v1/vaults/{id}/search` is the one search API. Spec 020 has its measurements: recall@20 97.5% on the golden set at 200k, and p95 31 ms with 1 client, but 81 ms with 8, against the ≤50 ms target, which spec 062 reviews. The rules behind it:
 
-- **Filters** are kind, type, source, trust tier, epistemic status and valid time. Type is a segment's media type, a claim's predicate or an entity's type. Kind includes `entity`. The fence checks them again on current rows, so a changed trust tier can't leak.
+- **Filters** are kind, type, source, trust tier, epistemic status and valid time. Type is a segment's media type, a claim's predicate or an entity's type. Kind includes `entity`, `page` and `block`. The fence checks them again on current rows, so a changed trust tier can't leak.
 - **A failed signal degrades the search.** Hybrid answers from the other signal and names the failed one in `degraded`. If both fail, it returns 503, and it never serves unfenced results.
 - **`min_seq`** is read-your-writes for the keyword index. The vector index has seen the event by then, but new text may still wait for its embedding job, and keyword search finds it meanwhile. A sequence the log hasn't reached is a 400, and one the indexes don't reach in time is a 503 with the code `not_caught_up`.
 - **`as_of`** takes an event or a time, and the log answers it. Past rows aren't in any index, so the events up to that point are replayed into memory and scanned for keywords, with no stemming, vectors or reranking. Its cost grows with the log, so at most two run at once, and more return 429.

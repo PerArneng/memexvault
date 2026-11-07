@@ -731,6 +731,8 @@ impl<E: ServerEdges> Server<E> {
         let mut ops = crate::lexical::segment_ops(&snap, &ids_of(memex_types::DocKind::Segment)).map_err(EmbedJobError::retry)?;
         ops.extend(crate::lexical::assertion_ops(&snap, &ids_of(memex_types::DocKind::Claim)).map_err(EmbedJobError::retry)?);
         ops.extend(crate::entity::entity_ops(&snap, &ids_of(memex_types::DocKind::Entity)).map_err(EmbedJobError::retry)?);
+        ops.extend(crate::page::page_ops(&snap, &ids_of(memex_types::DocKind::Page)).map_err(EmbedJobError::retry)?);
+        ops.extend(crate::page::block_ops(&snap, &ids_of(memex_types::DocKind::Block)).map_err(EmbedJobError::retry)?);
         let docs: Vec<memex_types::IndexDoc> = ops
             .into_iter()
             .filter_map(|op| match op {

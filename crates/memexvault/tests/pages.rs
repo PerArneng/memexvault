@@ -11,8 +11,8 @@ use memexvault::edges::{PgVectorIndex, SystemClock, SystemSeed, TantivyIndex};
 use memexvault::pg_edge::PostgresStore;
 use serde_json::json;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 struct Real;
@@ -165,13 +165,24 @@ fn pg_page_no_update_is_lost_under_100_concurrent_editors() {
     let r = rig("pg-page-editors");
     let id = r.create("Contested", "start");
     let started = Instant::now();
+    // Each read takes a connection, and this server is shared, so at most 16 editors read at a time. Writes queue on the vault's lock already, which is what's under test.
+    let readers = Arc::new((Mutex::new(0usize), Condvar::new()));
     let threads: Vec<_> = (0..100)
         .map(|i| {
-            let (s, c, v, id) = (r.s.clone(), r.admin.clone(), r.v.clone(), id.clone());
+            let (s, c, v, id, readers) = (r.s.clone(), r.admin.clone(), r.v.clone(), id.clone(), readers.clone());
             std::thread::spawn(move || {
                 let mut retries = 0u32;
                 loop {
-                    let page = s.get_wiki_page(&c, &v, &id, None).unwrap();
+                    let page = {
+                        let (count, freed) = &*readers;
+                        let mut n = freed.wait_while(count.lock().unwrap(), |n| *n >= 16).unwrap();
+                        *n += 1;
+                        drop(n);
+                        let page = s.get_wiki_page(&c, &v, &id, None).unwrap();
+                        *count.lock().unwrap() -= 1;
+                        freed.notify_one();
+                        page
+                    };
                     let body = format!("{}\nline {i}\n", page.content.body.trim_end());
                     let key = format!("editor-{i}-{}", page.current_revision);
                     match s.propose_page_edit(&c, &v, &id, page.current_revision, body, "r".into(), key, false) {

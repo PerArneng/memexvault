@@ -497,6 +497,28 @@ fn a_new_page_is_searchable_by_its_title_and_its_blocks() {
 }
 
 #[test]
+fn a_page_reaches_the_vector_index_through_its_embed_jobs() {
+    let w = world();
+    let id = w.create("Vector Handbook", "# Part\n\nThe paragraph that gets embedded.\n");
+    let block = w.s.get_wiki_page(&w.reader, &w.v, &id, None).unwrap().content.blocks[1].id.clone();
+    w.settle();
+    let mut q = SearchRequest::new("The paragraph that gets embedded.");
+    q.mode = SearchMode::Vector;
+    assert!(w.s.search(&w.reader, &w.v, &q).unwrap().items.is_empty(), "nothing is embedded yet");
+    let mut jobs = 0;
+    while let Some(job) = w.s.claim_job(&w.v, memex_core::EMBED_JOB, "t").unwrap() {
+        assert!(w.s.run_embed_job(&w.v, &job).unwrap() > 0, "the job finds the page's text");
+        assert!(w.s.complete_job(&w.v, &job, vec![]).unwrap());
+        jobs += 1;
+    }
+    assert!(jobs > 0);
+    w.settle();
+    let items = w.s.search(&w.reader, &w.v, &q).unwrap().items;
+    assert!(items.iter().any(|i| i.id == block && i.kind == ItemKind::Block), "{items:?}");
+    assert!(items.iter().any(|i| i.id == id && i.kind == ItemKind::Page), "{items:?}");
+}
+
+#[test]
 fn a_deleted_page_leaves_search_at_once_and_its_links_read_as_broken_until_a_page_takes_the_slug() {
     let w = world();
     let target = w.create("Target", "findable umbrella");
