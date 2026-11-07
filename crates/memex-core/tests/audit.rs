@@ -1,4 +1,6 @@
 //! The audit agent through the facade, on fakes. Agent replies are scripted, so these tests prove the mechanisms around a model and never a model's judgement.
+// These tests print what they measured.
+#![allow(clippy::disallowed_macros)]
 use memex_core::audit::{self, LlmEvidence, RecallReport};
 use memex_core::testing::{ManualClock, MemBlobStore, MemRegistry, MemStore, ScriptedAgent, SeededRandom};
 use memex_core::{
