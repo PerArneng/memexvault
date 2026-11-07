@@ -201,6 +201,7 @@ Rules:
 - Use only what a segment states. Add nothing from what you know.
 - Every result names the id of the segment it comes from, and a quote: the shortest passage of that segment that states the fact, copied character for character. Never translate, correct or shorten inside a quote.
 - Write values in the language of the segment. Don't translate them.
+- A field marked (date) holds YYYY-MM-DD. If the text doesn't give a full date, leave the field out and state the date as a claim.
 - Use `entities` for things of the types below, one item per thing, with only the fields the text states. All of an item's fields must be stated in its quote. Required fields are marked with *. Leave out a thing whose required fields the text doesn't state.
 - Use `claims` for other facts: `subject` is what it's about, `predicate` the relation and `value` what's said of it.
 - Return empty lists when a segment states nothing.
@@ -221,12 +222,20 @@ fn type_line(t: &EntityTypeRow) -> String {
         .get("properties")
         .and_then(Value::as_object)
         .map(|p| {
-            let mut names: Vec<String> = p
-                .keys()
-                .map(|n| if required.contains(n.as_str()) { format!("{n}*") } else { n.clone() })
+            let mut names: Vec<(&String, String)> = p
+                .iter()
+                .map(|(n, field)| {
+                    let star = if required.contains(n.as_str()) { "*" } else { "" };
+                    let date = if matches!(field.get("format").and_then(Value::as_str), Some("date" | "date-time")) {
+                        " (date)"
+                    } else {
+                        ""
+                    };
+                    (n, format!("{n}{star}{date}"))
+                })
                 .collect();
             names.sort();
-            names
+            names.into_iter().map(|(_, shown)| shown).collect()
         })
         .unwrap_or_default();
     format!("- {}: {}\n", t.name, fields.join(", "))
@@ -261,6 +270,15 @@ pub fn build_prompt(types: &[EntityTypeRow]) -> ExtractionPrompt {
         hash,
         estimated_tokens,
     }
+}
+
+/// The check on a reply. It enforces formats, as the type's own check does at proposal time, so a bad date costs a retry instead of the whole entity.
+pub fn reply_validator(schema: &Value) -> Result<jsonschema::Validator, String> {
+    jsonschema::options()
+        .with_draft(jsonschema::Draft::Draft202012)
+        .should_validate_formats(true)
+        .build(schema)
+        .map_err(|e| e.to_string())
 }
 
 /// A cautious count for deciding what fits, as this side has no tokenizer: the larger of two rough rules, since text with few spaces fools the word count.
@@ -429,7 +447,7 @@ mod tests {
     }
 
     fn valid(schema: &Value, doc: &Value) -> bool {
-        jsonschema::validator_for(schema).unwrap().is_valid(doc)
+        reply_validator(schema).unwrap().is_valid(doc)
     }
 
     #[test]
@@ -463,6 +481,16 @@ mod tests {
         assert!(valid(&more.schema, &good));
         assert!(!valid(&more.schema, &bad));
         assert!(!valid(&plain.schema, &good), "the type isn't known without the registry");
+    }
+
+    #[test]
+    fn a_date_that_isn_t_one_is_refused_by_the_reply_check() {
+        let prompt = build_prompt(seed_types());
+        assert!(prompt.instruction.contains("released (date)"));
+        let with = |date: &str| json!({"claims": [], "entities": {"Product": [{"segment_id": "s1", "quote": "q", "fields": {"name": "A", "released": date}}]}});
+        assert!(valid(&prompt.schema, &with("1982-08-01")));
+        assert!(!valid(&prompt.schema, &with("1982")));
+        assert!(!valid(&prompt.schema, &with("August 1982")));
     }
 
     #[test]

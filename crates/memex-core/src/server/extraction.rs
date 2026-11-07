@@ -521,7 +521,7 @@ impl<E: ServerEdges> Server<E> {
         let types = all_types(&snap)?;
         let prompt = extraction::build_prompt(&types);
         row.prompt_hash = Some(prompt.hash.clone());
-        let validator = jsonschema::validator_for(&prompt.schema).map_err(|e| ExtractJobError::Fatal(format!("the reply schema doesn't compile: {e}")))?;
+        let validator = extraction::reply_validator(&prompt.schema).map_err(|e| ExtractJobError::Fatal(format!("the reply schema doesn't compile: {e}")))?;
         let derivations = all_derivations(&snap, &rendition_id)?;
         let segments = all_segments(&snap, &rendition_id)?;
         drop(snap);
