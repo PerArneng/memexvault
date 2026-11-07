@@ -434,6 +434,24 @@ fn main() -> ExitCode {
                     });
                 }
             }
+            // Asked for by name, like the reviewer. A vault's content goes to this model only once an admin of that vault has turned chat on.
+            let chat_agent = match (&settings.llm, &settings.chat_model) {
+                (Some(llm), Some(model)) => {
+                    let chat = memex_core::LlmSettings {
+                        model: model.clone(),
+                        ..llm.clone()
+                    };
+                    match llm_endpoint(&chat).and_then(memex_agent_adk::AdkAgent::new) {
+                        Ok(a) => {
+                            server.set_chat(Some(settings.chat));
+                            tracing::info!(model = %model, "the chat agent is available");
+                            Some(Arc::new(AdkAgentRunner(a)))
+                        }
+                        Err(e) => return fail(e),
+                    }
+                }
+                _ => None,
+            };
             let mut threads = workers::start(server.clone(), pools, stop.clone());
             threads.push(workers::start_audit_scheduler(server.clone(), stop.clone()));
             threads.push(workers::start_projector(server.clone(), stop.clone()));
@@ -460,7 +478,8 @@ fn main() -> ExitCode {
                             max_response_bytes: memex_mcp::DEFAULT_MAX_RESPONSE_BYTES,
                         },
                     );
-                    runtime.block_on(memex_http::serve_with(server, mcp, &settings.http_bind, shutdown))
+                    let extra = mcp.merge(memex_http::chat_routes(chat_agent));
+                    runtime.block_on(memex_http::serve_with(server, extra, &settings.http_bind, shutdown))
                 }
             };
             stop.store(true, Ordering::Relaxed);

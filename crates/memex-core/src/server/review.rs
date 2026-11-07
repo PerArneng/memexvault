@@ -222,10 +222,11 @@ impl<E: ServerEdges> Server<E> {
         correct: bool,
         now: i64,
     ) -> Result<Vec<Mutation>, ServerError> {
+        // A chat proposal is a machine's, but it's a conversation's answer to one person and can't earn anything. Auto-commit could never take one anyway.
         let Some(origin) = row
             .origin
             .as_ref()
-            .filter(|_| row.proposer_is_machine && caller.principal.kind == PrincipalKind::Human)
+            .filter(|_| row.proposer_is_machine && row.requested_by.is_none() && caller.principal.kind == PrincipalKind::Human)
         else {
             return Ok(vec![]);
         };
@@ -433,8 +434,12 @@ impl<E: ServerEdges> Server<E> {
         let snap = self.engine.store().snapshot(vault)?;
         let changeset = self.changeset(vault, id)?;
         let kinds = governance::kinds_of(&snap, &changeset.ops)?;
-        let needs_a_person = crate::entity::needs_a_person(&kinds, &changeset.ops, changeset.proposer_is_machine);
-        let auto_commit_block = review::auto_commit_block(&snap, &changeset.ops)?;
+        let needs_a_person = changeset.requested_by.is_some() || crate::entity::needs_a_person(&kinds, &changeset.ops, changeset.proposer_is_machine);
+        let auto_commit_block = if changeset.requested_by.is_some() {
+            Some("it came from a chat, and a person approves those".to_string())
+        } else {
+            review::auto_commit_block(&snap, &changeset.ops)?
+        };
         let threshold = self.threshold();
         let combinations = match &changeset.origin {
             Some(origin) => snap

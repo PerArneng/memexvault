@@ -33,3 +33,11 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
+
+# Each worktree builds everything separately, and its target folder reached 22-27 GB. Tests still report file and line.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+[profile.dev.package."*"]
+debug = false

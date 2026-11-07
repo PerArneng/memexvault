@@ -1,11 +1,17 @@
 //! The agent edge's trait and the retry policy around it. Which library or provider answers is the edge's business.
-use memex_types::{AgentError, AgentReply, AgentRequest, AgentUsage};
+use memex_types::{AgentError, AgentReply, AgentRequest, AgentUsage, ChatEnd, ChatHost, ChatRequest};
+use std::sync::Arc;
 
 /// One call to an LLM with no tools and schema-only output. Synchronous, like every trait here, so the async client stays inside its adapter.
 pub trait AgentRunner {
     /// Names the model, for Derivations.
     fn model(&self) -> String;
     fn run(&self, req: &AgentRequest) -> Result<AgentReply, AgentError>;
+    /// One chat run, with tools and streaming events, which blocks until it ends. The host says what each model call may spend, runs the tools and takes the events. An adapter must ask the host before every model call and tell it about each afterwards, however it ended, and must stop promptly once the host says it's cancelled.
+    fn chat(&self, req: &ChatRequest, host: Arc<dyn ChatHost>) -> ChatEnd {
+        let _ = (req, host);
+        ChatEnd::Failed(AgentError::Provider("this agent can't chat".into()))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

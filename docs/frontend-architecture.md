@@ -106,6 +106,7 @@ GPL are denied, as in spec 008.
 | `@tanstack/react-router`, `react-query`, `react-table`, `react-virtual` | 1.170, 5.106, 9.3, 3.14 | MIT | Routes, server state, tables, long lists |
 | `tailwindcss`, `@radix-ui/*`, `lucide-react` | 4.3, 1.x, 1.69 | MIT, MIT, ISC | Styling, accessible primitives, icons |
 | `@ag-ui/client` | 1.0.4 | MIT | Chat protocol, in `edge-agui` only |
+| `@ag-ui/core` | 1.0.4 | MIT | Dev only for now: spec 049's check of the backend's streams against its schemas, in `edge-agui`, with its peer `zod` 3.25.76 (MIT) |
 | `@codemirror/*`, `@lezer/highlight` | 6.x, 1.2 | MIT | Page editor |
 | `react-markdown`, `rehype-sanitize`, `remark-gfm` | 10.1, 6.0, 4.0 | MIT | Rendering Markdown |
 | `openapi-typescript`, `openapi-fetch` | 7.13, 0.17 | MIT | API types and client |

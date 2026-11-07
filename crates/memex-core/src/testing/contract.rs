@@ -51,6 +51,8 @@ pub fn run_all<S: Store>(store: &S, prefix: &str) {
     get_many_keeps_key_order(store, &name("many"));
     paging_returns_everything_once(store, &name("page"));
     compact_changes_no_reads(store, &name("compact"));
+    chat_threads(store, &name("chat"));
+    chat_stays_in_its_vault(store, &name("chat-a"), &name("chat-b"));
     edges_and_sections_read_in_batches(store, &name("sections"));
     entity_reads(store, &name("entity"));
     page_reads(store, &name("wiki"));
@@ -610,6 +612,146 @@ fn compact_changes_no_reads<S: Store>(store: &S, v: &VaultId) {
     assert_eq!(dump_store(&store.snapshot(v).expect("snap")).expect("dump"), before);
     assert_eq!(store.snapshot(v).expect("snap").get(&page_key("a")).expect("get"), None);
     store.close_vault(&lease).expect("close");
+}
+
+fn chat_message(id: &str, role: memex_types::ChatRole, text: &str) -> memex_types::ChatMessage {
+    memex_types::ChatMessage {
+        id: id.into(),
+        run_id: "r".into(),
+        role,
+        text: text.into(),
+        tool_call: None,
+        stop: None,
+        at_ms: 5,
+    }
+}
+
+fn chat_thread(owner: &str, id: &str, at: i64) -> memex_types::ChatThread {
+    memex_types::ChatThread {
+        owner: owner.into(),
+        id: id.into(),
+        title: "t".into(),
+        created_at_ms: at,
+        updated_at_ms: at,
+        tokens: 0,
+    }
+}
+
+fn chat_key(owner: &str, id: &str) -> memex_types::ChatThreadKey {
+    memex_types::ChatThreadKey {
+        owner: owner.into(),
+        id: id.into(),
+    }
+}
+
+fn chat_threads<S: Store>(store: &S, v: &VaultId) {
+    use memex_types::{ChatReservation as R, ChatRole};
+    let lease = store.open_vault(v).expect("open");
+    let (a, b) = (chat_key("ann", "t1"), chat_key("bob", "t1"));
+    assert!(store.chat_create_thread(v, &chat_thread("ann", "t1", 10)).expect("create"));
+    assert!(
+        !store.chat_create_thread(v, &chat_thread("ann", "t1", 99)).expect("again"),
+        "an existing thread stays"
+    );
+    assert_eq!(store.chat_thread(v, &a).expect("get").expect("there").created_at_ms, 10);
+    assert_eq!(
+        store.chat_thread(v, &b).expect("get"),
+        None,
+        "the same id under another owner is another thread"
+    );
+    assert!(store.chat_create_thread(v, &chat_thread("bob", "t1", 20)).expect("create"));
+    assert!(store.chat_create_thread(v, &chat_thread("ann", "t2", 30)).expect("create"));
+    // Newest first, by owner, paged by (updated, id).
+    let mine = store.chat_threads(v, "ann", None, 10).expect("list");
+    assert_eq!(mine.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["t2", "t1"]);
+    let rest = store.chat_threads(v, "ann", Some((30, "t2")), 10).expect("page");
+    assert_eq!(rest.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["t1"]);
+    assert_eq!(store.chat_threads(v, "ann", None, 1).expect("limit").len(), 1);
+    assert!(store.chat_threads(v, "nobody", None, 10).expect("list").is_empty());
+    // Messages keep their order and places across appends.
+    let (one, two, three) = (
+        chat_message("1", ChatRole::User, "hello"),
+        chat_message("2", ChatRole::Assistant, "hi"),
+        chat_message("3", ChatRole::Tool, "data"),
+    );
+    assert!(store.chat_append_messages(v, &a, std::slice::from_ref(&one), 40).expect("append"));
+    assert!(store.chat_append_messages(v, &a, &[two.clone(), three.clone()], 41).expect("append"));
+    let read = store.chat_messages(v, &a, None, 10).expect("read");
+    assert_eq!(
+        read.iter().map(|m| (m.seq, m.message.clone())).collect::<Vec<_>>(),
+        vec![(0, one), (1, two), (2, three)]
+    );
+    assert_eq!(store.chat_messages(v, &a, Some(0), 1).expect("page")[0].seq, 1);
+    assert!(store.chat_messages(v, &b, None, 10).expect("other").is_empty());
+    assert_eq!(store.chat_thread(v, &a).expect("get").expect("there").updated_at_ms, 41);
+    // A rename touches the title and the time only.
+    assert!(store.chat_rename_thread(v, &a, "new", 50).expect("rename"));
+    let renamed = store.chat_thread(v, &a).expect("get").expect("there");
+    assert_eq!((renamed.title.as_str(), renamed.updated_at_ms, renamed.created_at_ms), ("new", 50, 10));
+    assert!(!store.chat_rename_thread(v, &chat_key("ann", "nope"), "x", 1).expect("rename"));
+    // Sources are a set, and find threads across owners.
+    let (s1, s2) = (ObjectId("s1".into()), ObjectId("s2".into()));
+    assert!(store.chat_record_sources(v, &a, &[s1.clone(), s2.clone()]).expect("sources"));
+    assert!(store.chat_record_sources(v, &a, std::slice::from_ref(&s1)).expect("again"));
+    assert!(store.chat_record_sources(v, &b, std::slice::from_ref(&s1)).expect("sources"));
+    assert_eq!(store.chat_sources(v, &a).expect("read"), vec![s1.clone(), s2.clone()]);
+    let citing = store.chat_threads_citing(v, &s1, 10).expect("citing");
+    assert_eq!(citing.len(), 2);
+    assert!(citing.contains(&a) && citing.contains(&b));
+    assert_eq!(store.chat_threads_citing(v, &s2, 10).expect("citing"), vec![a.clone()]);
+    assert_eq!(store.chat_threads_citing(v, &s1, 1).expect("limit").len(), 1);
+    // Reserving charges both or neither.
+    assert_eq!(store.chat_reserve(v, &a, 7, 60, 100, 100).expect("reserve"), R::Reserved);
+    assert_eq!(store.chat_reserve(v, &a, 7, 41, 100, 1000).expect("reserve"), R::ThreadOver);
+    assert_eq!(store.chat_reserve(v, &b, 7, 41, 1000, 100).expect("reserve"), R::DayOver);
+    assert_eq!(store.chat_thread(v, &b).expect("get").expect("there").tokens, 0, "a day over charges no thread");
+    assert_eq!(store.chat_day_tokens(v, 7).expect("day"), 60, "nor the day");
+    assert_eq!(store.chat_reserve(v, &b, 8, 1000, 1000, 1000).expect("another day"), R::Reserved);
+    assert_eq!(store.chat_reserve(v, &chat_key("ann", "gone"), 7, 1, 100, 100).expect("reserve"), R::ThreadGone);
+    assert_eq!(store.chat_day_tokens(v, 7).expect("day"), 60);
+    // Settling moves both, either way.
+    store.chat_settle(v, &a, 7, -20).expect("settle");
+    assert_eq!(store.chat_thread(v, &a).expect("get").expect("there").tokens, 40);
+    assert_eq!(store.chat_day_tokens(v, 7).expect("day"), 40);
+    store.chat_settle(v, &a, 7, 5).expect("settle");
+    assert_eq!(store.chat_day_tokens(v, 7).expect("day"), 45);
+    // Deleting takes the thread's rows, leaves the day's spending, and a late write finds it gone.
+    assert!(store.chat_delete_thread(v, &a).expect("delete"));
+    assert!(!store.chat_delete_thread(v, &a).expect("again"));
+    assert_eq!(store.chat_thread(v, &a).expect("get"), None);
+    assert!(store.chat_messages(v, &a, None, 10).expect("read").is_empty());
+    assert!(store.chat_sources(v, &a).expect("read").is_empty());
+    assert_eq!(store.chat_threads_citing(v, &s2, 10).expect("citing"), vec![]);
+    assert_eq!(store.chat_threads_citing(v, &s1, 10).expect("citing"), vec![b.clone()]);
+    assert_eq!(store.chat_day_tokens(v, 7).expect("day"), 45, "deleting a thread gives nothing back");
+    assert!(
+        !store
+            .chat_append_messages(v, &a, &[chat_message("4", ChatRole::User, "late")], 60)
+            .expect("append")
+    );
+    assert!(!store.chat_record_sources(v, &a, std::slice::from_ref(&s1)).expect("record"));
+    store
+        .chat_settle(v, &a, 7, 5)
+        .expect("a settlement for a thread that has gone still reaches the day");
+    assert_eq!(store.chat_day_tokens(v, 7).expect("day"), 50);
+    // Chat stays off the log.
+    assert_eq!(store.snapshot(v).expect("snap").head().expect("head"), None);
+    // Compacting changes no reads.
+    store.compact(&lease).expect("compact");
+    assert_eq!(store.chat_messages(v, &b, None, 10).expect("read").len(), 0);
+    assert_eq!(store.chat_sources(v, &b).expect("read"), vec![s1]);
+    store.close_vault(&lease).expect("close");
+}
+
+fn chat_stays_in_its_vault<S: Store>(store: &S, a: &VaultId, b: &VaultId) {
+    let (la, lb) = (store.open_vault(a).expect("open"), store.open_vault(b).expect("open"));
+    let key = chat_key("ann", "t");
+    assert!(store.chat_create_thread(a, &chat_thread("ann", "t", 1)).expect("create"));
+    assert_eq!(store.chat_thread(b, &key).expect("get"), None);
+    store.delete_vault(&la).expect("delete");
+    assert!(store.chat_create_thread(b, &chat_thread("ann", "t", 1)).expect("create"));
+    assert!(store.chat_thread(a, &key).is_err(), "a deleted vault's chat has gone with it");
+    store.close_vault(&lb).expect("close");
 }
 
 fn batches_are_all_or_nothing<S: Store>(store: &S, v: &VaultId) {

@@ -164,6 +164,10 @@ impl<E: ServerEdges> Server<E> {
         if caller.principal.kind == PrincipalKind::Human {
             return Ok(());
         }
+        // A person approves what a chat proposes, whatever scope another agent holds.
+        if cs.requested_by.is_some() {
+            return Err(ServerError::Forbidden);
+        }
         let kinds = governance::kinds_of(snap, &cs.ops)?;
         if entity::needs_a_person(&kinds, &cs.ops, cs.proposer_is_machine) {
             return Err(ServerError::Forbidden);

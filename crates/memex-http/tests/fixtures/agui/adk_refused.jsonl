@@ -1,0 +1,2 @@
+{"runId":"run-1","threadId":"thread-1","type":"RUN_STARTED"}
+{"code":"provider","message":"The model call failed.","type":"RUN_ERROR"}

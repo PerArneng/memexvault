@@ -318,6 +318,43 @@ pub const VAULT_MIGRATIONS: &[&str] = &[
         row jsonb NOT NULL
     );
 ",
+    // Spec 049: the chat setting, on the log, and threads, off it. No index holds any content, and a thread's rows go with it. A day's spending has no thread, so deleting one gives nothing back.
+    "
+    CREATE TABLE {s}.chat_settings (
+        id text COLLATE \"C\" PRIMARY KEY,
+        row jsonb NOT NULL
+    );
+    CREATE TABLE {s}.chat_threads (
+        owner_id text COLLATE \"C\" NOT NULL,
+        id text COLLATE \"C\" NOT NULL,
+        title text NOT NULL,
+        created_at_ms bigint NOT NULL,
+        updated_at_ms bigint NOT NULL,
+        tokens bigint NOT NULL DEFAULT 0,
+        PRIMARY KEY (owner_id, id)
+    );
+    CREATE INDEX ON {s}.chat_threads (owner_id, updated_at_ms DESC, id DESC);
+    CREATE TABLE {s}.chat_messages (
+        owner_id text COLLATE \"C\" NOT NULL,
+        thread_id text COLLATE \"C\" NOT NULL,
+        seq bigint NOT NULL,
+        message jsonb NOT NULL,
+        PRIMARY KEY (owner_id, thread_id, seq),
+        FOREIGN KEY (owner_id, thread_id) REFERENCES {s}.chat_threads (owner_id, id) ON DELETE CASCADE
+    );
+    CREATE TABLE {s}.chat_thread_sources (
+        owner_id text COLLATE \"C\" NOT NULL,
+        thread_id text COLLATE \"C\" NOT NULL,
+        source_id text COLLATE \"C\" NOT NULL,
+        PRIMARY KEY (owner_id, thread_id, source_id),
+        FOREIGN KEY (owner_id, thread_id) REFERENCES {s}.chat_threads (owner_id, id) ON DELETE CASCADE
+    );
+    CREATE INDEX ON {s}.chat_thread_sources (source_id);
+    CREATE TABLE {s}.chat_spend (
+        day bigint PRIMARY KEY,
+        tokens bigint NOT NULL
+    );
+",
 ];
 
 pub const LATEST_SERVER_VERSION: i32 = SERVER_MIGRATIONS.len() as i32;

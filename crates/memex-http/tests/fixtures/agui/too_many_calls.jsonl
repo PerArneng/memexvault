@@ -1,0 +1,8 @@
+{"runId":"run-1","threadId":"thread-1","type":"RUN_STARTED"}
+{"messageId":"run-1-m1","role":"assistant","type":"TEXT_MESSAGE_START"}
+{"delta":"1","messageId":"run-1-m1","type":"TEXT_MESSAGE_CONTENT"}
+{"messageId":"run-1-m1","type":"TEXT_MESSAGE_END"}
+{"messageId":"run-1-m2","role":"assistant","type":"TEXT_MESSAGE_START"}
+{"delta":"2","messageId":"run-1-m2","type":"TEXT_MESSAGE_CONTENT"}
+{"messageId":"run-1-m2","type":"TEXT_MESSAGE_END"}
+{"result":{"stop":"turns"},"runId":"run-1","threadId":"thread-1","type":"RUN_FINISHED"}
