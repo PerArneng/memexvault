@@ -111,6 +111,20 @@ impl Snapshot for MemSnapshot<'_> {
             .collect())
     }
 
+    fn derivations_of(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::DerivationRow>, StoreError> {
+        self.count();
+        Ok(self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::Derivation(x) if &x.rendition_id == rendition_id && after.is_none_or(|a| &x.header.id > a) => Some(x.clone()),
+                _ => None,
+            })
+            .take(limit)
+            .collect())
+    }
+
     fn segments_of(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<SegmentRow>, StoreError> {
         self.count();
         Ok(self
@@ -246,13 +260,13 @@ impl Snapshot for MemSnapshot<'_> {
             .collect())
     }
 
-    fn open_job_count(&self) -> Result<u64, StoreError> {
+    fn open_job_count(&self, except_kinds: &[&str]) -> Result<u64, StoreError> {
         self.count();
         Ok(self
             .state
             .rows
             .values()
-            .filter(|r| matches!(r, Row::Job(j) if matches!(j.state, JobState::Queued | JobState::Running)))
+            .filter(|r| matches!(r, Row::Job(j) if matches!(j.state, JobState::Queued | JobState::Running) && !except_kinds.contains(&j.kind.as_str())))
             .count() as u64)
     }
 

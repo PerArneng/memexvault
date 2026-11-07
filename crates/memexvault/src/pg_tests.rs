@@ -508,6 +508,7 @@ impl crate::workers::JobHandler for DerivedOnce {
             return Err(crate::workers::JobFailure {
                 message: "transient".into(),
                 retryable: true,
+                waiting: false,
             });
         }
         let header = memex_types::Header {

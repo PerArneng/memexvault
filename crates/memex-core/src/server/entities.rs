@@ -233,7 +233,7 @@ impl<E: ServerEdges> Server<E> {
         )
     }
 
-    fn field_ops(&self, entity: &ObjectId, fields: &[FieldInput]) -> Vec<Op> {
+    pub(super) fn field_ops(&self, entity: &ObjectId, fields: &[FieldInput]) -> Vec<Op> {
         fields
             .iter()
             .map(|f| claim_op(ObjectId(self.new_id()), entity, f, &mut || ObjectId(self.new_id())))

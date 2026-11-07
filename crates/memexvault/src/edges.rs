@@ -34,6 +34,35 @@ impl Seed for SystemSeed {
     }
 }
 
+/// The LLM behind the core trait. It only translates.
+pub struct AdkAgentRunner(pub memex_agent_adk::AdkAgent);
+
+impl memex_core::AgentRunner for AdkAgentRunner {
+    fn model(&self) -> String {
+        self.0.model().to_string()
+    }
+
+    fn run(&self, req: &memex_types::AgentRequest) -> Result<memex_types::AgentReply, memex_types::AgentError> {
+        self.0.run(req)
+    }
+}
+
+/// The endpoint settings name. Settings have already checked each provider has what it needs.
+pub fn llm_endpoint(llm: &memex_core::LlmSettings) -> Result<memex_agent_adk::LlmEndpoint, String> {
+    match llm.provider.as_str() {
+        "gemini" => Ok(memex_agent_adk::LlmEndpoint::Gemini {
+            api_key: llm.api_key.clone().ok_or("MEMEX_LLM_API_KEY isn't set")?,
+            model: llm.model.clone(),
+        }),
+        "openai" => Ok(memex_agent_adk::LlmEndpoint::OpenAi {
+            base_url: llm.base_url.clone().ok_or("MEMEX_LLM_BASE_URL isn't set")?,
+            api_key: llm.api_key.clone(),
+            model: llm.model.clone(),
+        }),
+        other => Err(format!("unknown LLM provider {other}")),
+    }
+}
+
 /// The default BlobStore: `memex-blob-fs` behind the core trait. It only translates.
 pub struct FsBlobStore<O: memex_blob_fs::FsOps>(pub memex_blob_fs::FsBlobs<O>);
 

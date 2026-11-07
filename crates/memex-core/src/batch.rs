@@ -209,8 +209,12 @@ impl<S: Snapshot> Snapshot for Pending<'_, S> {
     }
 
     /// Committed rows only, as with `changeset_by_key`.
-    fn open_job_count(&self) -> Result<u64, StoreError> {
-        self.base.open_job_count()
+    fn derivations_of(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::DerivationRow>, StoreError> {
+        self.base.derivations_of(rendition_id, after, limit)
+    }
+
+    fn open_job_count(&self, except_kinds: &[&str]) -> Result<u64, StoreError> {
+        self.base.open_job_count(except_kinds)
     }
 
     /// Committed rows only, as with `changeset_by_key`.

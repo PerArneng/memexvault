@@ -10,6 +10,7 @@ mod mem_registry;
 mod mem_store;
 mod mem_vector;
 pub mod registry_contract;
+mod scripted_agent;
 pub mod vector_contract;
 
 pub use fakes::{FakeRasterizer, FakeReranker, ManualClock, SeededRandom};
@@ -18,6 +19,7 @@ pub use mem_lexical::MemLexical;
 pub use mem_registry::MemRegistry;
 pub use mem_store::{CallCounts, MemStore};
 pub use mem_vector::{FakeEmbedder, MemVector, fake_vector, passes};
+pub use scripted_agent::ScriptedAgent;
 
 /// The search edges every test server starts with.
 pub fn mem_search() -> crate::SearchEdges<MemLexical, MemVector, FakeEmbedder, FakeReranker> {

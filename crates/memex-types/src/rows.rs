@@ -1,5 +1,6 @@
 use crate::ObjectId;
 use crate::entity::{EntityRow, EntityTypeRow};
+use crate::extraction::{DerivationRow, ExtractionRow};
 use crate::governance::{ChangeSetState, Epistemic, Op, RiskDecision, Stance, ValidatorResult};
 use crate::jobs::JobRow;
 use crate::rendition::{Anchor, RenditionRow};
@@ -20,10 +21,12 @@ pub enum Table {
     Rendition,
     EntityType,
     Entity,
+    Derivation,
+    Extraction,
 }
 
 impl Table {
-    pub const ALL: [Table; 11] = [
+    pub const ALL: [Table; 13] = [
         Table::Source,
         Table::Page,
         Table::Edge,
@@ -35,6 +38,8 @@ impl Table {
         Table::Rendition,
         Table::EntityType,
         Table::Entity,
+        Table::Derivation,
+        Table::Extraction,
     ];
 }
 
@@ -189,6 +194,8 @@ pub enum Row {
     Rendition(RenditionRow),
     EntityType(EntityTypeRow),
     Entity(EntityRow),
+    Derivation(DerivationRow),
+    Extraction(ExtractionRow),
 }
 
 impl Row {
@@ -205,6 +212,8 @@ impl Row {
             Row::Rendition(r) => &r.header,
             Row::EntityType(r) => &r.header,
             Row::Entity(r) => &r.header,
+            Row::Derivation(r) => &r.header,
+            Row::Extraction(r) => &r.header,
         }
     }
 
@@ -221,6 +230,8 @@ impl Row {
             Row::Rendition(_) => Table::Rendition,
             Row::EntityType(_) => Table::EntityType,
             Row::Entity(_) => Table::Entity,
+            Row::Derivation(_) => Table::Derivation,
+            Row::Extraction(_) => Table::Extraction,
         };
         RowKey {
             table,

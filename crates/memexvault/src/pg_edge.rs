@@ -62,8 +62,12 @@ impl Snapshot for PostgresSnapshot<'_> {
         self.inner.claimable_jobs(kind, now_ms, limit).map_err(|e| translate(&self.vault, e))
     }
 
-    fn open_job_count(&self) -> Result<u64, StoreError> {
-        self.inner.open_job_count().map_err(|e| translate(&self.vault, e))
+    fn derivations_of(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::DerivationRow>, StoreError> {
+        self.inner.derivations_of(rendition_id, after, limit).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn open_job_count(&self, except_kinds: &[&str]) -> Result<u64, StoreError> {
+        self.inner.open_job_count(except_kinds).map_err(|e| translate(&self.vault, e))
     }
 
     fn jobs(&self, kind: Option<&str>, state: Option<JobState>, after: Option<&ObjectId>, limit: usize) -> Result<Vec<JobRow>, StoreError> {

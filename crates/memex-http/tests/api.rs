@@ -972,8 +972,8 @@ fn every_list_route_in_the_openapi_document_has_cursor_limit_and_sort() {
         }
     }
     assert_eq!(
-        lists, 16,
-        "vaults, principals, tokens, changesets, changes, contradictions, sources, jobs, segments, re-anchor failures, flagged pages, two claim lists, entity types, entities and same-as suggestions"
+        lists, 17,
+        "vaults, principals, tokens, changesets, changes, contradictions, sources, jobs, segments, re-anchor failures, flagged pages, two claim lists, entity types, entities, same-as suggestions and derivations"
     );
     // Every route the router serves is documented.
     for p in [
@@ -1592,4 +1592,122 @@ async fn search_returns_an_evidence_package_whose_citations_lead_back_to_the_tex
 
     let (status, _, _) = call(&w.s, "GET", &format!("{base}/search?q=x"), None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+fn extraction_reply(text: &str) -> Result<memex_types::AgentReply, memex_types::AgentError> {
+    Ok(memex_types::AgentReply {
+        json: json!({"claims": [{"segment_id": "s1", "quote": text, "subject": "Fartyget", "predicate": "byggdes i", "value": "Stockholm"}], "entities": {}})
+            .to_string(),
+        usage: memex_types::AgentUsage {
+            input_tokens: 321,
+            output_tokens: 54,
+            thinking_tokens: 7,
+        },
+        tool_calls: 0,
+    })
+}
+
+#[tokio::test]
+async fn extraction_status_derivations_and_a_rerun_through_the_routes_create_no_duplicates() {
+    let s = server();
+    let root = s.bootstrap("root").unwrap().token;
+    let caller = s.authenticate(&root).unwrap();
+    let vault = s.create_vault(&caller, "v").unwrap().id;
+    let base = format!("/api/v1/vaults/{vault}");
+    let text = "Fartyget byggdes i Stockholm. Sedan hände inget mer.";
+    let upload = memex_core::UploadRequest {
+        name: "a.txt".into(),
+        trust_tier: "unverified".into(),
+        metadata: json!({}),
+        replaces: None,
+    };
+    let source = s
+        .upload(&caller, &vault, upload, memex_core::UploadLimits::default(), &mut text.as_bytes())
+        .unwrap()
+        .source
+        .header
+        .id;
+
+    let (code, off, _) = call(&s, "GET", &format!("{base}/sources/{source}/extraction"), Some(&root), None).await;
+    assert_eq!((code, off["state"].as_str()), (StatusCode::OK, Some("not_started")));
+    let (code, refused, _) = call(&s, "POST", &format!("{base}/sources/{source}/extraction/rerun"), Some(&root), None).await;
+    assert_eq!(code, StatusCode::CONFLICT, "{refused}");
+
+    s.set_extraction(Some(memex_core::ExtractionLimits::default()));
+    let job = s.claim_job(&vault, memex_core::RENDITION_JOB, "p").unwrap().unwrap();
+    let rows = s
+        .build_rendition(
+            &vault,
+            &source,
+            memex_core::RenditionInput::Plain {
+                text: text.into(),
+                parser: "plain-1".into(),
+            },
+        )
+        .unwrap();
+    assert!(s.complete_job(&vault, &job, rows).unwrap());
+    let (_, queued, _) = call(&s, "GET", &format!("{base}/sources/{source}/extraction"), Some(&root), None).await;
+    assert_eq!(queued["state"], "queued");
+
+    // The LLM is down: the job waits, and the route says so.
+    let run = |agent: &memex_core::testing::ScriptedAgent| {
+        let held = s.claim_job(&vault, memex_core::EXTRACT_JOB, "w").unwrap().unwrap();
+        match s.run_extraction_job(&vault, &held, agent) {
+            Ok(rows) => assert!(s.complete_job(&vault, &held, rows).unwrap()),
+            Err(memex_core::ExtractJobError::Wait(m)) => assert!(s.wait_job(&vault, &held, &m).unwrap()),
+            Err(e) => panic!("{e:?}"),
+        }
+    };
+    run(&memex_core::testing::ScriptedAgent::new(vec![]));
+    let (_, waiting, _) = call(&s, "GET", &format!("{base}/sources/{source}/extraction"), Some(&root), None).await;
+    assert_eq!(waiting["state"], "waiting");
+    assert!(waiting["waiting_since_ms"].is_i64());
+    assert!(waiting["last_error"].as_str().unwrap().contains("unavailable"));
+    let (_, job, _) = call(&s, "GET", &format!("{base}/jobs/{}", waiting["job_id"].as_str().unwrap()), Some(&root), None).await;
+    assert!(job["waiting_since_ms"].is_i64());
+
+    s.engine().clock().advance(Duration::from_secs(600));
+    run(&memex_core::testing::ScriptedAgent::new(vec![extraction_reply(
+        "Fartyget byggdes i Stockholm.",
+    )]));
+    let (_, done, _) = call(&s, "GET", &format!("{base}/sources/{source}/extraction"), Some(&root), None).await;
+    assert_eq!(done["state"], "done");
+    assert_eq!((done["segments_done"].as_u64(), done["proposed"].as_u64()), (Some(1), Some(1)));
+    assert_eq!(done["tokens"], json!({"input_tokens": 321, "output_tokens": 54, "thinking_tokens": 7}));
+
+    let rendition = done["rendition_id"].as_str().unwrap().to_string();
+    let derivations_path = format!("{base}/renditions/{rendition}/derivations");
+    let (code, page, _) = call(&s, "GET", &derivations_path, Some(&root), None).await;
+    assert_eq!(code, StatusCode::OK);
+    let d = &page["items"][0];
+    assert_eq!(d["tokens"], json!({"input_tokens": 321, "output_tokens": 54, "thinking_tokens": 7}));
+    assert_eq!((d["model"].as_str(), d["outcome"].as_str()), (Some("scripted"), Some("done")));
+    assert_eq!(d["items"][0]["quote"], "Fartyget byggdes i Stockholm.");
+
+    let count = async |path: &str| call(&s, "GET", path, Some(&root), None).await.1["items"].as_array().unwrap().len();
+    let changes = format!("{base}/changesets");
+    assert_eq!((count(&changes).await, count(&derivations_path).await), (1, 1));
+
+    // A re-run through the route costs nothing and repeats nothing.
+    let (code, rerun, _) = call(&s, "POST", &format!("{base}/sources/{source}/extraction/rerun"), Some(&root), None).await;
+    assert_eq!((code, rerun["kind"].as_str()), (StatusCode::OK, Some("extract")));
+    let (code, same, _) = call(&s, "POST", &format!("{base}/sources/{source}/extraction/rerun"), Some(&root), None).await;
+    assert_eq!((code, &same["id"]), (StatusCode::OK, &rerun["id"]), "one run at a time");
+    let agent = memex_core::testing::ScriptedAgent::new(vec![extraction_reply("Fartyget byggdes i Stockholm.")]);
+    run(&agent);
+    assert!(agent.requests().is_empty());
+    assert_eq!((count(&changes).await, count(&derivations_path).await), (1, 1));
+    let (_, again, _) = call(&s, "GET", &format!("{base}/sources/{source}/extraction"), Some(&root), None).await;
+    assert_eq!(again["state"], "done");
+
+    // Without a token, or for what isn't there.
+    let (code, _, _) = call(&s, "GET", &format!("{base}/sources/{source}/extraction"), None, None).await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+    let (code, _, _) = call(&s, "GET", &format!("{base}/sources/nothing/extraction"), Some(&root), None).await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+    let doc = serde_json::to_value(openapi()).unwrap();
+    for path in ["/extraction", "/extraction/rerun"] {
+        assert!(doc["paths"].get(format!("/api/v1/vaults/{{id}}/sources/{{sid}}{path}")).is_some(), "{path}");
+    }
+    assert!(doc["paths"].get("/api/v1/vaults/{id}/renditions/{rid}/derivations").is_some());
 }

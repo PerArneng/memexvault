@@ -491,6 +491,8 @@ fn table_name(t: Table) -> &'static str {
         Table::Rendition => "renditions",
         Table::EntityType => "entity_types",
         Table::Entity => "entities",
+        Table::Derivation => "derivations",
+        Table::Extraction => "extractions",
     }
 }
 
@@ -568,6 +570,18 @@ fn upsert_json_row(t: &mut postgres::Transaction<'_>, cache: &mut Statements, sc
             &[&id, &json, &x.name, &(x.version_no as i32)],
         ),
         Row::Entity(x) => return upsert_entity(t, cache, schema, x, &json),
+        Row::Derivation(x) => exec(
+            t,
+            cache,
+            &format!("INSERT INTO {schema}.derivations (id, row, rendition_id) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET row = excluded.row"),
+            &[&id, &json, &x.rendition_id.0],
+        ),
+        Row::Extraction(_) => exec(
+            t,
+            cache,
+            &format!("INSERT INTO {schema}.extractions (id, row) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET row = excluded.row"),
+            &[&id, &json],
+        ),
         _ => return Ok(()),
     }
     .map_err(backend)?;
@@ -728,7 +742,16 @@ fn json_row(r: &postgres::Row) -> Row {
 fn row_from(table: Table, r: &postgres::Row) -> Row {
     if matches!(
         table,
-        Table::Segment | Table::Assertion | Table::Evidence | Table::ChangeSet | Table::Job | Table::Rendition | Table::EntityType | Table::Entity
+        Table::Segment
+            | Table::Assertion
+            | Table::Evidence
+            | Table::ChangeSet
+            | Table::Job
+            | Table::Rendition
+            | Table::EntityType
+            | Table::Entity
+            | Table::Derivation
+            | Table::Extraction
     ) {
         return json_row(r);
     }
@@ -758,7 +781,16 @@ fn row_from(table: Table, r: &postgres::Row) -> Row {
             to: ObjectId(r.get("to_id")),
             kind: r.get("kind"),
         }),
-        Table::Segment | Table::Assertion | Table::Evidence | Table::ChangeSet | Table::Job | Table::Rendition | Table::EntityType | Table::Entity => {
+        Table::Segment
+        | Table::Assertion
+        | Table::Evidence
+        | Table::ChangeSet
+        | Table::Job
+        | Table::Rendition
+        | Table::EntityType
+        | Table::Entity
+        | Table::Derivation
+        | Table::Extraction => {
             unreachable!("handled above")
         }
     }
@@ -819,6 +851,19 @@ impl PgSnapshot<'_> {
         Ok(rows
             .iter()
             .filter_map(|r| if let Row::Rendition(x) = json_row(r) { Some(x) } else { None })
+            .collect())
+    }
+
+    pub fn derivations_of(&self, rendition_id: &ObjectId, after: Option<&ObjectId>, limit: usize) -> Result<Vec<memex_types::DerivationRow>, PgError> {
+        let sql = format!(
+            "SELECT row FROM {}.derivations WHERE rendition_id = $1 AND ($2::text IS NULL OR id > $2) ORDER BY id LIMIT $3",
+            self.schema
+        );
+        let after = after.map(|a| a.0.as_str());
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&rendition_id.0, &after, &(limit as i64)]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Derivation(x) = json_row(r) { Some(x) } else { None })
             .collect())
     }
 
@@ -928,9 +973,12 @@ impl PgSnapshot<'_> {
         Ok(rows.iter().filter_map(|r| if let Row::Job(j) = json_row(r) { Some(j) } else { None }).collect())
     }
 
-    pub fn open_job_count(&self) -> Result<u64, PgError> {
-        let sql = format!("SELECT count(*) FROM {}.jobs WHERE state IN ('queued', 'running')", self.schema);
-        let row = self.with_statement(&sql, |c, st| c.query_one(st, &[]))?;
+    pub fn open_job_count(&self, except_kinds: &[&str]) -> Result<u64, PgError> {
+        let sql = format!(
+            "SELECT count(*) FROM {}.jobs WHERE state IN ('queued', 'running') AND NOT kind = ANY($1)",
+            self.schema
+        );
+        let row = self.with_statement(&sql, |c, st| c.query_one(st, &[&except_kinds]))?;
         Ok(row.get::<_, i64>(0) as u64)
     }
 
