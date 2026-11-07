@@ -956,7 +956,7 @@ test("item 6: a broken anchor, a superseded rendition, a missing blob, an erased
   await page.goto(docsPath(`/${lost.id}`));
   const failure = page.locator(`[data-page-failure="1"]`);
   await expect(failure).toContainText("Couldn't show page 1.");
-  await expect(failure).not.toContainText("Asking the server why.");
+  await expect(failure).toContainText("the original file may be missing from the server");
   record("the screen on a missing blob", await failure.textContent());
 
   // An erased source. Erasure is spec 030, which isn't built, so the row is removed from this database, and what the server then says is real. The screen says what a token can know.
