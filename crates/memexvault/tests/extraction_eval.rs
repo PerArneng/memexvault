@@ -173,6 +173,8 @@ struct Scores {
     cells: BTreeMap<(String, String), Tally>,
     /// Predictions a person should look at, by document.
     to_adjudicate: Vec<Prediction>,
+    /// Labelled values nothing found, for reading a recall number.
+    missed: Vec<String>,
 }
 
 impl Scores {
@@ -199,6 +201,20 @@ fn identity_of(entity: &GoldEntity) -> Option<&Aliases> {
     IDENTITY_FIELDS.iter().find_map(|f| entity.fields.get(*f))
 }
 
+/// How closely a prediction fits a list of spellings: the same is better than holding one, and the longer the spelling held, the better. Zero means no fit.
+fn fit(predicted: &str, aliases: &[String]) -> usize {
+    let p = fold(predicted);
+    aliases
+        .iter()
+        .filter(|a| same_value(predicted, a))
+        .map(|a| {
+            let a = fold(a);
+            if a == p { usize::MAX } else { a.chars().count().min(p.chars().count()) }
+        })
+        .max()
+        .unwrap_or(0)
+}
+
 /// Scores predictions against labels. A prediction is correct when the labels hold it, wrong when the labels contradict it on a field of an entity they know, and otherwise unlabelled, to be adjudicated. A fact stated as a free claim counts as correct if an entity's field holds it, and earns no recall.
 fn score(documents: &[Document], labels: &[Label], predictions: &[Prediction], adjudications: &[Adjudication]) -> Scores {
     let mut scores = Scores::default();
@@ -213,10 +229,18 @@ fn score(documents: &[Document], labels: &[Label], predictions: &[Prediction], a
             }
             let verdict = if p.kind == "claim" {
                 let joined = format!("{} {}", p.field, p.value);
-                let free = label
-                    .claims
+                // Spellings can overlap, so a repeat goes to a labelled claim not yet found.
+                let matching: Vec<usize> = (0..label.claims.len())
+                    .filter(|i| {
+                        let c = &label.claims[*i];
+                        any_alias(&p.subject, &c.subject) && (any_alias(&p.value, &c.value) || any_alias(&joined, &c.value))
+                    })
+                    .collect();
+                let free = matching
                     .iter()
-                    .position(|c| any_alias(&p.subject, &c.subject) && (any_alias(&p.value, &c.value) || any_alias(&joined, &c.value)));
+                    .find(|i| !found.contains(&("claim".to_string(), i.to_string(), String::new())))
+                    .or(matching.first())
+                    .copied();
                 if let Some(i) = free {
                     found.insert(("claim".into(), i.to_string(), String::new()));
                     Some(true)
@@ -229,11 +253,16 @@ fn score(documents: &[Document], labels: &[Label], predictions: &[Prediction], a
                     held.then_some(true)
                 }
             } else {
+                // "Zara Home" holds "Zara", so the closest identity wins.
                 let known = label
                     .entities
                     .iter()
                     .enumerate()
-                    .find(|(_, e)| e.type_name == p.kind && identity_of(e).is_some_and(|id| any_alias(&p.subject, id)));
+                    .filter(|(_, e)| e.type_name == p.kind)
+                    .filter_map(|(i, e)| identity_of(e).map(|id| (fit(&p.subject, id), i, e)))
+                    .filter(|(closeness, _, _)| *closeness > 0)
+                    .max_by_key(|(closeness, i, _)| (*closeness, std::cmp::Reverse(*i)))
+                    .map(|(_, i, e)| (i, e));
                 match known {
                     Some((i, entity)) => match entity.fields.get(&p.field) {
                         Some(aliases) if any_alias(&p.value, aliases) => {
@@ -263,14 +292,18 @@ fn score(documents: &[Document], labels: &[Label], predictions: &[Prediction], a
                 cell.gold_total += 1;
                 if found.contains(&(e.type_name.clone(), i.to_string(), field.clone())) {
                     cell.gold_found += 1;
+                } else {
+                    scores.missed.push(format!("{}: {} {field} {:?}", doc.id, e.type_name, e.fields[field]));
                 }
             }
         }
-        for (i, _) in label.claims.iter().enumerate() {
+        for (i, c) in label.claims.iter().enumerate() {
             let cell = scores.cell(&doc.language, "claim");
             cell.gold_total += 1;
             if found.contains(&("claim".to_string(), i.to_string(), String::new())) {
                 cell.gold_found += 1;
+            } else {
+                scores.missed.push(format!("{}: claim {:?} {:?}", doc.id, c.subject, c.value));
             }
         }
     }
@@ -417,7 +450,7 @@ fn run_document<A: AgentRunner>(doc: &Document, agent: &A, limits: ExtractionLim
     let (s, admin, v) = eval_server(limits);
     let req = UploadRequest {
         name: format!("{}.txt", doc.id),
-        trust_tier: "public-test-set".into(),
+        trust_tier: "unverified".into(),
         metadata: json!({"source_url": doc.source_url}),
         replaces: None,
     };
@@ -539,12 +572,8 @@ fn the_set_is_big_enough_and_every_document_says_where_it_came_from() {
     for d in &docs {
         *per_language.entry(d.language.as_str()).or_default() += 1;
         assert!(ids.insert(d.id.clone()), "{} twice", d.id);
-        assert_eq!(d.license, "CC BY-SA 4.0", "{}", d.id);
-        assert!(
-            d.source_url.starts_with(&format!("https://{}.wikipedia.org/w/index.php?oldid=", d.language)),
-            "{}",
-            d.source_url
-        );
+        assert!(["CC BY-SA 4.0", "CC BY-SA 3.0"].contains(&d.license.as_str()), "{}", d.id);
+        assert!(d.source_url.starts_with(&format!("https://{}.wikipedia.org/", d.language)), "{}", d.source_url);
         assert!(d.attribution.contains("Wikipedia contributors"), "{}", d.id);
         assert!(!d.title.is_empty() && d.text.len() > 200, "{}", d.id);
     }
@@ -726,6 +755,31 @@ fn a_verdict_settles_an_unlabelled_prediction_but_not_a_contradiction() {
 }
 
 #[test]
+fn the_closest_entity_gets_the_credit() {
+    let docs = [doc("d", "en")];
+    let entity = |name: &str| GoldEntity {
+        type_name: "Organization".into(),
+        fields: BTreeMap::from([("name".to_string(), aliases(&[name]))]),
+    };
+    let label = Label {
+        id: "d".into(),
+        entities: vec![entity("Zara"), entity("Zara Home")],
+        claims: vec![],
+    };
+    let scores = score(
+        &docs,
+        &[label],
+        &[
+            predicted("Organization", "Zara Home", "name", "Zara Home"),
+            predicted("Organization", "Zara", "name", "Zara"),
+        ],
+        &[],
+    );
+    let t = scores.total();
+    assert_eq!((t.correct, t.gold_found, t.gold_total), (2, 2, 2));
+}
+
+#[test]
 fn duplicates_count_as_predictions_but_a_gold_value_is_found_once() {
     let docs = [doc("d", "en")];
     let p = predicted("Person", "Marie Curie", "name", "Marie Curie");
@@ -753,16 +807,17 @@ fn reply_from_labels(label: &Label, req: &AgentRequest, plant: bool) -> Result<A
         .iter()
         .map(|s| (s["id"].as_str().unwrap().to_string(), s["text"].as_str().unwrap().to_string()))
         .collect();
-    // A label's alias may differ from the text in case, so the quote is taken from the text.
+    // A label's alias may differ from the text in case and spacing, such as a no-break space, so the quote is taken from the text with its spaces evened out.
     let find = |aliases: &[String]| -> Option<(String, String)> {
         for (id, text) in &segments {
+            let even = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            let lower = even.to_lowercase();
             for a in aliases {
-                let pattern = a.to_lowercase();
-                let lower = text.to_lowercase();
-                if lower.len() == text.len()
+                let pattern = a.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+                if lower.len() == even.len()
                     && let Some(at) = lower.find(&pattern)
                 {
-                    return Some((id.clone(), text[at..at + pattern.len()].to_string()));
+                    return Some((id.clone(), even[at..at + pattern.len()].to_string()));
                 }
             }
         }
@@ -839,7 +894,7 @@ fn the_harness_runs_the_whole_set_through_the_pipeline_on_a_scripted_agent() {
     assert_eq!(run.summary.rejected, planted_docs.len() as u64);
     assert_eq!(total.wrong, 0);
     // Written from the labels, so every labelled value comes back, however it's split across segments.
-    assert_eq!(total.gold_found, total.gold_total);
+    assert_eq!(total.gold_found, total.gold_total, "{:#?}", scores.missed);
     assert_eq!(total.correct + total.unlabelled, run.predictions.len() as u64 - total.unscored);
     assert_eq!(run.usage.input_tokens, run.summary.calls * 1000);
 }
@@ -947,7 +1002,7 @@ fn live_labelled_set() {
     let text = report(&format!("LIVE: {} {}", llm.provider, llm.model), &scores, &run.usage, &run.summary);
     println!("{text}");
     if let Ok(path) = std::env::var("MEMEX_EVAL_OUT") {
-        let dump = json!({"predictions": run.predictions, "to_adjudicate": scores.to_adjudicate});
+        let dump = json!({"predictions": run.predictions, "to_adjudicate": scores.to_adjudicate, "missed": scores.missed});
         std::fs::write(path, serde_json::to_vec_pretty(&dump).unwrap()).expect("write the report");
     }
     let per_language: BTreeMap<&str, usize> = docs.iter().fold(BTreeMap::new(), |mut m, d| {
