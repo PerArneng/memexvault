@@ -85,13 +85,17 @@ the repository root:
 - The binary: `memexvault migrate`, `memexvault bootstrap <name>`, `memexvault models fetch` and `memexvault serve`, with `MEMEX_DATABASE_URL` set.
 
 The console's commands run from `web/`: `pnpm install`, `pnpm build`,
-`pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm run licenses`, `pnpm run contrast`
-and `pnpm e2e`.
+`pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm run licenses`, `pnpm run contrast`,
+`pnpm e2e`, `pnpm api:gen`, `pnpm api:check` and `pnpm budget`.
 
 The binary embeds `web/apps/console/dist` with `rust-embed`, so run `pnpm build` before `cargo build --release` to ship the console. Cargo notices a new build by itself, and a build without one serves a page that says so.
 `pnpm dev` proxies `/api` to `MEMEX_API_URL`, by default `http://127.0.0.1:8080`, the default `MEMEX_HTTP_BIND`. The proxy keeps everything on one origin, so sign-in works in development, and production needs no CORS.
 The browser session checks run against a real server: with `memexvault serve` running and its token from `bootstrap`,
 `MEMEX_E2E_URL=http://127.0.0.1:<port> MEMEX_E2E_TOKEN=<token> pnpm --filter @memex/console e2e:session`. The URL must use `127.0.0.1`, as the cross-site test uses `localhost` as the other site.
+The shell checks start and kill the server themselves, so nothing else may be serving that address. They use what `memexvault serve` needs, including `MEMEX_MODELS_DIR`, and the embedded console, so run `pnpm build` and `cargo build -p memexvault` first:
+`MEMEX_E2E_BIN=$PWD/../target/debug/memexvault MEMEX_E2E_TOKEN=<token> MEMEX_HTTP_BIND=127.0.0.1:<port> MEMEX_DATABASE_URL=<url> pnpm --filter @memex/console e2e:shell`.
+The API types come from `web/packages/api/openapi.json`. After an API change, with a server running, from `web/`: `MEMEX_OPENAPI_URL=http://127.0.0.1:<port>/api/v1/openapi.json pnpm api:gen`, then `pnpm typecheck`. `pnpm api:check` with the same variable fails on drift from the server, or takes `--from <file>`. `pnpm typecheck` compares only the committed types with the committed document.
+`pnpm budget`, after `pnpm build`, fails when the sign-in route's initial JavaScript passes 200 kB gzip.
 
 Write down what was measured, not just that it was done.
 Run `check` before committing spec changes, and name the spec in the commit
