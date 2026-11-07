@@ -247,6 +247,18 @@ export const PageViewer = ({ pages, allowedDpi, imageUrl, thumbnailUrl, explainF
     return () => observer.disconnect();
   }, [measure, page, pages.length, targetOf]);
 
+  // Near a document's end the column can't scroll far enough, and what's above the viewer can push it off the screen, so the first highlight is brought into view once it's drawn.
+  const shownHighlight = useRef(false);
+  const hasHighlights = highlights.length > 0;
+  useLayoutEffect(() => {
+    if (shownHighlight.current || !hasHighlights) return;
+    const first = scroller.current?.querySelector("[data-highlight]");
+    if (first !== null && first !== undefined) {
+      shownHighlight.current = true;
+      first.scrollIntoView({ block: "center" });
+    }
+  });
+
   // A link inside the same document moves here without remounting. The reader's own scrolling reports the same number, so it does nothing.
   useEffect(() => {
     if (page !== reported.current) {
