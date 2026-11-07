@@ -69,7 +69,7 @@ export const Menu = ({ trigger, items }: { readonly trigger: ReactNode; readonly
   <RadixMenu.Root modal={false}>
     <RadixMenu.Trigger asChild>{trigger}</RadixMenu.Trigger>
     <RadixMenu.Portal>
-      <RadixMenu.Content sideOffset={4} className={`min-w-40 p-1 ${PANEL}`}>
+      <RadixMenu.Content sideOffset={4} className={`max-h-80 min-w-40 overflow-auto p-1 ${PANEL}`}>
         {items.map((item) => (
           <RadixMenu.Item key={item.id} onSelect={item.onSelect} className="cursor-pointer rounded-sm px-2 py-1 text-sm outline-none data-[highlighted]:bg-surface-selected">
             {item.label}
@@ -182,16 +182,17 @@ export const CommandPalette = ({ open, onOpenChange, commands }: { readonly open
   const [active, setActive] = useState(0);
   const returnFocus = useReturnFocus();
   const shown = commands.filter((c) => c.label.toLowerCase().includes(query.toLowerCase()));
+  const change = (next: boolean) => { setQuery(""); setActive(0); onOpenChange(next); };
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, shown.length - 1)); }
     if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
     if (e.key === "Enter") {
       const chosen = shown[active];
-      if (chosen !== undefined) { chosen.run(); onOpenChange(false); }
+      if (chosen !== undefined) { chosen.run(); change(false); }
     }
   };
   return (
-    <RadixDialog.Root open={open} onOpenChange={(next) => { setQuery(""); setActive(0); onOpenChange(next); }}>
+    <RadixDialog.Root open={open} onOpenChange={change}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 bg-surface/80" />
         <RadixDialog.Content {...returnFocus} aria-describedby={undefined} className={`fixed top-24 left-1/2 w-[32rem] max-w-[90vw] -translate-x-1/2 ${PANEL}`}>
@@ -215,7 +216,7 @@ export const CommandPalette = ({ open, onOpenChange, commands }: { readonly open
                 id={`command-${c.id}`}
                 role="option"
                 aria-selected={i === active}
-                onClick={() => { c.run(); onOpenChange(false); }}
+                onClick={() => { c.run(); change(false); }}
                 className={`flex cursor-pointer justify-between rounded-sm px-2 py-1 text-sm ${i === active ? "bg-surface-selected" : ""}`}
               >
                 <span>{c.label}</span>

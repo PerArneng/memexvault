@@ -23,5 +23,8 @@
   },
   "devDependencies": {
     "@types/react": "19.3.0"
-  }
+  },
+  "sideEffects": [
+    "*.css"
+  ]
 }

@@ -1,11 +1,20 @@
-import { Gallery } from "./gallery";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
+import { useState } from "react";
+import { useEngine } from "./engine-context";
+import { ErrorBoundary } from "./error-boundary";
+import { createQueryClient } from "./query";
+import { createAppRouter } from "./router";
 
-// Routing arrives with spec 040. Until then the gallery is the only other view.
-export const App = () =>
-  window.location.pathname === "/gallery" ? (
-    <Gallery />
-  ) : (
-    <main className="p-6">
-      <h1 className="text-2xl font-medium">memexvault</h1>
-    </main>
+export const App = () => {
+  const engine = useEngine();
+  const [queryClient] = useState(() => createQueryClient(engine));
+  const [router] = useState(createAppRouter);
+  return (
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
+};
