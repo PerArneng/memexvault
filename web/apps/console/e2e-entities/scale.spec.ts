@@ -180,45 +180,44 @@ const timedSubmit = (page: Page, expectedKey: string): Promise<Trial> =>
 interface Lane {
   readonly name: string;
   readonly filters: (i: number) => readonly (readonly [string, string, string])[];
+  /** Rows the first page should hold, so a filter that answered wrongly can't pass for a fast one. */
+  readonly rows: (i: number) => number;
 }
 
 const LANES: readonly Lane[] = [
-  { name: "exact, one entity", filters: (i) => [["name", "eq", `gadget ${String((i * 7907) % COUNT)}`]] },
-  { name: "exact, ~0.1%", filters: (i) => [["category", "eq", `category ${String(i)}`]] },
-  { name: "range, ~0.1%", filters: (i) => [["price", "lt", String(90 + i)]] },
-  { name: "range, ~50%", filters: (i) => [["price", "lt", String(50_000 + i)]] },
-  { name: "exact and range", filters: (i) => [["category", "eq", `category ${String(i + 500)}`], ["price", "lt", String(50_000 + i)]] },
+  { name: "exact, one entity", filters: (i) => [["name", "eq", `gadget ${String((i * 7907) % COUNT)}`]], rows: () => 1 },
+  { name: "exact, ~0.1%", filters: (i) => [["category", "eq", `category ${String(i)}`]], rows: () => 200 },
+  { name: "range, ~0.1%", filters: (i) => [["price", "lt", String(90 + i)]], rows: () => 200 },
+  { name: "range, ~50%", filters: (i) => [["price", "lt", String(50_000 + i)]], rows: () => 200 },
+  { name: "exact and range", filters: (i) => [["category", "eq", `category ${String(i + 500)}`], ["price", "lt", String(50_000 + i)]], rows: () => 100 },
 ];
 
 const keyOf = (filters: readonly (readonly [string, string, string])[]) => filters.map(([f, o, v]) => `${f}:${o}:${v}`).join("&");
 const tableUrl = (filters: readonly (readonly [string, string, string])[]) => `/vaults/${vault}/entities/-/types/${TYPE}?f=${encodeURIComponent(filters.map(([f, o, v]) => `${f}:${o}:${v}`).join("\n"))}`;
 
-const measureLanes = async (page: Page, trialsPerLane: number, navigate: boolean) => {
+const measureLanes = async (page: Page, trialsPerLane: number) => {
   const out: Record<string, ReturnType<typeof summary>> = {};
+  const rowCounts: Record<string, { min: number; max: number }> = {};
   const overheads: number[] = [];
   const apis: number[] = [];
   for (const lane of LANES) {
     const laneOverheads: number[] = [];
-    if (navigate) await page.goto(tableUrl(lane.filters(1000)));
-    else {
-      // Keep what's loaded: the rows are read from the URL with no reload.
-      await page.evaluate((to) => {
-        history.replaceState(null, "", to);
-        dispatchEvent(new PopStateEvent("popstate"));
-      }, tableUrl(lane.filters(1000)));
-    }
+    const laneRows: number[] = [];
+    await page.goto(tableUrl(lane.filters(1000)));
     await expect(page.locator(`[data-filter-key="${keyOf(lane.filters(1000))}"][data-settled=true]`)).toBeVisible();
     for (let i = 0; i < trialsPerLane; i += 1) {
       const filters = lane.filters(i);
       for (const [index, [, , value]] of filters.entries()) await page.locator(`#filter-${String(index)}-value`).fill(value);
       const trial = await timedSubmit(page, keyOf(filters));
       laneOverheads.push(trial.total - trial.api);
+      laneRows.push(trial.rows);
       apis.push(trial.api);
     }
     overheads.push(...laneOverheads);
     out[lane.name] = summary(laneOverheads);
+    rowCounts[lane.name] = { min: Math.min(...laneRows), max: Math.max(...laneRows) };
   }
-  return { byLane: out, overhead: summary(overheads), api: summary(apis), raw: overheads };
+  return { byLane: out, rowCounts, overhead: summary(overheads), api: summary(apis), raw: overheads };
 };
 
 test("item 6: filtering 200,000 entities, over the API's time", async ({ page }) => {
@@ -227,9 +226,13 @@ test("item 6: filtering 200,000 entities, over the API's time", async ({ page })
   const loadAtStart = loadAverage();
   await page.goto(`/vaults/${vault}/entities/-/types/${TYPE}`);
   await expect(page.locator("[data-filter-key][data-settled=true]")).toHaveAttribute("data-entity-count", "200");
-  const result = await measureLanes(page, TRIALS_PER_LANE, true);
-  record("item 6 filter overhead, ms", { byLane: result.byLane, overall: result.overhead, api: result.api, rule: OVERHEAD_P95_MS, loadAtStart, loadAtEnd: loadAverage() });
+  const result = await measureLanes(page, TRIALS_PER_LANE);
+  record("item 6 filter overhead, ms", { byLane: result.byLane, rowCounts: result.rowCounts, overall: result.overhead, api: result.api, rule: OVERHEAD_P95_MS, loadAtStart, loadAtEnd: loadAverage() });
   expect(result.raw.length).toBeGreaterThanOrEqual(200);
+  expect(result.rowCounts["exact, one entity"]).toEqual({ min: 1, max: 1 });
+  // A 0.1% filter on 200,000 finds about 200, and 200 is a page.
+  expect(result.rowCounts["exact, ~0.1%"]).toEqual({ min: 200, max: 200 });
+  expect(result.rowCounts["range, ~50%"]).toEqual({ min: 200, max: 200 });
   expect(result.overhead.p95).toBeLessThanOrEqual(OVERHEAD_P95_MS);
 });
 
@@ -275,7 +278,8 @@ test("item 6: scrolling all 200,000 entities", async ({ page }) => {
   record("item 6 scroll", { rows: measured.rows, seconds, gaps: gapSummary, longTasks: measured.tasks.length, longestTask: Math.round(longest), maxRowElements: measured.maxRowElements, heapMb: measured.heapMb, scrollHeight: measured.scrollHeight, rule: { longTask: LONG_TASK_MS, gapP99: FRAME_GAP_P99_MS, rowElements: MAX_ROW_ELEMENTS }, loadAtStart, loadAtEnd: loadAverage() });
 
   // Recorded and outside the rule: the last row is really there, a sort of everything loaded, and filtering with everything loaded.
-  await expect(page.getByRole("row").last()).toContainText("Gadget");
+  // The ids sort the loaded rows before the one real entity the rows were modelled on, so it's the last.
+  await expect(page.getByRole("row").last()).toContainText("zz template");
   const sortMs = await page.evaluate(async () => {
     const started = performance.now();
     document.querySelector<HTMLButtonElement>("[role=columnheader] button")?.click();
@@ -288,6 +292,18 @@ test("item 6: scrolling all 200,000 entities", async ({ page }) => {
   });
   await expect(page.locator("[data-sort-note]")).toContainText(`${COUNT.toLocaleString("en")} rows loaded`);
   record("item 6 outside the rule, sort of all loaded rows, ms", { ms: Math.round(sortMs), load: loadAverage() });
+  await page.getByRole("button", { name: "Clear the sort" }).click();
+  await expect(page.locator("[data-sort-note]")).toHaveCount(0);
+  await page.getByRole("button", { name: "Add a filter" }).click();
+  await page.locator("#filter-0-field").selectOption("category");
+  const loaded: number[] = [];
+  for (let i = 0; i < 20; i += 1) {
+    await page.locator("#filter-0-value").fill(`category ${String(i)}`);
+    const trial = await timedSubmit(page, `category:eq:category ${String(i)}`);
+    loaded.push(trial.total - trial.api);
+    expect(trial.rows).toBe(200);
+  }
+  record("item 6 outside the rule, filter overhead with every row loaded, ms", { ...summary(loaded), load: loadAverage() });
 
   expect(measured.rows).toBeGreaterThanOrEqual(COUNT);
   expect(longest).toBeLessThanOrEqual(LONG_TASK_MS);
