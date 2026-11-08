@@ -131,7 +131,7 @@ test("verification 2: a read token sees no admin navigation, and direct links ex
   await expect(screen(page, "Documents")).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/vaults/${world.alpha.id}/documents$`));
   const links = await nav(page).getByRole("link").allTextContents();
-  expect(links).toEqual(["Documents", "Search", "Pages", "Entities", "Review", "Audit", "Chat"]);
+  expect(links).toEqual(["Ingest", "Documents", "Search", "Pages", "Entities", "Review", "Audit", "Chat"]);
 
   for (const path of ["admin", "admin/tokens"]) {
     await page.goto(`/vaults/${world.alpha.id}/${path}`);
