@@ -20,10 +20,15 @@ const useSourceNames = (vault: VaultId, ids: Iterable<string>) => {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: QUERY_KEYS.sources(vault), queryFn: async () => unwrap(await engine.listSources(vault)), staleTime: 5000 });
   const names = useMemo(() => new Map((query.data?.sources ?? []).map((s) => [s.id, s.name])), [query.data]);
-  const missing = !(query.data?.truncated ?? true) && [...ids].some((id) => !names.has(id));
+  // Each unknown id asks once, so one that the list will never hold can't keep asking.
+  const asked = useRef(new Set<string>());
+  const unknown = query.data === undefined || query.data.truncated ? [] : [...ids].filter((id) => !names.has(id) && !asked.current.has(id));
+  const fetching = query.isFetching;
   useEffect(() => {
-    if (missing && !query.isFetching) void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(vault), refetchType: "active" });
-  }, [missing, query.isFetching, queryClient, vault]);
+    if (unknown.length === 0 || fetching) return;
+    for (const id of unknown) asked.current.add(id);
+    void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.sources(vault), refetchType: "active" });
+  }, [unknown.length, fetching, queryClient, vault]);
   return names;
 };
 

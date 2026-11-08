@@ -31,7 +31,7 @@ describe("activityFrameFromWire", () => {
 
 describe("jobFromWire", () => {
   it("takes the source from the input, and an attempt whatever its shape", () => {
-    const job = jobFromWire({ id: "j", kind: "rendition", state: "dead", input: { source_id: "s" }, max_attempts: 3, next_run_at_ms: 1, created_at_ms: 2, attempts: [{ started_at_ms: 1, finished_at_ms: 2, error: "boom" }, {}] as never[] });
+    const job = jobFromWire({ id: "j", kind: "rendition", state: "dead", input: { source_id: "s" } as never, max_attempts: 3, next_run_at_ms: 1, created_at_ms: 2, attempts: [{ started_at_ms: 1, finished_at_ms: 2, error: "boom" }, {}] as never[] });
     expect(job.sourceId).toBe("s");
     expect(job.attempts).toEqual([{ startedAtMs: 1, finishedAtMs: 2, error: "boom" }, { startedAtMs: 0, finishedAtMs: null, error: null }]);
   });

@@ -49,8 +49,11 @@ describe("the engine's ingest cases", () => {
 
 describe("ingest addresses", () => {
   const parse = (rest: readonly string[], search = "") => {
-    const q = new URLSearchParams(search);
-    return parseIngestRoute(rest, (n) => q.get(n));
+    const pairs = new Map(search.split("&").map((pair) => {
+      const [name = "", value = ""] = pair.split("=");
+      return [name, decodeURIComponent(value)] as const;
+    }));
+    return parseIngestRoute(rest, (n) => pairs.get(n) ?? null);
   };
   it("reads the board, a document and the failed list, and round-trips them", () => {
     for (const route of [
@@ -58,9 +61,9 @@ describe("ingest addresses", () => {
       { kind: "document", id: "s 1" },
       { kind: "failed", state: "cancelled" },
     ] as const) {
-      const url = new URL(ingestPath(vault, route), "http://x");
-      const rest = url.pathname.split("/").slice(4).map(decodeURIComponent);
-      expect(parse(rest, url.search)).toEqual(route);
+      const [path = "", search = ""] = ingestPath(vault, route).split("?");
+      const rest = path.split("/").slice(4).map(decodeURIComponent);
+      expect(parse(rest, search)).toEqual(route);
     }
     expect(parse(["-", "failed"])).toEqual({ kind: "failed", state: "dead" });
   });

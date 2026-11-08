@@ -31,4 +31,10 @@ A user uploads documents and recordings and watches them move through the pipeli
 Resumable uploads, folder sync and source connectors.
 
 ## Result
-Not started.
+In progress on branch `PerArneng/spec-041-ingest-live-ui`.
+
+**Item 2's pass rule, set before anything was measured.** The console runs in Chromium against a real `memexvault serve`, through a proxy that replaces only the two activity routes with a scripted feed on the real wire format: 2,000 documents, 50 frames per second for 300 s, of which 30 are progress on documents on screen, 15 progress on documents off screen, and 5 durable, one of those a second being a frame that makes the console fetch a new snapshot of all 2,000.
+- Event appearance: from the server writing the frame to the frame after the change reaches the page, for every on-screen progress frame and every durable frame. **p95 ≤ 1,000 ms.**
+- Input response: from an `input` event's timestamp to the frame after it is drawn, typing in the board's filter twice a second. **p95 ≤ 100 ms.**
+- Memory: the JS heap after a forced collection, once a minute. **At most 64 MiB at every sample, and the last sample at most 5 MiB above the first, taken after minute 1.**
+- It passes only if all three hold over the whole 300 s. The load average is recorded beside each run. A run on a loaded machine is weak evidence either way, and a miss stays a miss.
