@@ -1,5 +1,6 @@
 use crate::ObjectId;
 use crate::audit::{AuditCheckRow, AuditPlantedRow, AuditRunRow, AuditStateRow};
+use crate::chat::ChatSettingsRow;
 use crate::entity::{EntityRow, EntityTypeRow};
 use crate::extraction::{DerivationRow, ExtractionRow};
 use crate::governance::{ChangeSetState, Epistemic, Op, RiskDecision, Stance, ValidatorResult};
@@ -35,10 +36,11 @@ pub enum Table {
     AuditCheck,
     AuditState,
     AuditPlanted,
+    ChatSettings,
 }
 
 impl Table {
-    pub const ALL: [Table; 22] = [
+    pub const ALL: [Table; 23] = [
         Table::Source,
         Table::Page,
         Table::Edge,
@@ -61,6 +63,7 @@ impl Table {
         Table::AuditCheck,
         Table::AuditState,
         Table::AuditPlanted,
+        Table::ChatSettings,
     ];
 }
 
@@ -215,6 +218,9 @@ pub struct ChangeSetRow {
     /// What was proposed, when a person changed it before approving. `ops` then holds what was approved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original_ops: Option<Vec<Op>>,
+    /// The person whose chat asked for this, when an agent proposed it on their behalf. Such a proposal always waits for a person and never counts as a sample.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_by: Option<String>,
 }
 
 // Rows are handled one at a time on a path that does IO, so the size of the largest kind doesn't matter here.
@@ -244,6 +250,7 @@ pub enum Row {
     AuditCheck(AuditCheckRow),
     AuditState(AuditStateRow),
     AuditPlanted(AuditPlantedRow),
+    ChatSettings(ChatSettingsRow),
 }
 
 impl Row {
@@ -271,6 +278,7 @@ impl Row {
             Row::AuditCheck(r) => &r.header,
             Row::AuditState(r) => &r.header,
             Row::AuditPlanted(r) => &r.header,
+            Row::ChatSettings(r) => &r.header,
         }
     }
 
@@ -298,6 +306,7 @@ impl Row {
             Row::AuditCheck(_) => Table::AuditCheck,
             Row::AuditState(_) => Table::AuditState,
             Row::AuditPlanted(_) => Table::AuditPlanted,
+            Row::ChatSettings(_) => Table::ChatSettings,
         };
         RowKey {
             table,

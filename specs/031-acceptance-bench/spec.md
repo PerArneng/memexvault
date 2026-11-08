@@ -11,7 +11,7 @@ Prove the backend meets the requirements as a whole. Every target in `docs/archi
 one scripted run exercises the full path from upload to audit.
 
 ## Background
-**Depends on:** all of 002-030 except the dropped 010, plus 032. Design: `docs/architecture.md`, sections Requirements, Targets.
+**Depends on:** all of 002-030 except the dropped 010, plus 032 and 082. Design: `docs/architecture.md`, sections Requirements, Targets.
 
 ## Approach
 - A benchmark harness in the repo with a reproducible corpus generator built on public text, and scripts that take the segment count as a parameter, so spec 033 reuses them.

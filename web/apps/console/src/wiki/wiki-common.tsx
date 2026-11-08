@@ -26,7 +26,7 @@ export const useGo = () => {
   }, [router]);
 };
 
-export const AppLink = ({ to, className = LINK_TEXT, children, ...rest }: { readonly to: string; readonly className?: string; readonly children: ReactNode; readonly title?: string; readonly "data-link-state"?: string }) => {
+export const AppLink = ({ to, className = LINK_TEXT, children, ...rest }: { readonly to: string; readonly className?: string; readonly children: ReactNode; readonly title?: string; readonly "data-link-state"?: string; readonly "aria-current"?: "page" | undefined }) => {
   const go = useGo();
   const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;

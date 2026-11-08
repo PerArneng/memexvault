@@ -1,6 +1,7 @@
 //! Pure: request and response types for the HTTP API, and their translation from domain data. No web framework.
 mod activity;
 mod audit;
+mod chat;
 mod convert;
 mod entities;
 mod extraction;
@@ -9,6 +10,7 @@ mod pages;
 mod review;
 pub use activity::*;
 pub use audit::*;
+pub use chat::*;
 pub use convert::*;
 pub use entities::*;
 pub use extraction::*;
@@ -750,6 +752,8 @@ pub struct ChangeSetDto {
     pub prompt_version: Option<String>,
     pub item_types: Option<Vec<String>>,
     pub source_ids: Option<Vec<String>>,
+    /// The person whose chat asked for this, when the proposer is the chat agent acting for them.
+    pub requested_by: Option<String>,
 }
 
 fn json_text<T: Serialize>(v: &T) -> String {
@@ -784,6 +788,7 @@ impl From<ChangeSetRow> for ChangeSetDto {
             prompt_version: c.origin.as_ref().map(|o| o.prompt_version.clone()),
             item_types: c.origin.as_ref().map(|o| o.item_types.clone()),
             source_ids: c.origin.as_ref().map(|o| o.source_ids.iter().map(|i| i.0.clone()).collect()),
+            requested_by: c.requested_by,
         }
     }
 }

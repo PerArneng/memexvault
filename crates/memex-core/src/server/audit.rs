@@ -127,7 +127,8 @@ fn claim_type(claim: &AssertionRow, entities: &HashMap<ObjectId, Row>) -> String
 fn combination_of(claim: &AssertionRow, changeset: Option<&ChangeSetRow>, item_type: &str) -> Option<AuditCombination> {
     let cs = changeset?;
     let origin = cs.origin.as_ref()?;
-    (claim.machine && cs.proposer_is_machine).then(|| AuditCombination {
+    // A chat's proposal earns nothing, and a person approved it, so it has no record for an audit to add to or take away from.
+    (claim.machine && cs.proposer_is_machine && cs.requested_by.is_none()).then(|| AuditCombination {
         extractor: origin.extractor.clone(),
         prompt_version: origin.prompt_version.clone(),
         item_type: item_type.into(),
@@ -1130,6 +1131,7 @@ impl<E: ServerEdges> Server<E> {
             machine: true,
             extractor: combination.map_or(AUDITOR, |c| c.extractor.as_str()),
             prompt_version: combination.map_or("", |c| c.prompt_version.as_str()),
+            requested_by: None,
         };
         self.propose_as(&by, vault, proposal, false).map_err(ExtractJobError::from)
     }
@@ -1581,5 +1583,75 @@ impl<E: ServerEdges> Server<E> {
             ],
         )
         .map_err(ExtractJobError::from)
+    }
+}
+
+#[cfg(test)]
+mod chat_proposal_tests {
+    use super::combination_of;
+    use memex_types::{AssertionRow, ChangeSetRow, ChangeSetState, Epistemic, Header, ObjectId, ProposalOrigin, RiskDecision, Status};
+    use serde_json::json;
+
+    fn header() -> Header {
+        Header {
+            id: ObjectId("x".into()),
+            creator: "c".into(),
+            status: Status::Active,
+            version: 1,
+            acl_id: None,
+        }
+    }
+
+    #[test]
+    fn a_claim_from_a_chat_has_no_combination_so_an_audit_can_neither_earn_nor_revoke_by_it() {
+        let claim = AssertionRow {
+            header: header(),
+            subject: "s".into(),
+            predicate: "p".into(),
+            value: json!("v"),
+            epistemic: Epistemic::Asserted,
+            machine: true,
+            confidence_permille: 0,
+            valid_from_ms: None,
+            valid_to_ms: None,
+            canonical_hash: "h".into(),
+            changeset_id: ObjectId("x".into()),
+            superseded_by: None,
+        };
+        let mut cs = ChangeSetRow {
+            header: header(),
+            state: ChangeSetState::Committed,
+            proposer: "chat-agent".into(),
+            proposer_is_machine: true,
+            rationale: "r".into(),
+            idempotency_key: "k".into(),
+            ops: vec![],
+            validators: vec![],
+            risk: RiskDecision::Review,
+            proposed_at_ms: 0,
+            decided_by: None,
+            decided_at_ms: None,
+            decision_reason: None,
+            commit_seq: None,
+            applied: vec![],
+            inverse: vec![],
+            reverts: None,
+            reverted_by: None,
+            origin: Some(ProposalOrigin {
+                extractor: "chat-agent".into(),
+                prompt_version: "h".into(),
+                item_types: vec!["claim".into()],
+                source_ids: vec![],
+                rendition_ids: vec![],
+            }),
+            original_ops: None,
+            requested_by: None,
+        };
+        assert!(
+            combination_of(&claim, Some(&cs), "claim").is_some(),
+            "the control: an agent's own claim has one"
+        );
+        cs.requested_by = Some("a-person".into());
+        assert_eq!(combination_of(&claim, Some(&cs), "claim"), None);
     }
 }

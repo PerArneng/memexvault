@@ -1,10 +1,13 @@
 mod activity;
 mod audit;
+mod chat;
 mod entities;
 mod extraction;
 mod meeting;
 mod pages;
 mod review;
+
+pub use chat::chat_routes;
 
 use crate::browser::{self, ConsoleLookup};
 use crate::error::ApiError;
@@ -161,6 +164,7 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     let mut doc = ApiDoc::openapi();
     doc.merge(activity::ActivityDoc::openapi());
     doc.merge(audit::AuditDoc::openapi());
+    doc.merge(chat::ChatDoc::openapi());
     doc.merge(entities::EntityDoc::openapi());
     doc.merge(extraction::ExtractionDoc::openapi());
     doc.merge(meeting::MeetingDoc::openapi());
@@ -256,6 +260,7 @@ where
         .route("/tokens/{id}", axum::routing::delete(revoke_token::<E>));
     let api = activity::add_routes::<E>(api);
     let api = audit::add_routes::<E>(api);
+    let api = chat::add_routes::<E>(api);
     let api = entities::add_routes::<E>(api);
     let api = extraction::add_routes::<E>(api);
     let api = meeting::add_routes::<E>(api);
@@ -1592,6 +1597,7 @@ where
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!(addr = %listener.local_addr()?, "listening");
     let hub = Arc::new(crate::activity::Hub::default());
+    // The watcher sets TCP_NODELAY on every connection, which chat's small events need too.
     // Graceful shutdown waits for every open response, and a stream is never done by itself.
     let stopping = hub.clone();
     let shutdown = async move {

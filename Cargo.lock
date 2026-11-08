@@ -2630,6 +2630,7 @@ dependencies = [
  "adk-model",
  "adk-runner",
  "adk-session",
+ "async-trait",
  "futures",
  "memex-types",
  "serde_json",

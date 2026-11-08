@@ -3,6 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@memex/core": "workspace:*", "@memex/types": "workspace:*" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@memex/core": "workspace:*",
+    "@memex/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@ag-ui/core": "1.0.4",
+    "zod": "3.25.76"
+  }
 }

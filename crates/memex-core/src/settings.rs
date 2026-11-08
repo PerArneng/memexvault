@@ -88,6 +88,9 @@ pub struct Settings {
     /// The model the audit's LLM checks call, on the same LLM. Without one, audits run only their deterministic checks, and no tokens are spent.
     pub audit_model: Option<String>,
     pub audit: crate::audit::AuditLimits,
+    /// The model the chat agent calls, on the same LLM. Without one, nothing can answer a chat, whatever a vault's setting.
+    pub chat_model: Option<String>,
+    pub chat: crate::ChatLimits,
     /// What a combination's Wilson bound has to reach to earn auto-commit, in thousandths.
     pub auto_commit_threshold_permille: u16,
     pub transcribe: TranscribeSettings,
@@ -188,6 +191,8 @@ impl Default for Settings {
             reviewer_model: None,
             review: crate::review::ReviewLimits::default(),
             audit_model: None,
+            chat_model: None,
+            chat: crate::ChatLimits::default(),
             audit: crate::audit::AuditLimits::default(),
             auto_commit_threshold_permille: (crate::review::DEFAULT_THRESHOLD * 1000.0) as u16,
             transcribe: TranscribeSettings::default(),
@@ -217,6 +222,8 @@ impl fmt::Debug for Settings {
             .field("reviewer_model", &self.reviewer_model)
             .field("review", &self.review)
             .field("audit_model", &self.audit_model)
+            .field("chat_model", &self.chat_model)
+            .field("chat", &self.chat)
             .field("audit", &self.audit)
             .field("auto_commit_threshold_permille", &self.auto_commit_threshold_permille)
             .field("transcribe", &self.transcribe)
@@ -381,6 +388,20 @@ impl Settings {
                 because: "with MEMEX_AUDIT_MODEL".into(),
             });
         }
+        s.chat_model = text("MEMEX_CHAT_MODEL")?;
+        if s.chat_model.is_some() && s.llm.is_none() {
+            return Err(SettingsError::Missing {
+                name: "MEMEX_LLM_PROVIDER",
+                because: "with MEMEX_CHAT_MODEL".into(),
+            });
+        }
+        let c = &mut s.chat;
+        c.output_tokens = count("MEMEX_CHAT_OUTPUT_TOKENS", text("MEMEX_CHAT_OUTPUT_TOKENS")?, c.output_tokens as usize)? as u32;
+        c.thread_tokens = count("MEMEX_CHAT_THREAD_TOKENS", text("MEMEX_CHAT_THREAD_TOKENS")?, c.thread_tokens as usize)? as u64;
+        c.day_tokens = count("MEMEX_CHAT_DAY_TOKENS", text("MEMEX_CHAT_DAY_TOKENS")?, c.day_tokens as usize)? as u64;
+        c.timeout_ms = count("MEMEX_CHAT_TIMEOUT_S", text("MEMEX_CHAT_TIMEOUT_S")?, (c.timeout_ms / 1000) as usize)? as u64 * 1000;
+        c.max_model_calls = count("MEMEX_CHAT_MODEL_CALLS", text("MEMEX_CHAT_MODEL_CALLS")?, c.max_model_calls as usize)? as u32;
+        c.max_runs = count("MEMEX_CHAT_MAX_RUNS", text("MEMEX_CHAT_MAX_RUNS")?, c.max_runs)?;
         s.audit.output_tokens = count("MEMEX_AUDIT_OUTPUT_TOKENS", text("MEMEX_AUDIT_OUTPUT_TOKENS")?, s.audit.output_tokens as usize)? as u32;
         s.audit.timeout_ms = count("MEMEX_AUDIT_TIMEOUT_S", text("MEMEX_AUDIT_TIMEOUT_S")?, (s.audit.timeout_ms / 1000) as usize)? as u64 * 1000;
         if let Some(v) = text("MEMEX_AUTO_COMMIT_THRESHOLD")? {
@@ -601,6 +622,38 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(s.llm.unwrap().base_url.as_deref(), Some("http://h/v1"));
+    }
+
+    #[test]
+    fn chat_is_off_unless_a_model_is_named_and_its_limits_parse() {
+        assert_eq!(from(&[]).unwrap().chat_model, None);
+        assert_eq!(from(&[]).unwrap().chat, crate::ChatLimits::default());
+        assert!(matches!(from(&[("MEMEX_CHAT_MODEL", "m")]), Err(SettingsError::Missing { .. })));
+        let s = from(&[
+            ("MEMEX_LLM_PROVIDER", "openai"),
+            ("MEMEX_LLM_MODEL", "m"),
+            ("MEMEX_LLM_BASE_URL", "http://h/v1"),
+            ("MEMEX_CHAT_MODEL", "chatty"),
+            ("MEMEX_CHAT_OUTPUT_TOKENS", "100"),
+            ("MEMEX_CHAT_THREAD_TOKENS", "200"),
+            ("MEMEX_CHAT_DAY_TOKENS", "300"),
+            ("MEMEX_CHAT_TIMEOUT_S", "4"),
+            ("MEMEX_CHAT_MODEL_CALLS", "5"),
+            ("MEMEX_CHAT_MAX_RUNS", "6"),
+        ])
+        .unwrap();
+        assert_eq!(s.chat_model.as_deref(), Some("chatty"));
+        assert_eq!(
+            s.chat,
+            crate::ChatLimits {
+                output_tokens: 100,
+                thread_tokens: 200,
+                day_tokens: 300,
+                timeout_ms: 4_000,
+                max_model_calls: 5,
+                max_runs: 6,
+            }
+        );
     }
 
     #[test]

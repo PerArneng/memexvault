@@ -1,5 +1,6 @@
 mod activity;
 mod audit;
+mod chat;
 mod entities;
 mod extraction;
 mod meeting;
@@ -8,6 +9,7 @@ mod review;
 pub use self::meeting::{MediaInfo, MeetingView, ParticipantLink, ParticipantView, TranscriptPage, TranscriptWindow};
 pub use activity::{ActivitySnapshot, DocumentActivity};
 pub use audit::{AuditBudget, AuditRunDetail, TriggerAudit};
+pub use chat::{ChatInput, ChatLimits, ChatSettingsUpdate, ChatToolAnswer, ChatToolContext, ChatView, PreparedChat, new_chat_cancel};
 pub use entities::{
     ClaimEvidence, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, FieldInput, NewEntity, Redirect, SplitRequest, TypeDecision,
 };
@@ -140,6 +142,8 @@ pub enum ServerError {
         reached: Option<u64>,
     },
     AlreadyBootstrapped,
+    /// An admin hasn't turned chat on for this vault. Nothing has reached the LLM.
+    ChatDisabled,
 }
 
 impl fmt::Display for ServerError {
@@ -159,6 +163,7 @@ impl fmt::Display for ServerError {
             Self::Unavailable(m) => write!(f, "{m}"),
             Self::NotCaughtUp { min_seq, reached } => write!(f, "the search index hasn't reached event {min_seq} yet, and is at {reached:?}"),
             Self::AlreadyBootstrapped => f.write_str("this server already has principals"),
+            Self::ChatDisabled => f.write_str("chat is off for this vault. A vault admin can turn it on, which sends its content to the configured LLM"),
         }
     }
 }
@@ -299,6 +304,8 @@ pub(crate) struct ProposedBy<'a> {
     machine: bool,
     extractor: &'a str,
     prompt_version: &'a str,
+    /// The person whose chat asked for this. Such a proposal always waits for a person, whatever its combination has earned.
+    requested_by: Option<&'a str>,
 }
 
 /// The outcome of proposing, including a dry run.
@@ -346,6 +353,10 @@ pub struct Server<E: ServerEdges> {
     /// What workers last said they were doing, in memory.
     progress_board: crate::activity::ProgressBoard,
     activity_limits: Mutex<crate::activity::ActivityLimits>,
+    /// None until the composition root has a chat model.
+    chat_limits: Mutex<Option<ChatLimits>>,
+    /// The runs going now, and how to stop each. Lives in memory, as a run lives no longer than its process.
+    chat_runs: chat::ActiveRuns,
 }
 
 fn sha256_hex(text: &str) -> String {
@@ -396,6 +407,8 @@ impl<E: ServerEdges> Server<E> {
             extraction: Mutex::new(None),
             progress_board: crate::activity::ProgressBoard::default(),
             activity_limits: Mutex::new(crate::activity::ActivityLimits::default()),
+            chat_limits: Mutex::new(None),
+            chat_runs: Arc::default(),
         }
     }
 
@@ -1071,6 +1084,7 @@ impl<E: ServerEdges> Server<E> {
             machine: caller.principal.kind == PrincipalKind::Agent,
             extractor: &caller.principal.id,
             prompt_version: "",
+            requested_by: None,
         };
         self.propose_as(&by, vault, p, dry_run)
     }
@@ -1103,7 +1117,7 @@ impl<E: ServerEdges> Server<E> {
         let kinds = governance::kinds_of(&snap, &p.ops)?;
         let origin = Self::origin_of(&snap, by, &p.ops)?;
         // Only worth reading once nothing else stands in the way.
-        let earned = if machine && passed && !kinds.iter().any(|k| governance::ALWAYS_REVIEW.contains(k)) {
+        let earned = if machine && by.requested_by.is_none() && passed && !kinds.iter().any(|k| governance::ALWAYS_REVIEW.contains(k)) {
             self.earned_auto_commit(&snap, &origin, &p.ops)?
         } else {
             None
@@ -1153,6 +1167,7 @@ impl<E: ServerEdges> Server<E> {
             reverted_by: None,
             origin: Some(origin),
             original_ops: None,
+            requested_by: by.requested_by.map(String::from),
         };
         // A dry run stops before anything is written, but still catches a stale base version.
         let mut mutations = vec![];
@@ -1434,6 +1449,7 @@ impl<E: ServerEdges> Server<E> {
             decided_at_ms: Some(now),
             decision_reason: None,
             commit_seq,
+            requested_by: None,
             applied: target.inverse.clone(),
             inverse,
             reverts: Some(id.clone()),

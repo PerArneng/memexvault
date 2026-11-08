@@ -1905,6 +1905,381 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vaults/{id}/chat/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Runs the agent on one message, as AG-UI events over server-sent events. Anything that refuses it comes back as an ordinary error before the stream opens. A failure afterwards is a `RUN_ERROR` with a code, and a budget, a cancel or a reply cut at its limit is a `RUN_FINISHED` whose `result.stop` says so. Disconnecting cancels the run, and it can't be resumed. Needs read scope, and the agent can propose only with propose scope. A thread is the caller's own, and its id is theirs to choose, so a new id starts a new thread. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RunAgentBody"];
+                };
+            };
+            responses: {
+                /** @description AG-UI events */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/event-stream": string;
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/chat/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether chat is on, what it may spend and what it has spent today. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ChatSettingsDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        /** Turns chat on or off. It's off until an admin turns it on, because on means this vault's content goes to the configured LLM. Needs admin scope. */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ChatSettingsBody"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ChatSettingsDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/chat/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your own threads, the most recently updated first, so the only `sort` here is `updated`. Nobody can list another's, whatever their scope. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number;
+                    /** @description `created`, the default. */
+                    sort?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ChatThreadPage"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/chat/threads/{tid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One of your threads with a page of its messages, oldest first. Anyone else's looks like one that doesn't exist. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number;
+                    /** @description `created`, the default. */
+                    sort?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                    tid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ChatThreadDetail"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /** Deletes one of your threads and everything in it, and stops any run in it. Today's spending stays counted. */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    tid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Renames one of your threads. */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    tid: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ChatRenameBody"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ChatThreadDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/api/v1/vaults/{id}/contradictions": {
         parameters: {
             query?: never;
@@ -6449,6 +6824,8 @@ export interface components {
             proposer: string;
             proposer_is_machine: boolean;
             rationale: string;
+            /** @description The person whose chat asked for this, when the proposer is the chat agent acting for them. */
+            requested_by?: string | null;
             reverted_by?: string | null;
             reverts?: string | null;
             /** @description `auto_commit`, `review` or `reject`. */
@@ -6475,6 +6852,83 @@ export interface components {
         ChangeSetPage: {
             items: components["schemas"]["ChangeSetDto"][];
             next_cursor?: string | null;
+        };
+        ChatMessageDto: {
+            /** Format: int64 */
+            at_ms: number;
+            id: string;
+            /** @description `user`, `assistant` or `tool`. */
+            role: string;
+            run_id: string;
+            /**
+             * Format: int64
+             * @description Its place in the thread, which is also the cursor.
+             */
+            seq: number;
+            /** @description Why this reply ended early, such as `cancelled`, `max_tokens` or `failed`. */
+            stop?: string | null;
+            /** @description What was said, or a tool's answer. */
+            text: string;
+            tool_call?: components["schemas"]["ChatToolCallDto"] | null;
+        };
+        ChatRenameBody: {
+            title: string;
+        };
+        ChatSettingsBody: {
+            /**
+             * Format: int64
+             * @description Tokens per UTC day for this vault, above zero. Absent takes the server's default.
+             */
+            day_token_budget?: number | null;
+            /** @description Turning this on sends the vault's content to the configured LLM. */
+            enabled: boolean;
+            /**
+             * Format: int64
+             * @description Tokens per thread, above zero. Absent takes the server's default.
+             */
+            thread_token_budget?: number | null;
+        };
+        ChatSettingsDto: {
+            /** Format: int64 */
+            day_token_budget?: number | null;
+            /**
+             * Format: int64
+             * @description The limit today's spending is held to.
+             */
+            day_tokens_limit: number;
+            /**
+             * Format: int64
+             * @description What this vault's chat has been charged today, which includes what's reserved for calls still going.
+             */
+            day_tokens_used: number;
+            enabled: boolean;
+            /** Format: int64 */
+            thread_token_budget?: number | null;
+        };
+        ChatThreadDetail: {
+            messages: components["schemas"]["ChatMessageDto"][];
+            next_cursor?: string | null;
+            thread: components["schemas"]["ChatThreadDto"];
+        };
+        ChatThreadDto: {
+            /** Format: int64 */
+            created_at_ms: number;
+            id: string;
+            title: string;
+            /** Format: int64 */
+            tokens: number;
+            /** Format: int64 */
+            updated_at_ms: number;
+        };
+        ChatThreadPage: {
+            items: components["schemas"]["ChatThreadDto"][];
+            next_cursor?: string | null;
+        };
+        ChatToolCallDto: {
+            /** @description As the model wrote them, in JSON. */
+            args: string;
+            id: string;
+            name: string;
         };
         /** @description Where an item's text comes from. `anchor` is always there: `located`, `broken` or `none`. */
         CitationDto: {
@@ -7698,6 +8152,16 @@ export interface components {
         RevisionPage: {
             items: components["schemas"]["RevisionDto"][];
             next_cursor?: string | null;
+        };
+        /** @description AG-UI's `RunAgentInput`. Only the newest user message is read: a thread's history is what the server stored, so a client can't put words in the agent's mouth, and `tools`, `context` and `state` are accepted and ignored. */
+        RunAgentBody: {
+            context?: Record<string, never>[];
+            forwardedProps?: Record<string, never>;
+            messages: Record<string, never>[];
+            runId: string;
+            state?: Record<string, never>;
+            threadId: string;
+            tools?: Record<string, never>[];
         };
         /** @description A suggestion, never a decision: these entities share an identity value or alias. Merging them is a proposal, which a person approves. */
         SameAsDto: {

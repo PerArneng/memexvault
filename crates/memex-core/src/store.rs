@@ -1,7 +1,7 @@
 use memex_types::{
-    AssertionRow, AuditCheckRow, AuditOutcome, BlockRow, ChangeSetRow, DerivationRow, DocKind, DocumentFacts, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow,
-    Event, EvidenceRow, FieldFilter, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, QueueCount, RenditionRow, ReviewFilter, RevisionRow, Row, RowKey,
-    SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
+    AssertionRow, AuditCheckRow, AuditOutcome, BlockRow, ChangeSetRow, ChatMessage, ChatReservation, ChatStored, ChatThread, ChatThreadKey, DerivationRow,
+    DocKind, DocumentFacts, EdgeDirection, EdgeRow, EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, IdDigest, JobRow, JobState, Mutation, ObjectId,
+    PageRow, QueueCount, RenditionRow, ReviewFilter, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Table, ValueMatch, VaultId,
 };
 use std::fmt;
 
@@ -308,6 +308,40 @@ pub trait Store {
     fn bump_cache_generation(&self, lease: &WriterLease) -> Result<u64, StoreError>;
     /// Removes the vault and all its data. The lease ends with it.
     fn delete_vault(&self, lease: &WriterLease) -> Result<(), StoreError>;
-    /// Physically removes deleted data, for erasure. Reads don't change.
+    /// Physically removes deleted data, for erasure. Reads don't change. Deleted chat content has to be gone from the bytes on disk afterwards, not just unreachable.
     fn compact(&self, lease: &WriterLease) -> Result<(), StoreError>;
+
+    // Chat threads stay out of the log, as a copy of a conversation there would outlive its deletion. So these commit on their own, need no lease, and hold nothing between calls: a model call or an open stream keeps no connection.
+    /// Makes the thread if it's new, and says whether it did. An existing one keeps its title.
+    fn chat_create_thread(&self, vault: &VaultId, thread: &ChatThread) -> Result<bool, StoreError>;
+    fn chat_thread(&self, vault: &VaultId, key: &ChatThreadKey) -> Result<Option<ChatThread>, StoreError>;
+    /// One owner's threads, the most recently updated first, after this (updated, id), at most `limit`.
+    fn chat_threads(&self, vault: &VaultId, owner: &str, after: Option<(i64, &str)>, limit: usize) -> Result<Vec<ChatThread>, StoreError>;
+    /// False if there's no such thread.
+    fn chat_rename_thread(&self, vault: &VaultId, key: &ChatThreadKey, title: &str, now_ms: i64) -> Result<bool, StoreError>;
+    /// Takes its messages and recorded sources with it. False if there's no such thread. The day's spending stays, so deleting a thread gives nothing back.
+    fn chat_delete_thread(&self, vault: &VaultId, key: &ChatThreadKey) -> Result<bool, StoreError>;
+    /// Adds these to the end, in order, and marks the thread updated. False if the thread has gone, and then nothing was added.
+    fn chat_append_messages(&self, vault: &VaultId, key: &ChatThreadKey, messages: &[ChatMessage], now_ms: i64) -> Result<bool, StoreError>;
+    /// In order, after this place, at most `limit`.
+    fn chat_messages(&self, vault: &VaultId, key: &ChatThreadKey, after: Option<u64>, limit: usize) -> Result<Vec<ChatStored>, StoreError>;
+    /// Records that these sources' content reached the thread. False if the thread has gone. It's durable when this returns, and a tool's answer waits for that.
+    fn chat_record_sources(&self, vault: &VaultId, key: &ChatThreadKey, sources: &[ObjectId]) -> Result<bool, StoreError>;
+    fn chat_sources(&self, vault: &VaultId, key: &ChatThreadKey) -> Result<Vec<ObjectId>, StoreError>;
+    /// Threads this source's content reached, at most `limit`, whoever owns them.
+    fn chat_threads_citing(&self, vault: &VaultId, source: &ObjectId, limit: usize) -> Result<Vec<ChatThreadKey>, StoreError>;
+    /// Charges these tokens to the thread and the day, all or nothing, only if both stay within their limits. Concurrent runs can't both take what's left.
+    fn chat_reserve(
+        &self,
+        vault: &VaultId,
+        key: &ChatThreadKey,
+        day: i64,
+        tokens: u64,
+        thread_limit: u64,
+        day_limit: u64,
+    ) -> Result<ChatReservation, StoreError>;
+    /// Changes a reservation to what was really spent. A thread that has gone just doesn't get it, and the day always does.
+    fn chat_settle(&self, vault: &VaultId, key: &ChatThreadKey, day: i64, delta: i64) -> Result<(), StoreError>;
+    /// The tokens charged to this day.
+    fn chat_day_tokens(&self, vault: &VaultId, day: i64) -> Result<u64, StoreError>;
 }

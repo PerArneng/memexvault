@@ -4,6 +4,7 @@ mod agent;
 mod audit;
 mod blob;
 mod cache;
+mod chat;
 mod entity;
 mod event;
 mod extraction;
@@ -20,13 +21,19 @@ mod search;
 mod vector;
 
 pub use activity::{DocumentFacts, ProgressEntry, ProgressUpdate, Stage, StageStatus};
-pub use agent::{AgentBudget, AgentError, AgentReply, AgentRequest, AgentUsage};
+pub use agent::{
+    AgentBudget, AgentError, AgentReply, AgentRequest, AgentUsage, ChatEnd, ChatHost, ChatRequest, ChatStop, ChatTurn, RunnerEvent, RunnerPart, ToolDefinition,
+    estimate_tokens,
+};
 pub use audit::{
     AuditCheckKind, AuditCheckResult, AuditCheckRow, AuditCheckStatus, AuditCombination, AuditLlmUse, AuditOutcome, AuditPlantedRow, AuditRunRow,
     AuditRunState, AuditSchedule, AuditStateRow, AuditStop, AuditTrigger, IdDigest, PlantedKind, SiblingCursor, VaultFinding,
 };
 pub use blob::{BlobHash, BlobHashError};
 pub use cache::CacheTierStats;
+pub use chat::{
+    AgUi, CHAT_SETTINGS_ID, ChatErasure, ChatMessage, ChatReservation, ChatRole, ChatSettingsRow, ChatStored, ChatThread, ChatThreadKey, ChatToolCall,
+};
 pub use entity::{
     ALIAS_FIELD, ClaimedValue, ENTITY_SUBJECT_PREFIX, EntityField, EntityRow, EntityTypeRow, FieldFilter, FieldLookup, FieldOp, FieldValueRow, FilterValue,
     SharedValue, ValueMatch, entity_of_subject, entity_subject, entity_type_row_id, type_of_row_id,

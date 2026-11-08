@@ -4,7 +4,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, Request, StatusCode};
 use memex_core::testing::{ManualClock, MemBlobStore, MemRegistry, MemStore, SeededRandom};
 use memex_core::{LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, NewToken, Registry, SESSION_TTL_MS, Server, ServerEdges};
-use memex_http::{CSRF_HEADER, SESSION_COOKIE, openapi, router_with_console};
+use memex_http::{CSRF_HEADER, SESSION_COOKIE, chat_routes, openapi, router_with, router_with_console};
 use memex_types::{PrincipalKind, VaultId};
 use serde_json::{Value, json};
 use std::borrow::Cow;
@@ -67,7 +67,8 @@ fn world() -> World {
 
 impl World {
     fn app(&self) -> Router {
-        router_with_console(self.s.clone(), built_console)
+        // With the route the composition root adds, as the contract documents it.
+        router_with(self.s.clone(), built_console, chat_routes::<Fakes, memex_core::testing::ScriptedChat>(None))
     }
 
     async fn send(&self, req: Request<Body>) -> (StatusCode, Vec<u8>, HeaderMap) {

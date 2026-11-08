@@ -76,6 +76,7 @@ fn table_name(t: Table) -> &'static str {
         Table::AuditCheck => "audit_check",
         Table::AuditState => "audit_state",
         Table::AuditPlanted => "audit_planted",
+        Table::ChatSettings => "chat_settings",
     }
 }
 
@@ -405,7 +406,8 @@ impl DurableFrame {
             | Row::AutoCommit(_)
             | Row::AuditCheck(_)
             | Row::AuditState(_)
-            | Row::AuditPlanted(_) => {}
+            | Row::AuditPlanted(_)
+            | Row::ChatSettings(_) => {}
         }
     }
 }

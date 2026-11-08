@@ -11,6 +11,7 @@ adk-core = "=2.3.0"
 adk-model = { version = "=2.3.0", features = ["gemini", "openai"] }
 adk-runner = "=2.3.0"
 adk-session = "=2.3.0"
+async-trait = "0.1"
 futures = "0.3"
 memex-types.workspace = true
 serde_json.workspace = true
