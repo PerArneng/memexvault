@@ -177,6 +177,15 @@ test.beforeAll(async ({ request }) => {
   readToken = (await makeToken("reader", "read")).token;
 });
 
+test.afterEach(async ({ request }) => {
+  // A rendition job over 60 s loses its lease until spec 82 lands, and runs again for ever, so nothing a test leaves may hold the workers for the next one.
+  for (const state of ["queued", "running"]) {
+    const res = await request.get(url(`/jobs?state=${state}&limit=200`), { headers });
+    if (!res.ok()) continue;
+    for (const job of ((await res.json()) as { items: { id: string }[] }).items) await request.post(url(`/jobs/${job.id}/cancel`), { headers });
+  }
+});
+
 test.afterAll(async () => {
   await proxy.stop();
   await stopServer();
@@ -219,11 +228,15 @@ test("item 1: a digital PDF, a scanned PDF and a recording show every stage in o
   const ids = (await allDocs(request)).map((d) => d.source_id);
   expect(ids.length).toBe(3);
   const row = (id: string) => page.locator(`[data-source-row="${id}"]`);
-  await until("all three documents to finish", 10, async () => {
-    const shown = await Promise.all(ids.map((id) => row(id).getAttribute("data-stage")));
+  let last = "";
+  await until("all three documents to finish", 5, async () => {
+    const shown = await Promise.all(ids.map((id) => row(id).getAttribute("data-stage", { timeout: 5000 }).catch(() => null)));
     if (shown.includes("review")) await approvePending(request);
     const docs = await allDocs(request);
+    last = JSON.stringify({ shown, api: docs.map((d) => `${d.stage}/${d.status}`) });
     return docs.every((d) => d.stage === "done") ? true : null;
+  }).catch((e: unknown) => {
+    throw new Error(`${String(e)}: ${last}`);
   });
   const took = Date.now() - started;
   for (const id of ids) await expect(row(id)).toHaveAttribute("data-stage", "done");
@@ -455,10 +468,12 @@ test("item 6: an oversized file, a disallowed type, a lost connection during upl
   }
 
   // Slowed down, so the cut falls in the middle of the bytes, and there's a bar to see.
-  const body = Buffer.from(`A long text that is cut off on its way ${run}. `.repeat(200_000));
-  const name = `lost-${run}.txt`;
+  // Large enough to outrun what the operating system buffers, and not a real PDF, so it fails at once rather than holding a rendition worker for minutes.
+  const notReallyPdf = (mark: string) => Buffer.concat([Buffer.from(`%PDF-1.4\n${mark} ${run}\n`), Buffer.alloc(10_000_000, 32)]);
+  const body = notReallyPdf("lost");
+  const name = `lost-${run}.pdf`;
   proxy.slowUploads(1024 * 1024);
-  await files.setInputFiles({ name, mimeType: "text/plain", buffer: body });
+  await files.setInputFiles({ name, mimeType: "application/pdf", buffer: body });
   const bar = item(name).getByRole("progressbar");
   await expect(bar).toBeVisible();
   await expect.poll(async () => Number(await bar.getAttribute("aria-valuenow"))).toBeGreaterThan(0);
@@ -481,9 +496,9 @@ test("item 6: an oversized file, a disallowed type, a lost connection during upl
   record("item 6 lost upload", { size: body.length, reachedBeforeCut: reached });
 
   // Moving to another screen and back doesn't stop an upload.
-  const moving = `moving-${run}.txt`;
-  proxy.slowUploads(4 * 1024 * 1024);
-  await files.setInputFiles({ name: moving, mimeType: "text/plain", buffer: Buffer.from(`A text that travels while someone looks elsewhere ${run}. `.repeat(200_000)) });
+  const moving = `moving-${run}.pdf`;
+  proxy.slowUploads(1024 * 1024);
+  await files.setInputFiles({ name: moving, mimeType: "application/pdf", buffer: notReallyPdf("moving") });
   await expect(item(moving).getByRole("progressbar")).toBeVisible();
   await page.getByRole("link", { name: "Documents" }).click();
   await expect(page.getByRole("heading", { name: "Documents", exact: true })).toBeVisible();
@@ -493,9 +508,9 @@ test("item 6: an oversized file, a disallowed type, a lost connection during upl
   await expect(item(moving)).toHaveAttribute("data-upload-state", "stored");
 
   // The same bytes again.
-  await files.setInputFiles({ name: `again-${run}.txt`, mimeType: "text/plain", buffer: body });
-  await expect(item(`again-${run}.txt`)).toHaveAttribute("data-upload-state", "duplicate");
-  await expect(item(`again-${run}.txt`)).toContainText(`already in this vault as ${name}`);
+  await files.setInputFiles({ name: `again-${run}.pdf`, mimeType: "application/pdf", buffer: body });
+  await expect(item(`again-${run}.pdf`)).toHaveAttribute("data-upload-state", "duplicate");
+  await expect(item(`again-${run}.pdf`)).toContainText(`already in this vault as ${name}`);
 
   // Trust tier goes with the file.
   await page.getByRole("radio", { name: "Trusted", exact: true }).check();

@@ -80,7 +80,7 @@ export const createEngine = (edges: Edges): Engine => {
   const notify = () => {
     for (const listener of [...listeners]) listener();
   };
-  let stopUploads = () => undefined as void;
+  let stopUploads: () => void = () => undefined;
   const dispatchSession = (event: SessionEvent) => {
     const next = sessionReducer(session, event);
     if (next !== session) {
