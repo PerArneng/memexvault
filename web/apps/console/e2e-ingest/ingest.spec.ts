@@ -3,7 +3,7 @@ import { appendFileSync, closeSync, ftruncateSync, mkdtempSync, openSync, readFi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type APIResponse, type Page } from "@playwright/test";
 import { startServer, stopServer } from "../e2e-shell/server";
 import { makePdf } from "../e2e-documents/make-pdf";
 import { Proxy } from "./proxy";
@@ -37,8 +37,18 @@ const record = (name: string, value: unknown) => {
 const loadAverage = () => execFileSync("uptime").toString().trim().split("load averages:")[1]?.trim() ?? "unknown";
 const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
+/** The server allows 64 connections over everyone using it, so on a shared machine a busy moment answers 503. The tests' own calls wait that out, and the console has to deal with it. */
+const patiently = async (call: () => Promise<APIResponse>): Promise<APIResponse> => {
+  let res = await call();
+  for (let tries = 0; res.status() === 503 && tries < 60; tries += 1) {
+    await pause(1000);
+    res = await call();
+  }
+  return res;
+};
+
 const get = async <T>(request: APIRequestContext, path: string): Promise<T> => {
-  const res = await request.get(url(path), { headers });
+  const res = await patiently(() => request.get(url(path), { headers }));
   expect(res.status(), `${path}: ${await res.text()}`).toBe(200);
   return (await res.json()) as T;
 };
@@ -70,7 +80,7 @@ const until = async <T>(what: string, minutes: number, look: () => Promise<T | n
 };
 
 const uploadDirect = async (request: APIRequestContext, name: string, data: Buffer | string): Promise<string> => {
-  const res = await request.post(url(`/sources?name=${encodeURIComponent(name)}`), { headers: { ...headers, "content-type": "application/octet-stream" }, data });
+  const res = await patiently(() => request.post(url(`/sources?name=${encodeURIComponent(name)}`), { headers: { ...headers, "content-type": "application/octet-stream" }, data }));
   expect(res.status(), await res.text()).toBeLessThan(300);
   return ((await res.json()) as { source: { id: string } }).source.id;
 };
@@ -78,7 +88,7 @@ const uploadDirect = async (request: APIRequestContext, name: string, data: Buff
 const approvePending = async (request: APIRequestContext) => {
   const { items } = await get<{ items: { id: string; state: string }[] }>(request, "/changesets?state=pending&limit=200");
   for (const c of items) {
-    const res = await request.post(url(`/changesets/${c.id}/approve`), { headers, data: { reason: "the ingest checks" } });
+    const res = await patiently(() => request.post(url(`/changesets/${c.id}/approve`), { headers, data: { reason: "the ingest checks" } }));
     if (!res.ok() && res.status() !== 409) throw new Error(`approve: ${String(res.status())} ${await res.text()}`);
   }
   return items.length;
@@ -161,15 +171,20 @@ test.beforeAll(async ({ request }) => {
   process.env.MEMEX_EXTRACT_TIMEOUT_S = "60";
   console.log(`server started in ${String(await startServer())} ms`);
   await proxy.start();
-  const post = async <T>(path: string, data: unknown): Promise<T> => {
-    const res = await request.post(`${direct}/api/v1${path}`, { headers, data });
+  // A 503 can come after the write, so a new try can't reuse a name.
+  let attempt = 0;
+  const post = async <T>(path: string, data: (mark: string) => unknown): Promise<T> => {
+    const res = await patiently(() => {
+      attempt += 1;
+      return request.post(`${direct}/api/v1${path}`, { headers, data: data(`${run}-${String(attempt)}`) });
+    });
     expect(res.status(), `${path}: ${await res.text()}`).toBe(201);
     return (await res.json()) as T;
   };
-  vault = (await post<{ id: string }>("/vaults", { name: `ingest-${run}` })).id;
+  vault = (await post<{ id: string }>("/vaults", (mark) => ({ name: `ingest-${mark}` }))).id;
   const makeToken = async (name: string, scope: string) => {
-    const principal = await post<{ id: string }>("/principals", { name: `${name}-${run}`, kind: "human" });
-    return { id: principal.id, token: (await post<{ token: string }>("/tokens", { name, principal_id: principal.id, grants: [{ vault_id: vault, scope }] })).token };
+    const principal = await post<{ id: string }>("/principals", (mark) => ({ name: `${name}-${mark}`, kind: "human" }));
+    return { id: principal.id, token: (await post<{ token: string }>("/tokens", () => ({ name, principal_id: principal.id, grants: [{ vault_id: vault, scope }] }))).token };
   };
   const operator = await makeToken("operator", "propose");
   operatorToken = operator.token;
@@ -361,7 +376,8 @@ test("item 4: retry and cancel from the UI, attributed to the signed-in principa
   test.skip(PG_CONTAINER === undefined, "set MEMEX_E2E_PG_CONTAINER, as only the log can show who acted");
   const problems = problemsOf(page);
   await signIn(page, operatorToken);
-  const who = `operator-${run}`;
+  // Its name holds a number that depends on tries, so only the start is known.
+  const who = `operator-${run}-`;
 
   // A running job: pages of pixels, so OCR takes a while, and cancel comes during it.
   const pages = Array.from({ length: 6 }, (_, i) => `Page ${String(i + 1)} of a scan about the old lighthouse and its keepers, written out in full for the OCR to read.`);
@@ -376,7 +392,7 @@ test("item 4: retry and cancel from the UI, attributed to the signed-in principa
   await card.getByRole("button", { name: "Cancel job" }).click();
   await card.getByRole("button", { name: "Yes, cancel the job" }).click();
   await expect(page.locator(`[data-job="${jobId}"]`)).toHaveAttribute("data-job-state", "cancelled");
-  await expect(page.locator(`[data-job="${jobId}"]`)).toContainText(`Cancelled by ${who}.`);
+  await expect(page.locator(`[data-job="${jobId}"]`)).toContainText(`Cancelled by ${who}`);
   await expect(view).toHaveAttribute("data-status", "failed");
   const cancelledAt = Date.now();
 
@@ -390,7 +406,7 @@ test("item 4: retry and cancel from the UI, attributed to the signed-in principa
   // A cancelled job can be retried, and then it finishes.
   await page.locator(`[data-job="${jobId}"]`).getByRole("button", { name: "Retry job" }).click();
   await page.locator(`[data-job="${jobId}"]`).getByRole("button", { name: "Yes, retry" }).click();
-  await expect(page.locator(`[data-job="${jobId}"]`)).toContainText(`Retried by ${who}.`);
+  await expect(page.locator(`[data-job="${jobId}"]`)).toContainText(`Retried by ${who}`);
   await until("the retried job to finish", 5, async () => ((await get<{ state: string }>(request, `/jobs/${jobId}`)).state === "done" ? true : null));
 
   // A dead job: bytes that say they're a PDF and aren't, and it fails for good.
@@ -408,7 +424,7 @@ test("item 4: retry and cancel from the UI, attributed to the signed-in principa
   const attemptsBefore = await dead.locator("[data-attempt]").count();
   await dead.getByRole("button", { name: "Retry job" }).click();
   await dead.getByRole("button", { name: "Yes, retry" }).click();
-  await expect(dead).toContainText(`Retried by ${who}.`);
+  await expect(dead).toContainText(`Retried by ${who}`);
   await until("the second try to fail", 5, async () => ((await get<{ state: string; attempts: unknown[] }>(request, `/jobs/${deadJob}`)).attempts.length > attemptsBefore ? true : null));
   await until("it to be dead again", 5, async () => ((await get<{ state: string }>(request, `/jobs/${deadJob}`)).state === "dead" ? true : null));
 
@@ -418,7 +434,7 @@ test("item 4: retry and cancel from the UI, attributed to the signed-in principa
   await page.getByLabel(`Select job ${deadJob}`).check();
   await page.getByRole("button", { name: /Retry selected \(1\)/ }).click();
   await page.getByRole("button", { name: "Yes, retry 1" }).click();
-  await expect(page.getByText(`Retried 1 by ${who}.`)).toBeVisible();
+  await expect(page.getByText(`Retried 1 by ${who}`)).toBeVisible();
 
   const scanEvents = actorsOf(jobId);
   const deadEvents = actorsOf(deadJob);
