@@ -236,7 +236,8 @@ export interface MarkedPart {
 
 const MAX_TERMS = 32;
 const MIN_TERM_CHARS = 3;
-const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
+// Only what's special. In a pattern with the `u` flag, escaping anything else, such as `-`, is itself a syntax error.
+const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 
 /** The words and quoted phrases of a query, longest first, so a phrase wins over a word inside it. */
 export const queryTerms = (q: string): readonly string[] => {

@@ -10,7 +10,7 @@ export const DebugPanel = ({ result }: { readonly result: EvidencePackage }) => 
   const cell = "px-2 py-1 text-left font-normal";
   return (
     <section aria-label="Debug details" data-debug-panel={true} className="flex flex-col gap-3 rounded-lg border border-border bg-surface-raised p-3 text-xs">
-      <h3 className="text-sm font-medium">Debug</h3>
+      <h2 className="text-sm font-medium">Debug</h2>
       <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1">
         <dt className="text-text-muted">Planner's path</dt><dd className="font-mono" data-debug-path={true}>{result.path}</dd>
         <dt className="text-text-muted">Weights</dt><dd className="font-mono">lexical {debug.lexicalWeight.toFixed(2)}, vector {debug.vectorWeight.toFixed(2)}</dd>

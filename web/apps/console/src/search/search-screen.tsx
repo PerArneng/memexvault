@@ -58,7 +58,7 @@ const Results = ({ vault, state, answered, loading }: { readonly vault: VaultId;
       ) : null}
       {groups.map((group) => (
         <section key={group.kind} aria-labelledby={`group-${group.kind}`} className="flex flex-col gap-2">
-          <h3 id={`group-${group.kind}`} className="text-sm font-medium text-text-muted">{group.label}</h3>
+          <h2 id={`group-${group.kind}`} className="text-sm font-medium text-text-muted">{group.label}</h2>
           {group.items.map((item) => <ResultItem key={`${item.kind}-${item.id}`} vault={vault} item={item} terms={terms} names={names} showScore={state.debug} />)}
         </section>
       ))}
@@ -180,7 +180,7 @@ const SearchScreen = ({ vault, rest }: { readonly vault: VaultId; readonly rest:
           if (draft !== state.q) {
             written.current = draft;
             go(searchPath(vault, changeSearch(state, { q: draft })));
-          } else void query.refetch();
+          } else if (request !== null) void query.refetch();
         }}
         className="flex flex-col gap-1"
       >

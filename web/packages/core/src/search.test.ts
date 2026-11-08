@@ -207,6 +207,12 @@ describe("markTerms", () => {
     expect(joined(markTerms(text, ["a.b"]))).toBe(text);
   });
 
+  it.each(["XK-2024/17", "a-b", "x/y", "a_b:c", "#tag", "50%", "~a", "<b>", "'q'", "a,b;c", "=&!", "\\", "^$", "{1}", "]["])("doesn't fail on the punctuation of %s", (term) => {
+    expect(marked(markTerms(`before ${term} after`, [term]))).toEqual([term]);
+    expect(marked(markQuote(`before ${term} after`, term))).toEqual([term]);
+    expect(queryTerms(term).every((t) => joined(markTerms(term, [t])) === term)).toBe(true);
+  });
+
   it("gives the text whole when there's nothing to mark", () => {
     expect(markTerms("abc", [])).toEqual([{ text: "abc", marked: false }]);
     expect(markTerms("", [])).toEqual([]);

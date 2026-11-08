@@ -76,9 +76,9 @@ export const ResultItem = memo(function ResultItem({ vault, item, terms, names, 
   const parts = useMemo(() => markTerms(item.text, terms), [item.text, terms]);
   const to = itemPath(vault, item);
   return (
-    <article data-item-kind={item.kind} data-item-id={item.id} className="flex flex-col gap-2 rounded-lg border border-border bg-surface-raised p-3">
+    <article data-item-kind={item.kind} data-item-id={item.id} className="flex flex-col gap-2 rounded-lg border border-border bg-surface-raised p-3 [content-visibility:auto] [contain-intrinsic-size:auto_16rem]">
       <header className="flex flex-wrap items-center gap-2">
-        {item.heading !== null && <h4 className="text-sm font-medium break-words">{item.heading}</h4>}
+        {item.heading !== null && <h3 className="text-sm font-medium break-words">{item.heading}</h3>}
         {[...new Set(item.trustTiers)].map((tier) => <TierOf key={tier} tier={tier} />)}
         <EpistemicOf status={item.epistemic} />
         {item.conflicts.length > 0 && <ConflictBadge count={item.conflicts.length} />}
@@ -97,7 +97,7 @@ export const ResultItem = memo(function ResultItem({ vault, item, terms, names, 
       )}
       {item.conflicts.length > 0 && (
         <section aria-label="What disagrees with this" data-conflicts={true} className="flex flex-col gap-2 rounded-md border border-warning bg-warning-surface p-2">
-          <h5 className="text-xs font-medium text-warning">Disagrees with</h5>
+          <h4 className="text-xs font-medium text-warning">Disagrees with</h4>
           <ul className="flex flex-col gap-2">
             {item.conflicts.map((conflict) => <ConflictRow key={conflict.claimId} vault={vault} conflict={conflict} names={names} />)}
           </ul>
