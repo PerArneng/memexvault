@@ -84,9 +84,7 @@ const PdfView = ({ vault, source, renditions, route, highlights }: PdfProps) => 
   const explainFailure = useCallback(async (page: number, dpi: number) => {
     const result = await engine.checkPageImage(vault, source.id, page, dpi);
     if (result.ok) return "The server has it now, so this may have been a passing fault.";
-    // The server says "try again" for a file it can't read, whether that's passing or not, so the screen says what lasting would mean.
-    const lasting = result.failure.kind === "http" && result.failure.status === 503 ? " If this keeps happening, the original file may be missing from the server." : "";
-    return `${failureText(result.failure)}${lasting}`;
+    return failureText(result.failure);
   }, [engine, source.id, vault]);
   const textAngle = useCallback((page: { readonly index: number; readonly rotation: number }) => pageAngle(rendition, page), [rendition]);
 

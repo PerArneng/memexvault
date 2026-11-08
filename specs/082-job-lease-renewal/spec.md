@@ -34,6 +34,10 @@ This spec's wave runs after spec 038's, which adds progress reporting to the sam
 5. A source whose blob file is deleted gets the new error through HTTP, with a status that isn't 503, and spec 042's bad-case check shows the server's message.
 6. Spec 042's `e2e:documents` passes without its SQL keep-alive.
 
+**Pass rules, set before measuring.**
+- **Item 1:** on a release build through `memexvault serve`, with no keep-alive, the 400-page PDF's rendition job ends `done` with exactly 1 attempt, and the source has 400 pages. The attempt has to last over 60 s to show anything. If it doesn't, the run still counts as ingested, and it's recorded as not having tested the lease. Time and load are recorded, with no limit on the time.
+- **Item 3:** kill -9 a `memexvault serve` process during the same PDF's rendition, once its lease has been renewed at least once. At the kill, `lease_until_ms` is at most 60 s ahead. A new `serve` started straight away gives the job a second attempt no sooner than that time and no later than 60 s after the kill plus the new server's start-up and 5 s for polling. That attempt ends `done`, and the first attempt reads "the worker stopped without finishing".
+
 ## Out of scope
 Making OCR or hidden-text sampling faster, changing `LEASE_MS` itself, and recovering a deleted blob.
 

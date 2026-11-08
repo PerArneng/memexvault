@@ -1113,7 +1113,7 @@ where
     Ok(Json(j.into()))
 }
 
-#[utoipa::path(get, path = "/api/v1/vaults/{id}/renditions/{rid}", tag = "renditions", params(("id" = String, Path), ("rid" = String, Path)), responses((status = 200, body = memex_api::RenditionDetail), (status = 404, body = ErrorBody)))]
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/renditions/{rid}", tag = "renditions", params(("id" = String, Path), ("rid" = String, Path)), responses((status = 200, body = memex_api::RenditionDetail), (status = 404, body = ErrorBody), (status = 410, body = ErrorBody)))]
 async fn get_rendition<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
@@ -1302,7 +1302,7 @@ where
     Ok(Json(memex_api::FlaggedPagePage { items, next_cursor }))
 }
 
-#[utoipa::path(get, path = "/api/v1/vaults/{id}/assertions/{aid}/lineage", tag = "provenance", params(("id" = String, Path), ("aid" = String, Path)), responses((status = 200, body = memex_api::LineageDto), (status = 404, body = ErrorBody)))]
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/assertions/{aid}/lineage", tag = "provenance", params(("id" = String, Path), ("aid" = String, Path)), responses((status = 200, body = memex_api::LineageDto), (status = 404, body = ErrorBody), (status = 410, body = ErrorBody)))]
 async fn get_lineage<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
@@ -1317,7 +1317,7 @@ where
     Ok(Json(memex_api::lineage_dto(l)))
 }
 
-#[utoipa::path(get, path = "/api/v1/vaults/{id}/assertions/{aid}/evidence/{eid}/highlight", tag = "provenance", params(("id" = String, Path), ("aid" = String, Path), ("eid" = String, Path)), responses((status = 200, body = memex_api::HighlightDto), (status = 404, body = ErrorBody)))]
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/assertions/{aid}/evidence/{eid}/highlight", tag = "provenance", params(("id" = String, Path), ("aid" = String, Path), ("eid" = String, Path)), responses((status = 200, body = memex_api::HighlightDto), (status = 404, body = ErrorBody), (status = 410, body = ErrorBody)))]
 async fn get_highlight<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
@@ -1361,7 +1361,7 @@ fn png_response(image: memex_core::PageImage) -> Response {
         .into_response()
 }
 
-#[utoipa::path(get, path = "/api/v1/vaults/{id}/assertions/{aid}/evidence/{eid}/highlight.png", tag = "provenance", params(("id" = String, Path), ("aid" = String, Path), ("eid" = String, Path), memex_api::ImageQuery), responses((status = 200, description = "A PNG of the page with the region highlighted", content_type = "image/png"), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/assertions/{aid}/evidence/{eid}/highlight.png", tag = "provenance", params(("id" = String, Path), ("aid" = String, Path), ("eid" = String, Path), memex_api::ImageQuery), responses((status = 200, description = "A PNG of the page with the region highlighted", content_type = "image/png"), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody), (status = 410, body = ErrorBody)))]
 async fn get_highlight_png<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
@@ -1404,7 +1404,7 @@ pub fn parse_range(value: &str, size: u64) -> Option<(u64, u64)> {
     if start > end { None } else { Some((start, end)) }
 }
 
-#[utoipa::path(get, path = "/api/v1/vaults/{id}/sources/{sid}/file", tag = "provenance", params(("id" = String, Path), ("sid" = String, Path)), responses((status = 200, description = "The original file, as an attachment"), (status = 206, description = "Part of it, for a Range request"), (status = 404, body = ErrorBody)))]
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/sources/{sid}/file", tag = "provenance", params(("id" = String, Path), ("sid" = String, Path)), responses((status = 200, description = "The original file, as an attachment"), (status = 206, description = "Part of it, for a Range request"), (status = 404, body = ErrorBody), (status = 410, body = ErrorBody)))]
 async fn get_file<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
@@ -1450,7 +1450,7 @@ where
     Ok(res)
 }
 
-#[utoipa::path(get, path = "/api/v1/vaults/{id}/sources/{sid}/pages", tag = "provenance", params(("id" = String, Path), ("sid" = String, Path)), responses((status = 200, body = memex_api::PageListDto), (status = 404, body = ErrorBody)))]
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/sources/{sid}/pages", tag = "provenance", params(("id" = String, Path), ("sid" = String, Path)), responses((status = 200, body = memex_api::PageListDto), (status = 404, body = ErrorBody), (status = 410, body = ErrorBody)))]
 async fn get_pages<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
@@ -1479,7 +1479,7 @@ where
     }))
 }
 
-#[utoipa::path(get, path = "/api/v1/vaults/{id}/sources/{sid}/pages/{page}/image", tag = "provenance", params(("id" = String, Path), ("sid" = String, Path), ("page" = u32, Path), memex_api::ImageQuery), responses((status = 200, description = "A PNG of the page", content_type = "image/png"), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody)))]
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/sources/{sid}/pages/{page}/image", tag = "provenance", params(("id" = String, Path), ("sid" = String, Path), ("page" = u32, Path), memex_api::ImageQuery), responses((status = 200, description = "A PNG of the page", content_type = "image/png"), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody), (status = 410, body = ErrorBody)))]
 async fn get_page_image<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
@@ -1498,7 +1498,7 @@ where
     Ok(png_response(image))
 }
 
-#[utoipa::path(get, path = "/api/v1/vaults/{id}/sources/{sid}/pages/{page}/thumbnail", tag = "provenance", params(("id" = String, Path), ("sid" = String, Path), ("page" = u32, Path)), responses((status = 200, description = "A small PNG of the page", content_type = "image/png"), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody)))]
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/sources/{sid}/pages/{page}/thumbnail", tag = "provenance", params(("id" = String, Path), ("sid" = String, Path), ("page" = u32, Path)), responses((status = 200, description = "A small PNG of the page", content_type = "image/png"), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody), (status = 410, body = ErrorBody)))]
 async fn get_thumbnail<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,

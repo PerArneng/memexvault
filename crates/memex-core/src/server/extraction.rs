@@ -17,8 +17,6 @@ pub(super) const EXTRACTOR: &str = "extractor";
 const EXTRACT_ATTEMPTS: u32 = 5;
 /// How many existing entities a mention names as candidates.
 const MAX_CANDIDATES: usize = 5;
-/// How long past a call's own limits a worker keeps the job.
-pub(super) const LEASE_MARGIN_MS: i64 = 30_000;
 
 /// Why a run didn't complete.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -341,8 +339,8 @@ impl<E: ServerEdges> Server<E> {
         Ok(self.engine.store().snapshot(vault)?.derivations_of(rendition, after, limit)?)
     }
 
-    /// Keeps a held job from expiring during a long call, and writes what's new with it. False means this worker no longer holds the job, and nothing was written.
-    pub fn hold_job(&self, vault: &VaultId, held: &JobRow, for_ms: i64, progressed: bool, results: Vec<Mutation>) -> Result<bool, ServerError> {
+    /// Renews a held job's lease for one more `LEASE_MS`, and writes what's new with it. It's the only way a job keeps its lease, and never for longer than that, so a dead server frees its jobs within one lease. False means this worker no longer holds the job, and nothing was written.
+    pub fn hold_job(&self, vault: &VaultId, held: &JobRow, progressed: bool, results: Vec<Mutation>) -> Result<bool, ServerError> {
         let lease = self.lease(vault)?;
         let vault_lock = self.vault_lock(vault);
         let _one_at_a_time = vault_lock.lock().expect("lock");
@@ -351,7 +349,7 @@ impl<E: ServerEdges> Server<E> {
             return Ok(false);
         }
         let owner = held.lease_owner.clone().unwrap_or_default();
-        let mut next = jobs::lease_extended(current, self.now() + for_ms);
+        let mut next = jobs::lease_extended(current, self.now() + jobs::LEASE_MS);
         if progressed {
             next.wait = None;
         }
@@ -591,9 +589,7 @@ impl<E: ServerEdges> Server<E> {
                 row.stop = Some(ExtractionStop::Budget);
                 break;
             };
-            // Room for the call and its retry.
-            let hold = limits.timeout_ms as i64 * 2 + LEASE_MARGIN_MS;
-            if !self.hold_job(vault, job, hold, false, vec![Mutation::Put(Row::Extraction(row.clone()))])? {
+            if !self.hold_job(vault, job, false, vec![Mutation::Put(Row::Extraction(row.clone()))])? {
                 return Err(ExtractJobError::Lost);
             }
             let request = AgentRequest {
@@ -632,7 +628,7 @@ impl<E: ServerEdges> Server<E> {
                         outcome.attempts,
                         (items, rejected),
                     );
-                    self.commit_batch_result(&run, &row, &derivation, hold, true)?;
+                    self.commit_batch_result(&run, &row, &derivation, true)?;
                     let (proposed, refused) = self.propose_items(vault, &rendition_id, &derivation)?;
                     row.proposed += proposed;
                     row.rejected += refused;
@@ -648,7 +644,7 @@ impl<E: ServerEdges> Server<E> {
                             outcome.attempts,
                             (vec![], vec![]),
                         );
-                        self.commit_batch_result(&run, &row, &derivation, hold, false)?;
+                        self.commit_batch_result(&run, &row, &derivation, false)?;
                     }
                     return Err(ExtractJobError::Wait(e.to_string()));
                 }
@@ -662,7 +658,7 @@ impl<E: ServerEdges> Server<E> {
                             outcome.attempts,
                             (vec![], vec![]),
                         );
-                        self.commit_batch_result(&run, &row, &derivation, hold, false)?;
+                        self.commit_batch_result(&run, &row, &derivation, false)?;
                     }
                     return Err(ExtractJobError::Retry(e.to_string()));
                 }
@@ -677,11 +673,11 @@ impl<E: ServerEdges> Server<E> {
                     );
                     if outcome.out_of_budget {
                         row.stop = Some(ExtractionStop::Budget);
-                        self.commit_batch_result(&run, &row, &derivation, hold, false)?;
+                        self.commit_batch_result(&run, &row, &derivation, false)?;
                         break;
                     }
                     row.batches_failed += 1;
-                    self.commit_batch_result(&run, &row, &derivation, hold, false)?;
+                    self.commit_batch_result(&run, &row, &derivation, false)?;
                 }
             }
         }
@@ -692,22 +688,15 @@ impl<E: ServerEdges> Server<E> {
         }
         // With nothing to show for any of it, this is a failure a person should see. The tokens are already on record in the Derivations.
         if row.batches_failed > 0 && row.segments_done == 0 {
-            self.hold_job(vault, job, LEASE_MARGIN_MS, false, vec![Mutation::Put(Row::Extraction(row.clone()))])?;
+            self.hold_job(vault, job, false, vec![Mutation::Put(Row::Extraction(row.clone()))])?;
             return Err(ExtractJobError::Fatal(format!("all {} batches returned nothing usable", row.batches_failed)));
         }
         Ok(vec![Mutation::Put(Row::Extraction(row))])
     }
 
-    fn commit_batch_result(
-        &self,
-        run: &RunContext<'_>,
-        row: &ExtractionRow,
-        derivation: &DerivationRow,
-        hold: i64,
-        progressed: bool,
-    ) -> Result<(), ExtractJobError> {
+    fn commit_batch_result(&self, run: &RunContext<'_>, row: &ExtractionRow, derivation: &DerivationRow, progressed: bool) -> Result<(), ExtractJobError> {
         let results = vec![Mutation::Put(Row::Derivation(derivation.clone())), Mutation::Put(Row::Extraction(row.clone()))];
-        if self.hold_job(run.vault, run.job, hold, progressed, results)? {
+        if self.hold_job(run.vault, run.job, progressed, results)? {
             Ok(())
         } else {
             Err(ExtractJobError::Lost)
