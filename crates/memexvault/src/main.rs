@@ -333,6 +333,7 @@ fn main() -> ExitCode {
                 ocr: Some(ocr),
             };
             server.set_auto_commit_threshold(f64::from(settings.auto_commit_threshold_permille) / 1000.0);
+            server.set_activity_limits(settings.activity);
             let stop = Arc::new(AtomicBool::new(false));
             let transcribe = TranscribeHandler {
                 server: server.clone(),

@@ -74,10 +74,10 @@ impl World {
         send(self.app(), req).await
     }
 
-    /// An ordinary console request: the cookie and the custom header.
+    /// An ordinary console request: the cookie and the custom header. Only the status is read, since a stream's body never ends.
     async fn with_cookie(&self, method: &str, path: &str, cookie: &str) -> StatusCode {
         let req = Request::builder().method(method).uri(path).header("cookie", cookie).header(CSRF_HEADER, "1");
-        self.send(req.body(Body::empty()).unwrap()).await.0
+        self.app().oneshot(req.body(Body::empty()).unwrap()).await.unwrap().status()
     }
 
     async fn login(&self, token: &str) -> (StatusCode, HeaderMap) {
