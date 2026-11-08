@@ -17,6 +17,8 @@ import type { DocumentCases } from "./document-cases";
 import { createWikiCases } from "./wiki-cases";
 import type { IdSource, WikiCases } from "./wiki-cases";
 import type { DraftStorage } from "./draft";
+import { createEntityCases } from "./entity-cases";
+import type { EntityCases } from "./entity-cases";
 
 export interface Edges {
   readonly clock: Clock;
@@ -31,7 +33,7 @@ export interface Edges {
 const MAX_VAULT_PAGES = 50;
 
 /** The single entry point for views. Later specs add a method per use case. */
-export interface Engine extends WikiCases, DocumentCases {
+export interface Engine extends WikiCases, DocumentCases, EntityCases {
   startedAt(): EpochMs;
   uptimeMs(): number;
   settings(): Settings;
@@ -116,6 +118,7 @@ export const createEngine = (edges: Edges): Engine => {
   return {
     ...createWikiCases({ edges, watched, principal: () => (session.status === "signed_in" ? session.identity.principal.id : "unknown") }),
     ...createDocumentCases({ edges, watched }),
+    ...createEntityCases({ edges, watched }),
     startedAt: () => started,
     uptimeMs: () => clock.now() - started,
     settings: () => edges.settings,

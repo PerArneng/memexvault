@@ -6,6 +6,8 @@ import type { Clock } from "./clock";
 import type { DraftStorage } from "./draft";
 import type { Preferences } from "./preferences";
 import { slugify } from "./wikitext";
+import { fakeEntityApi } from "./testing-entities";
+import type { EntitiesSeed } from "./testing-entities";
 import type { IdSource } from "./wiki-cases";
 
 /** A clock tests move by hand, so nothing sleeps. */
@@ -93,6 +95,8 @@ export interface FakeApiSeed {
   readonly wikiWritesPending?: boolean;
   /** Everything the document screens read. Anything left out is not found. */
   readonly documents?: DocumentsSeed;
+  /** Everything the entity screens read. Anything left out is not found. */
+  readonly entities?: EntitiesSeed;
 }
 
 export interface DocumentsSeed {
@@ -225,6 +229,7 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
     listObjects: (id: VaultId) =>
       answer("listObjects", () => (session === null ? failed<readonly ObjectSummary[]>(unauthenticated) : ok(seed.objects?.[id] ?? []))),
     health: () => answer("health", () => ok(null)),
+    ...fakeEntityApi(seed.entities ?? {}, answer),
 
     writeKeys,
     otherSessionEdits: (id, body) => {

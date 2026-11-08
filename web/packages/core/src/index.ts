@@ -1,5 +1,5 @@
 export { failed, isForbidden, isNotFound, isUnauthenticated, ok, requestIdText } from "./api";
-export type { Api, ApiFailure, ApiResult, TranscriptRequest, TrustChange, NewWikiPage, WikiEdit, WikiImport, WikiRename, WikiRevert, WikiWriteBase } from "./api";
+export type { Api, ApiFailure, ApiResult, EntityEvidenceInput, EntityFieldInput, TranscriptRequest, TrustChange, NewWikiPage, WikiEdit, WikiImport, WikiRename, WikiRevert, WikiWriteBase } from "./api";
 export type { Clock } from "./clock";
 export { paletteEntries } from "./commands";
 export type { PaletteAction, PaletteEntry, PaletteInput } from "./commands";
@@ -52,3 +52,10 @@ export type { DocumentRoute, DocumentTab, SourceFilter, SourceViewRoute } from "
 export { activePart, canChangeSource, evidenceState, filterSources, flagText, flaggedSources, formatClock, formatSize, mediaKind, pageAngle, pageWordsByPage, partsInRange, playability, sourceKinds, TRUST_TIERS, trustEffect, wordAt } from "./documents";
 export type { EvidenceState, MediaKind, Playability, TrustEffect, TrustTierName } from "./documents";
 export type { DocumentCases, SourceList, SourceTrustOutcome } from "./document-cases";
+export { attributeOf, entityLabel, FILTER_OP_LABELS, filterProblem, MAX_DEFAULT_COLUMNS, MAX_SCHEMA_FIELDS, parseFieldValue, schemaView, sortLoadedRows, valueText } from "./entity-schema";
+export type { EntityColumn, EntityFilter, EntityFilterDef, EntitySort, FieldKind, FilterInput, FilterOp, ParsedValue, SchemaField, SchemaView, SortDirection } from "./entity-schema";
+export { entityFilterText, entityPath, parseEntityFilter, parseEntityRoute } from "./entity-routes";
+export type { EntityRoute, EntityTableRoute } from "./entity-routes";
+export { approvalText, blankDraft, blankField, DRAFT_KIND_LABELS, DRAFT_KINDS, draftFromSchema, draftProblems, entityGraph, graphClaims, MAX_GRAPH_CLAIMS, MERGE_OUTCOME_TEXT, mergePreview, schemaFromDraft, splitPreview } from "./entity-draft";
+export type { ApprovalText, DraftField, DraftKind, EntityGraph, GraphLink, GraphNode, MergeOutcome, MergePreview, MergeRow, SplitPreview, TypeDraft } from "./entity-draft";
+export type { EntityCases, EntityGraphAnswer, EntityProposal, EntityTypeList } from "./entity-cases";

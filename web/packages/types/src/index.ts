@@ -64,6 +64,7 @@ export type ApiFailure =
 
 export * from "./documents";
 export * from "./wiki";
+export * from "./entities";
 
 /**
  * Marks a piece of rendered Markdown that isn't Markdown, such as a wiki link. `core` puts `OPEN<n>CLOSE` in the source and `ui` renders
