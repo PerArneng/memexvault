@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.browser.json",
   "compilerOptions": { "types": ["node"] },
-  "include": ["e2e", "e2e-session", "e2e-wiki", "e2e-documents", "playwright.config.ts", "playwright.session.config.ts", "playwright.wiki.config.ts", "playwright.documents.config.ts"]
+  "include": ["e2e", "e2e-session", "e2e-wiki", "e2e-documents", "e2e-ingest", "playwright.config.ts", "playwright.session.config.ts", "playwright.wiki.config.ts", "playwright.documents.config.ts", "playwright.ingest.config.ts"]
 }

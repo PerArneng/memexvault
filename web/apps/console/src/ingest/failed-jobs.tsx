@@ -11,13 +11,12 @@ import { AppLink, Callout, failureText, formatTime } from "../wiki/wiki-common";
 
 const lastError = (job: Job): string | null => job.attempts.findLast((a) => a.error !== null)?.error ?? null;
 
-const List = ({ identity, vault, jobs, truncated, onChanged }: { readonly identity: Identity; readonly vault: VaultId; readonly jobs: readonly Job[]; readonly truncated: boolean; readonly onChanged: () => void }) => {
+const List = ({ identity, vault, jobs, truncated, onDone }: { readonly identity: Identity; readonly vault: VaultId; readonly jobs: readonly Job[]; readonly truncated: boolean; readonly onDone: (outcome: BulkRetryOutcome) => void }) => {
   const engine = useEngine();
   const allowed = canChangeSource(identity, vault);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [outcome, setOutcome] = useState<BulkRetryOutcome | null>(null);
   const chosen = useMemo(() => jobs.filter((j) => picked.has(j.id)).map((j) => j.id), [jobs, picked]);
   const all = chosen.length === jobs.length && jobs.length > 0;
   const toggle = (id: string) => {
@@ -30,18 +29,12 @@ const List = ({ identity, vault, jobs, truncated, onChanged }: { readonly identi
     const result = await engine.retryJobs(vault, chosen);
     setBusy(false);
     setConfirming(false);
-    setOutcome(result);
     setPicked(new Set());
-    onChanged();
+    onDone(result);
   };
   return (
     <div className="flex flex-col gap-3">
       {truncated && <p className="text-sm text-warning">There are more failed jobs than one browser list holds, so this shows the first of them.</p>}
-      {outcome !== null && (
-        <Callout tone={outcome.failed.length === 0 ? "info" : "danger"} title={`Retried ${String(outcome.retried.length)} by ${identity.principal.name}.${outcome.failed.length === 0 ? "" : ` ${String(outcome.failed.length)} couldn't be retried.`}`}>
-          {outcome.failed.map((f) => <div key={f.id} className="font-mono text-xs">{f.id}: {failureText(f.failure)}</div>)}
-        </Callout>
-      )}
       {allowed && (
         <div className="flex flex-wrap items-center gap-3">
           <label className="inline-flex items-center gap-1.5 text-sm">
@@ -86,7 +79,10 @@ export const FailedJobs = ({ identity, vault, state, watch }: { readonly identit
   const engine = useEngine();
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: QUERY_KEYS.jobsInState(vault, state), queryFn: async () => unwrap(await engine.listJobsInState(vault, state)), staleTime: 0 });
-  const onChanged = () => {
+  // Out here, as a retry that works empties the list it was made from.
+  const [outcome, setOutcome] = useState<BulkRetryOutcome | null>(null);
+  const onDone = (result: BulkRetryOutcome) => {
+    setOutcome(result);
     watch.refresh();
     void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.jobs(vault) });
   };
@@ -99,8 +95,13 @@ export const FailedJobs = ({ identity, vault, state, watch }: { readonly identit
         <AppLink to={ingestPath(vault, { kind: "failed", state: "dead" })} aria-current={state === "dead" ? "page" : undefined}>Dead</AppLink>
         <AppLink to={ingestPath(vault, { kind: "failed", state: "cancelled" })} aria-current={state === "cancelled" ? "page" : undefined}>Cancelled</AppLink>
       </nav>
+      {outcome !== null && (
+        <Callout tone={outcome.failed.length === 0 ? "info" : "danger"} title={`Retried ${String(outcome.retried.length)} by ${identity.principal.name}.${outcome.failed.length === 0 ? "" : ` ${String(outcome.failed.length)} couldn't be retried.`}`}>
+          {outcome.failed.map((f) => <div key={f.id} className="font-mono text-xs">{f.id}: {failureText(f.failure)}</div>)}
+        </Callout>
+      )}
       <QueryView query={query} label="the failed jobs" isEmpty={(d) => d.jobs.length === 0} empty={<EmptyState title={state === "dead" ? "No dead jobs. Nothing has run out of attempts." : "No cancelled jobs."} />}>
-        {(data) => <List key={state} identity={identity} vault={vault} jobs={data.jobs} truncated={data.truncated} onChanged={onChanged} />}
+        {(data) => <List key={state} identity={identity} vault={vault} jobs={data.jobs} truncated={data.truncated} onDone={onDone} />}
       </QueryView>
     </div>
   );

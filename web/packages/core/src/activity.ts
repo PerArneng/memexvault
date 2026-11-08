@@ -121,13 +121,16 @@ const applyParseJob = (draft: Draft, doc: BoardDocument, job: JobFact, at: numbe
   }
 };
 
-const applyExtractJob = (draft: Draft, doc: BoardDocument, job: JobFact, at: number): BoardDocument => {
+/**
+ * Embedding and extraction run side by side, and the stage model has a document in embedding until that's clear, which a frame can't tell, as an embedding
+ * job isn't tied to one document. So this only follows a document already in extraction, and the next snapshot moves it in and out of that stage.
+ */
+const applyExtractJob = (draft: Draft, doc: BoardDocument, job: JobFact): BoardDocument => {
   draft.dirty = true;
-  // The earliest unfinished work decides, so a later stage can't hide what's wrong with an earlier one.
-  if (stageIndex(doc.stage) < stageIndex("indexing") || (doc.jobId !== null && doc.jobId !== job.id && job.id < doc.jobId)) return doc;
+  if (doc.stage !== "extraction" || (doc.jobId !== null && job.id < doc.jobId)) return doc;
   const facts = { attempts: job.attempts, nextRunAtMs: job.nextRunAtMs, waitingSinceMs: job.waitingSinceMs };
   if (job.state === "done") return { ...doc, ...facts, jobId: null, progress: null, lastFinishedJob: job.id };
-  return { ...moved(doc, "extraction", at, draft), ...facts, status: job.status, jobId: job.id };
+  return { ...doc, ...facts, status: job.status, jobId: job.id };
 };
 
 const applyJob = (draft: Draft, job: JobFact, at: number) => {
@@ -141,7 +144,7 @@ const applyJob = (draft: Draft, job: JobFact, at: number) => {
     return;
   }
   if (PARSE_KINDS.includes(job.kind)) draft.documents.set(doc.sourceId, applyParseJob(draft, doc, job, at));
-  else if (job.kind === "extract") draft.documents.set(doc.sourceId, applyExtractJob(draft, doc, job, at));
+  else if (job.kind === "extract") draft.documents.set(doc.sourceId, applyExtractJob(draft, doc, job));
   else draft.dirty = true;
 };
 
@@ -203,6 +206,11 @@ const applyProgress = (draft: Draft, frame: ProgressFrame, at: number) => {
     (doc.jobId === null && stageIndex(frame.stage) >= 0 && stageIndex(frame.stage) < stageIndex(doc.stage));
   if (stale) {
     draft.ignoredFrames += 1;
+    return;
+  }
+  // Past parsing, stages can overlap, and only the stage model can say which one a document is in. See `applyExtractJob`.
+  if (stageIndex(frame.stage) >= stageIndex("indexing") && frame.stage !== doc.stage) {
+    draft.documents.set(doc.sourceId, { ...doc, progress: { stage: frame.stage, done: frame.done, total: frame.total, timeMs: frame.timeMs } });
     return;
   }
   draft.documents.set(doc.sourceId, {
@@ -425,12 +433,23 @@ export const statusExplanation = (d: DocumentActivity, nowMs: number): string | 
   }
 };
 
-/** Whether a stage is one this document goes through at all. */
-const pipelineOf = (d: BoardDocument): readonly string[] => {
+/** What's durably known of how a document goes through the pipeline, for when this console wasn't watching. */
+export interface PipelineFacts {
+  readonly recording: boolean;
+  readonly ocr: boolean;
+}
+
+/** Whether a stage is one this document goes through at all. A recording has no parsing, and only a page with no text layer has OCR. */
+const pipelineOf = (d: BoardDocument, facts: PipelineFacts): readonly string[] => {
   const seen = new Set(d.history.map((h) => h.stage));
   seen.add(d.stage);
-  const recording = seen.has("transcription");
-  return STAGES.filter((s) => (s === "ocr" ? seen.has("ocr") : s === "transcription" ? recording : s === "parsing" ? !recording || seen.has("parsing") : true));
+  const recording = facts.recording || seen.has("transcription");
+  return STAGES.filter((s) => {
+    if (s === "ocr") return facts.ocr || seen.has("ocr");
+    if (s === "transcription") return recording;
+    if (s === "parsing" || s === "segmenting") return !recording || seen.has(s);
+    return true;
+  });
 };
 
 export interface PipelineStep {
@@ -441,8 +460,8 @@ export interface PipelineStep {
 }
 
 /** Every stage in order for one document, marked by how far it has got. */
-export const pipelineSteps = (d: BoardDocument): readonly PipelineStep[] => {
-  const stages = pipelineOf(d);
+export const pipelineSteps = (d: BoardDocument, facts: PipelineFacts = { recording: false, ocr: false }): readonly PipelineStep[] => {
+  const stages = pipelineOf(d, facts);
   const current = stages.indexOf(d.stage);
   const steps = stages.map((stage, i): PipelineStep => {
     const visit = d.history.findLast((h) => h.stage === stage);

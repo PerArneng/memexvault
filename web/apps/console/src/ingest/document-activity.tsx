@@ -1,5 +1,5 @@
-import { canChangeSource, documentPath, durationText, ingestPath, pipelineSteps, progressText, stageLabel, statusExplanation } from "@memex/core";
-import type { ActivityWatch, BoardDocument } from "@memex/core";
+import { canChangeSource, documentPath, durationText, ingestPath, mediaKind, pipelineSteps, progressText, stageLabel, statusExplanation } from "@memex/core";
+import type { ActivityWatch, BoardDocument, PipelineFacts } from "@memex/core";
 import type { Identity, Job, VaultId } from "@memex/types";
 import { Badge, Button, EmptyState } from "@memex/ui";
 import type { Tone } from "@memex/ui";
@@ -15,14 +15,14 @@ const STEP_TONE: Readonly<Record<string, string>> = { seen: "bg-success", passed
 const JOB_TONE: Readonly<Record<string, Tone>> = { queued: "neutral", running: "info", done: "success", dead: "danger", cancelled: "warning" };
 const JOB_KIND: Readonly<Record<string, string>> = { rendition: "Reading the document", transcription: "Transcribing", extract: "Extracting claims" };
 
-const StageTimeline = ({ doc }: { readonly doc: BoardDocument }) => (
+const StageTimeline = ({ doc, facts }: { readonly doc: BoardDocument; readonly facts: PipelineFacts }) => (
   <ol aria-label="Stages" className="flex flex-col gap-2 border-l border-border pl-4">
-    {pipelineSteps(doc).map((step) => (
+    {pipelineSteps(doc, facts).map((step) => (
       <li key={step.stage} data-timeline-stage={step.stage} data-step-state={step.state} aria-current={step.state === "current" ? "step" : undefined} className="relative flex items-baseline justify-between gap-4">
         <span aria-hidden="true" className={`absolute top-1.5 -left-[1.28rem] size-2 rounded-full ${step.state === "current" && doc.status === "failed" ? "bg-danger" : (STEP_TONE[step.state] ?? "bg-text-faint")}`} />
         <span className={`text-sm ${step.state === "todo" ? "text-text-muted" : "text-text"}`}>
           {stageLabel(step.stage)}
-          {step.state === "passed" && <span className="text-xs text-text-muted"> · finished too fast to see</span>}
+          {step.state === "passed" && <span className="text-xs text-text-muted"> · finished, not seen live</span>}
           {step.state === "todo" && <span className="sr-only"> · not reached yet</span>}
         </span>
         {step.atMs !== null && <time className="font-mono text-xs text-text-muted tabular-nums">{formatTime(step.atMs)}</time>}
@@ -91,6 +91,14 @@ export const DocumentActivityView = ({ identity, vault, id, watch }: { readonly 
   const { state, now } = useActivityState(watch);
   const doc = state.documents.get(id);
   const source = useQuery({ queryKey: QUERY_KEYS.source(vault, id), queryFn: async () => unwrap(await engine.getSource(vault, id)) });
+  // A rendition that's there says how its pages were read, however long ago, and a stage this console missed still shows in its place.
+  const renditionKey = doc?.renditionId ?? "none";
+  const renditions = useQuery({ queryKey: [...QUERY_KEYS.renditions(vault, id), renditionKey], queryFn: async () => unwrap(await engine.listRenditions(vault, id)) });
+  const kind = source.data === undefined ? null : mediaKind(source.data.mediaType);
+  const facts: PipelineFacts = {
+    recording: kind === "audio" || kind === "video",
+    ocr: (renditions.data ?? []).some((r) => r.supersededBy === null && r.pages.some((p) => p.route === "ocr")),
+  };
   const jobs = useQuery({ queryKey: QUERY_KEYS.documentJobs(vault, id), queryFn: async () => unwrap(await engine.listDocumentJobs(vault, id, doc?.jobId ?? null)), staleTime: 0 });
 
   // A new job or a new state means there's more to read here than the frame said, such as an attempt's error.
@@ -139,7 +147,7 @@ export const DocumentActivityView = ({ identity, vault, id, watch }: { readonly 
           <AppLink to={documentPath(vault, { kind: "source", id, tab: "view", page: null, zoom: null, claim: null, evidence: null, fromMs: null, toMs: null, rendition: null })} className={LINK_BUTTON}>Open in Documents</AppLink>
           <section aria-label="Timeline" className="flex flex-col gap-2">
             <h3 className="font-medium">Timeline</h3>
-            <StageTimeline doc={doc} />
+            <StageTimeline doc={doc} facts={facts} />
           </section>
         </>
       )}

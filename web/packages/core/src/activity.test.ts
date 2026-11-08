@@ -67,7 +67,8 @@ describe("activityReducer", () => {
     expect(s.documents.has("gone")).toBe(false);
     expect(s.needsSnapshot).toBe(false);
     expect(s.seq).toBe(14);
-    expect(doc(s)).toMatchObject({ stage: "extraction", jobId: "j2" });
+    expect(doc(s).stage).toBe("embedding");
+    expect(s.dirty).toBe(true);
   });
 
   it("an unknown frame or event kind changes nothing but moves the position", () => {
@@ -116,7 +117,13 @@ describe("the stages of one document", () => {
 
   it("a recording goes through transcription rather than parsing", () => {
     const s = activityReducer(start(), [frame(durable(11, { jobs: [job("t1", { kind: "transcription", stage: "transcription" })] }))]);
-    expect(pipelineSteps(doc(s)).map((p) => p.stage)).toEqual(["stored", "transcription", "segmenting", "indexing", "embedding", "extraction", "review", "done"]);
+    expect(pipelineSteps(doc(s)).map((p) => p.stage)).toEqual(["stored", "transcription", "indexing", "embedding", "extraction", "review", "done"]);
+  });
+
+  it("knows the way through from durable facts after a reload, with nothing seen live", () => {
+    const s = start(1, [documentActivity("s1", { stage: "done", status: "done" })]);
+    expect(pipelineSteps(doc(s), { recording: true, ocr: false }).map((p) => p.stage)).toEqual(["stored", "transcription", "indexing", "embedding", "extraction", "review", "done"]);
+    expect(pipelineSteps(doc(s), { recording: false, ocr: true }).map((p) => p.stage)).toEqual(["stored", "parsing", "ocr", "segmenting", "indexing", "embedding", "extraction", "review", "done"]);
   });
 
   it("marks a stage that went by unseen rather than leaving it out", () => {
@@ -148,6 +155,16 @@ describe("the stages of one document", () => {
     expect(doc(s).stage).toBe("parsing");
     s = activityReducer(s, [frame(durable(13, { jobs: [job("j1", { state: "queued", status: "retrying", attempts: 3 })] }))]);
     expect(doc(s)).toMatchObject({ stage: "parsing", status: "retrying" });
+  });
+
+  it("extraction beside embedding leaves the stage to the stage model, as progress does, and follows it once there", () => {
+    const embedding = start(10, [documentActivity("s1", { stage: "embedding", status: "active" })]);
+    let s = activityReducer(embedding, [frame(durable(11, { jobs: [job("x1", { kind: "extract", stage: "extraction" })] })), frame({ kind: "progress", jobId: "x1", sourceId: "s1", stage: "extraction", done: 1, total: 3, timeMs: 5 })]);
+    expect(doc(s)).toMatchObject({ stage: "embedding", progress: { done: 1 } });
+    expect(s.dirty).toBe(true);
+    s = activityReducer(s, [snapshot(11, [documentActivity("s1", { stage: "extraction", status: "active", jobId: "x1" })])]);
+    s = activityReducer(s, [frame(durable(12, { jobs: [job("x1", { kind: "extract", stage: "extraction", state: "queued", status: "waiting", waitingSinceMs: 7 })] }))]);
+    expect(doc(s)).toMatchObject({ stage: "extraction", status: "waiting", waitingSinceMs: 7 });
   });
 
   it("an older job can't overwrite what a newer one says", () => {
