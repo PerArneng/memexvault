@@ -1,4 +1,5 @@
 import type { Identity, ObjectSummary, Vault, VaultId } from "@memex/types";
+import { entityPath } from "./entity-routes";
 import { sectionPath, switchVaultPath, visibleSections } from "./navigation";
 import type { SectionId } from "./navigation";
 
@@ -38,7 +39,7 @@ export const paletteEntries = ({ identity, pathname, vault, vaults, objects }: P
           const target = OBJECT_SECTION[o.kind];
           // Ids aren't unique across kinds, so the kind is part of the entry's id.
           return visibleSections(identity, vault).some((s) => s.id === target.section)
-            ? [{ id: `open-${o.kind}-${o.id}`, label: o.label, hint: target.hint, action: { kind: "go", to: sectionPath(vault, target.section, o.id) } } as const]
+            ? [{ id: `open-${o.kind}-${o.id}`, label: o.label, hint: target.hint, action: { kind: "go", to: o.kind === "entity_type" ? entityPath(vault, { kind: "table", type: o.id, filters: [], columns: null, sort: null, find: "" }) : sectionPath(vault, target.section, o.id) } } as const]
             : [];
         });
   const others: readonly PaletteEntry[] = vaults

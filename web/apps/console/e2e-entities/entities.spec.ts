@@ -221,6 +221,11 @@ test("the type list comes from the server, and versions and the schema show", as
   await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
   // Seed types are data like any other.
   await expect(page.getByRole("link", { name: "Person", exact: true })).toBeVisible();
+  // The command palette opens a type's table, as the rest of the screen does.
+  await page.keyboard.press("Control+k");
+  await page.getByPlaceholder(/./).first().fill(name);
+  await page.getByRole("option", { name }).first().click();
+  await expect(page).toHaveURL(new RegExp(`/entities/-/types/${name}$`));
   await page.goto(screen(`/-/types/${name}/schema`));
   await expect(page.locator("[data-schema-field=price]")).toContainText("number");
   await expect(page.locator("[data-schema-field=name]")).toContainText("identity");
