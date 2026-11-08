@@ -27,6 +27,8 @@ export interface SourceViewRoute {
   readonly toMs: number | null;
   /** A rendition other than the current one, for its segments. */
   readonly rendition: string | null;
+  /** A passage to show, as a search citation names one. */
+  readonly segment: string | null;
 }
 
 /** Where a Documents URL points. The `-` keeps `claims` from ever meaning a source, whatever id one has. */
@@ -74,6 +76,7 @@ export const parseDocumentRoute = (rest: readonly string[], query: (name: string
     // A range that ends before it starts has no end.
     toMs: fromMs !== null && toMs !== null && toMs > fromMs ? toMs : null,
     rendition: query("rendition"),
+    segment: query("segment"),
   };
 };
 
@@ -102,6 +105,7 @@ export const documentPath = (vault: VaultId, route: Exclude<DocumentRoute, { rea
         ["t", text(route.fromMs)],
         ["end", text(route.toMs)],
         ["rendition", route.rendition],
+        ["segment", route.segment],
       ]);
   }
 };

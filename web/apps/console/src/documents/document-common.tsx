@@ -18,7 +18,7 @@ export const routeFrom = (rest: readonly string[], search: string): DocumentRout
 export const useDocumentRoute = (rest: readonly string[]): DocumentRoute => routeFrom(rest, useLocation().searchStr);
 
 export const sourceRoute = (id: string, over: Partial<SourceViewRoute> = {}): SourceViewRoute => ({
-  kind: "source", id, tab: "view", page: null, zoom: null, claim: null, evidence: null, fromMs: null, toMs: null, rendition: null, ...over,
+  kind: "source", id, tab: "view", page: null, zoom: null, claim: null, evidence: null, fromMs: null, toMs: null, rendition: null, segment: null, ...over,
 });
 
 export const useSourcePath = (vault: VaultId) => useCallback((id: string, over: Partial<SourceViewRoute> = {}) => documentPath(vault, sourceRoute(id, over)), [vault]);

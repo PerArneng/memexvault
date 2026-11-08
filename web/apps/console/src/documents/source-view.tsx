@@ -1,4 +1,4 @@
-import { DEFAULT_ZOOM, documentPath, flagText, isNotFound, mediaKind, pageAngle, pageWordsByPage, requestIdText, evidenceState } from "@memex/core";
+import { DEFAULT_ZOOM, documentPath, flagText, isNotFound, mediaKind, pageAngle, pageWordsByPage, requestIdText, evidenceState, segmentRegion } from "@memex/core";
 import type { SourceViewRoute } from "@memex/core";
 import type { AnchorRect, DocumentSource, EvidenceStep, PageWord, Rendition, Transcript, VaultId } from "@memex/types";
 import { Badge, Button, EmptyState } from "@memex/ui";
@@ -17,6 +17,35 @@ import { SegmentsTab } from "./source-tabs";
 
 const NO_RECTS: readonly AnchorRect[] = [];
 const noWords = (): readonly PageWord[] => [];
+
+/** A citation's passage on its pages. A search citation gives offsets rather than rectangles, as those would need the word table on every search, so they're worked out here, once someone opens one. */
+const useSegmentRegion = (vault: VaultId, segmentId: string | null) => {
+  const engine = useEngine();
+  const segment = useQuery({
+    queryKey: QUERY_KEYS.segment(vault, segmentId ?? "none"),
+    enabled: segmentId !== null,
+    queryFn: async () => unwrap(await engine.getSegment(vault, segmentId ?? "")),
+  });
+  const rendition = segment.data?.renditionId ?? null;
+  const reading = useQuery({
+    queryKey: QUERY_KEYS.reading(vault, rendition ?? "none"),
+    enabled: rendition !== null,
+    staleTime: Infinity,
+    queryFn: async () => unwrap(await engine.getRenditionReading(vault, rendition ?? "")),
+  });
+  const rects = useMemo(() => (segment.data !== undefined && reading.data !== undefined ? segmentRegion(reading.data.canonicalText, reading.data.words, segment.data.start, segment.data.end) : null), [reading.data, segment.data]);
+  const state = segmentId === null ? "none" : segment.isError || reading.isError ? "gone" : reading.data === undefined || segment.data === undefined ? "finding" : rects === null ? "unplaced" : "located";
+  return { state, rects, rendition } as const;
+};
+
+const SegmentBanner = ({ state, first }: { readonly state: "gone" | "finding" | "unplaced" | "located"; readonly first: AnchorRect | undefined }) => (
+  <div data-segment-state={state}>
+    {state === "finding" && <p role="status" className="text-sm text-text-muted">Finding the cited passage</p>}
+    {state === "located" && <Callout tone="info" title={`Highlighted passage${first === undefined ? "" : `, from page ${String(first.page + 1)}`}`} />}
+    {state === "unplaced" && <Callout tone="warning" title="This page is the one cited, and the passage can't be placed on it exactly.">The text and the word table of this reading don't agree, so nothing is highlighted rather than a guess.</Callout>}
+    {state === "gone" && <Callout tone="warning" title="The cited passage isn't available any more.">It may have been erased, or the document read again since that link was made.</Callout>}
+  </div>
+);
 
 /** What a deep link's evidence says about itself. It's what a person needs to know before trusting the highlight. */
 export const EvidenceBanner = ({ vault, claim, evidence }: { readonly vault: VaultId; readonly claim: string; readonly evidence: EvidenceStep | null }) => {
@@ -203,7 +232,9 @@ export const SourceViewTab = ({ vault, source, renditions, route }: { readonly v
   const linked = route.claim !== null;
   const kind = mediaKind(source.mediaType);
   const elsewhere = evidence !== null && evidence.sourceId !== source.id;
-  const highlights = evidence !== null && !evidence.broken && !elsewhere ? evidence.rects : NO_RECTS;
+  const region = useSegmentRegion(vault, kind === "pdf" ? route.segment : null);
+  const highlights = evidence !== null && !evidence.broken && !elsewhere ? evidence.rects : region.rects ?? NO_RECTS;
+  const citedOnText = route.segment ?? (evidence !== null && !evidence.broken && !elsewhere ? evidence.segmentId : null);
   // A link names its page through the claim, so the viewer has to know that before it starts, or it would fetch the wrong page.
   const waiting = linked && query.isPending;
   const failure = query.error instanceof FailureError ? query.error.failure : null;
@@ -222,6 +253,7 @@ export const SourceViewTab = ({ vault, source, renditions, route }: { readonly v
           <AppLink to={documentPath(vault, sourceRoute(evidence.sourceId, { claim: route.claim, evidence: route.evidence }))}>Open it there</AppLink>
         </Callout>
       )}
+      {region.state !== "none" && <SegmentBanner state={region.state} first={region.rects?.[0]} />}
       {waiting ? (
         <p role="status" className="text-sm text-text-muted">Finding the highlighted place</p>
       ) : kind === "pdf" ? (
@@ -229,7 +261,7 @@ export const SourceViewTab = ({ vault, source, renditions, route }: { readonly v
       ) : kind === "audio" || kind === "video" ? (
         <RecordingView vault={vault} source={source} route={route} evidence={elsewhere ? null : evidence} />
       ) : kind === "text" ? (
-        <SegmentsTab vault={vault} sourceId={source.id} renditions={renditions} renditionId={route.rendition} />
+        <SegmentsTab vault={vault} sourceId={source.id} renditions={renditions} renditionId={route.rendition} cited={citedOnText} citedQuote={evidence?.quote ?? null} />
       ) : (
         <EmptyState title="This console has no viewer for this type of file.">
           It's <Badge>{source.mediaType}</Badge>. You can download the original.

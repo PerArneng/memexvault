@@ -1,18 +1,20 @@
-import { documentPath, flagText, formatClock } from "@memex/core";
+import { documentPath, flagText, formatClock, markQuote } from "@memex/core";
 import type { CitingClaim, DocumentSource, Page, Rendition, Segment, VaultId } from "@memex/types";
 import { Badge, Button, EmptyState } from "@memex/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { useEngine } from "../engine-context";
 import { QUERY_KEYS, unwrap } from "../query";
 import { QueryView } from "../shell/query-view";
 import { TierOf } from "../viewer/badges";
+import { MarkedText } from "../viewer/marked-text";
 import { AppLink, Callout, formatTime } from "../wiki/wiki-common";
 import { useSourcePath } from "./document-common";
 
 const pageLabel = (from: number, to: number | null): string => (to === null || to === from ? `Page ${String(from + 1)}` : `Pages ${String(from + 1)} to ${String(to + 1)}`);
 
 /** A rendition's segments, whose text is untrusted and stays text. */
-export const SegmentsTab = ({ vault, sourceId, renditions, renditionId }: { readonly vault: VaultId; readonly sourceId: string; readonly renditions: readonly Rendition[]; readonly renditionId: string | null }) => {
+export const SegmentsTab = ({ vault, sourceId, renditions, renditionId, cited = null, citedQuote = null }: { readonly vault: VaultId; readonly sourceId: string; readonly renditions: readonly Rendition[]; readonly renditionId: string | null; readonly cited?: string | null; readonly citedQuote?: string | null }) => {
   const engine = useEngine();
   const pathOf = useSourcePath(vault);
   const current = renditions.find((r) => r.supersededBy === null) ?? renditions[renditions.length - 1];
@@ -24,6 +26,17 @@ export const SegmentsTab = ({ vault, sourceId, renditions, renditionId }: { read
     getNextPageParam: (last: Page<Segment>) => last.nextCursor,
     queryFn: async ({ pageParam }) => unwrap(await engine.listSegments(vault, chosen?.id ?? "", pageParam)),
   });
+  const loaded = query.data?.pages.flatMap((p) => p.items);
+  const citedFound = cited !== null && loaded?.some((s) => s.id === cited) === true;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
+  // A citation can name a segment past the first page of the list, so the list reads on until it gets there.
+  useEffect(() => {
+    if (cited !== null && !citedFound && hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [cited, citedFound, fetchNextPage, hasNextPage, isFetchingNextPage]);
+  const citedElement = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (citedFound) citedElement.current?.scrollIntoView({ block: "center" });
+  }, [citedFound, cited]);
   if (chosen === undefined) return <EmptyState title={renditionId === null ? "This source hasn't been read yet." : "This source has no such rendition."} />;
   return (
     <section aria-label="Segments" className="flex flex-col gap-2">
@@ -34,11 +47,16 @@ export const SegmentsTab = ({ vault, sourceId, renditions, renditionId }: { read
           </Callout>
         </div>
       )}
+      {cited !== null && loaded !== undefined && !citedFound && !hasNextPage && (
+        <div data-segment-state="gone">
+          <Callout tone="warning" title="The cited passage isn't in this reading of the source.">It may have been read again since that link was made.</Callout>
+        </div>
+      )}
       <QueryView query={query} label="segments" isEmpty={(d) => d.pages.every((p) => p.items.length === 0)} empty={<EmptyState title="This rendition has no text." />}>
         {(data) => (
           <ol className="flex flex-col gap-2">
             {data.pages.flatMap((p) => p.items).map((segment) => (
-              <li key={segment.id} data-segment={segment.id} className="rounded-md border border-border p-2">
+              <li key={segment.id} ref={segment.id === cited ? citedElement : undefined} data-segment={segment.id} {...(segment.id === cited ? { "data-segment-cited": true } : {})} className={`rounded-md border p-2 ${segment.id === cited ? "border-accent bg-surface-selected" : "border-border"}`}>
                 <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
                   {segment.pageFrom !== null && <AppLink to={pathOf(sourceId, { page: segment.pageFrom })}>{pageLabel(segment.pageFrom, segment.pageTo)}</AppLink>}
                   {segment.tStartMs !== null && <AppLink to={pathOf(sourceId, { fromMs: segment.tStartMs, toMs: segment.tEndMs })}>{formatClock(segment.tStartMs)}</AppLink>}
@@ -46,7 +64,7 @@ export const SegmentsTab = ({ vault, sourceId, renditions, renditionId }: { read
                   {segment.language !== null && <span>{segment.language}</span>}
                   {segment.heading !== null && <span className="font-medium text-text">{segment.heading}</span>}
                 </div>
-                <p className="text-sm whitespace-pre-wrap">{segment.text}</p>
+                <p className="text-sm whitespace-pre-wrap">{segment.id === cited && citedQuote !== null ? <MarkedText parts={markQuote(segment.text, citedQuote)} /> : segment.text}</p>
               </li>
             ))}
           </ol>

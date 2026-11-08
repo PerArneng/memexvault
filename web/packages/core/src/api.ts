@@ -5,6 +5,7 @@ import type {
   ClaimLineage,
   Derivation,
   DocumentSource,
+  EvidencePackage,
   FlaggedPage,
   Identity,
   MediaFacts,
@@ -13,6 +14,7 @@ import type {
   PageList,
   PageWord,
   Rendition,
+  RenditionReading,
   Segment,
   Transcript,
   Vault,
@@ -29,6 +31,7 @@ import type {
   WikiUnresolvedLink,
   WikiWrite,
 } from "@memex/types";
+import type { SearchRequest } from "./search";
 
 export type { ApiFailure };
 
@@ -77,6 +80,11 @@ export interface TrustChange {
   readonly tier: string;
   readonly rationale: string;
   readonly idempotencyKey: string;
+}
+
+/** What this layer needs of an `AbortSignal`, as a pure package can't name that. */
+export interface CancelSignal {
+  readonly aborted: boolean;
 }
 
 export interface Api {
@@ -131,6 +139,12 @@ export interface Api {
   getTranscript(vault: VaultId, source: string, request: TranscriptRequest): Promise<ApiResult<Transcript>>;
   reprocessSource(vault: VaultId, source: string): Promise<ApiResult<null>>;
   setSourceTrust(vault: VaultId, source: string, change: TrustChange): Promise<ApiResult<WikiWrite>>;
+
+  /** One rendition's text with its word table, which is large on a long document. */
+  getRenditionReading(vault: VaultId, rendition: string): Promise<ApiResult<RenditionReading>>;
+
+  /** The search API. `cancel` abandons a request that's still running. */
+  search(vault: VaultId, request: SearchRequest, cancel: CancelSignal | null): Promise<ApiResult<EvidencePackage>>;
 
   /** A failure includes no answer within `timeoutMs`. */
   health(timeoutMs: number): Promise<ApiResult<null>>;
