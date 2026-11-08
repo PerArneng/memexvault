@@ -87,7 +87,8 @@ All vault content is untrusted, including document text, OCR output, entity fiel
 
 - Every screen has loading, empty, error and offline states.
 - Everything works by keyboard, with visible focus. Contrast meets WCAG AA.
-- URLs hold screen state, so any view can be linked to and reloaded.
+- URLs hold screen state, so any view can be linked to and reloaded. The router rewrites a repeated query parameter as a JSON array and reads a value that looks like a number as one, so a screen doesn't repeat parameters, and an id goes in the path. See spec 045.
+- A screen for types defined at runtime reads their schema through one pure function, `schemaView` in `core`, so a new type needs no frontend change. See spec 045.
 - An action on a page asks for confirmation in the page rather than in a modal while the modal's CSP error is undecided. See spec 040.
 - Screens can be built against `FakeApi`, but a spec isn't done until it passes against the real API.
 - `QueryView` is the one way a screen shows loading, empty, error and offline. `accessTo` in `core` decides what a URL may show, so a direct link gets the same answer as the navigation.

@@ -343,6 +343,26 @@ test("item 3: conflicting values show together, with the current choice and why"
   await context.close();
 });
 
+test("a new value can replace the current one instead of going beside it, and aliases can change", async ({ browser, request }) => {
+  const type = `Replaced${run}`;
+  await makeType(request, type);
+  const made = await makeEntity(request, type, { name: "Replace me", owner: "Old owner" }, ["Old alias"], `replace-${run}`);
+  const { context, page, problems } = await newSession(browser);
+  await page.goto(screen(`/${made.entity_id}/edit`));
+  await fillField(page, "edit", "owner", "New owner");
+  await page.getByLabel("Replaces the current value of owner").check();
+  await page.getByLabel("Aliases, one per line").fill("New alias");
+  await page.getByRole("button", { name: "Propose this edit" }).click();
+  await expect(page.getByText("This edit is saved.")).toBeVisible();
+  await page.goto(screen(`/${made.entity_id}`));
+  const card = page.locator("[data-field=owner]");
+  await expect(card.locator("[data-claim-role=current] [data-claim-value]")).toHaveText("New owner");
+  await expect(card.locator("[data-claim-role=conflict]")).toHaveCount(0);
+  await expect(page.locator("[data-aliases]")).toHaveText("New alias");
+  expect(cspProblems(problems)).toEqual([]);
+  await context.close();
+});
+
 test("item 4: a breaking type change and a merge end up in the review queue, not applied", async ({ browser, request }) => {
   const type = `Governed${run}`;
   await makeType(request, type);
