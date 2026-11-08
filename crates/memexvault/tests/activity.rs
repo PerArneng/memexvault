@@ -934,7 +934,8 @@ fn fate_of(mut stream: std::net::TcpStream) -> (bool, bool, usize) {
 #[ignore]
 fn measure_ingest_with_a_client_that_never_reads() {
     const PAIRS: usize = 8;
-    let documents: usize = std::env::var("MEMEX_ACTIVITY_DOCS").ok().and_then(|d| d.parse().ok()).unwrap_or(150);
+    // About 2.7 kB of frames a document, so 400 make about 1 MB: well past hyper's write buffer (408 KiB), the socket's (64 KiB) and the client's queue, which all have to fill before the stream overflows.
+    let documents: usize = std::env::var("MEMEX_ACTIVITY_DOCS").ok().and_then(|d| d.parse().ok()).unwrap_or(400);
     // A small buffer, so this client overflows within the run. The stall limit is longer than a run, so it stays connected for the whole of it.
     let server = binary(&[("MEMEX_ACTIVITY_BUFFER_FRAMES", "32"), ("MEMEX_ACTIVITY_STALL_S", "3600")]);
     let mut http = Http::new(server.addr, &server.token);
