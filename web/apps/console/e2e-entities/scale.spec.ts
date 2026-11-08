@@ -60,26 +60,26 @@ const sql = (statement: string): string => {
 
 /** The row format is the store's. One real entity gives every shape it uses, so this can't drift from it silently: a wrong row fails the first read below. */
 const load = (schema: string, template: string) => {
-  const t = JSON.parse(template) as { header: { status: unknown } };
-  const status = JSON.stringify(t.header.status);
+  const t = JSON.parse(template) as { entity: { header: { status: unknown } } };
+  const status = JSON.stringify(t.entity.header.status);
   const started = Date.now();
   const field = (name: string, value: string, lookup: string) => `jsonb_build_object('field', '${name}', 'value', ${value}, 'assertion_id', '${name}' || lpad(to_hex(i), 28, '0'), 'why', 'it''s the only claim on this field', 'others', '[]'::jsonb, 'lookups', jsonb_build_array(${lookup}))`;
   const lookup = (text: string, number: string, time: string) => `jsonb_build_object('text', ${text}, 'number', ${number}, 'time_ms', ${time})`;
   sql(`
     INSERT INTO ${schema}.entities (id, row, type_name, current)
     SELECT lpad(to_hex(i), 32, '0'),
-      jsonb_build_object(
+      jsonb_build_object('entity', jsonb_build_object(
         'header', jsonb_build_object('id', lpad(to_hex(i), 32, '0'), 'creator', 'bench', 'status', '${status}'::jsonb, 'version', 1, 'acl_id', null),
         'type_name', '${TYPE}', 'type_version', 1,
         'aliases', jsonb_build_array('Alias ' || i), 'alias_keys', jsonb_build_array('alias ' || i),
         'fields', jsonb_build_array(
           ${field("name", "to_jsonb('Gadget ' || i)", lookup("'gadget ' || i", "null", "null"))},
           ${field("category", "to_jsonb('Category ' || (i % 1000))", lookup("'category ' || (i % 1000)", "null", "null"))},
-          ${field("price", "to_jsonb(i * 7919 % 100000)", lookup("null", "(i * 7919 % 100000)", "null"))},
+          ${field("price", "to_jsonb(i::bigint * 7919 % 100000)", lookup("null", "(i::bigint * 7919 % 100000)", "null"))},
           ${field("released", "to_jsonb('2026-01-01'::text)", lookup("null", "null", "1767225600000"))}
         ),
         'merged_from', '[]'::jsonb, 'redirect_to', null, 'changeset_id', 'bench', 'updated_at_ms', 0
-      ),
+      )),
       '${TYPE}', true
     FROM generate_series(0, ${String(COUNT - 1)}) i`);
   sql(`
@@ -89,7 +89,7 @@ const load = (schema: string, template: string) => {
     LATERAL (VALUES
       ('name', 'gadget ' || i, null::double precision, null::bigint),
       ('category', 'category ' || (i % 1000), null, null),
-      ('price', null, (i * 7919 % 100000)::double precision, null),
+      ('price', null, (i::bigint * 7919 % 100000)::double precision, null),
       ('released', null, null, 1767225600000::bigint),
       ('$alias', 'alias ' || i, null, null)
     ) AS f(field, t, n, at)`);
