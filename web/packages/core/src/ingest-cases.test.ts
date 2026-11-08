@@ -2,9 +2,9 @@ import { vaultId } from "@memex/types";
 import { describe, expect, it } from "vitest";
 import { createEngine } from "./engine";
 import { ingestPath, parseIngestRoute } from "./ingest-cases";
-import { documentActivity, jobNamed, scriptedFeed } from "./ingest-testing";
+import { documentActivity, jobNamed, scriptedFeed, scriptedUploader } from "./ingest-testing";
 import { DEFAULT_SETTINGS } from "./settings";
-import { countingIds, fakeApi, manualClock, memoryDraftStorage, memoryPreferences } from "./testing";
+import { countingIds, fakeApi, identityWith, manualClock, memoryDraftStorage, memoryPreferences } from "./testing";
 
 const vault = vaultId("v");
 const start = (ingest: Parameters<typeof fakeApi>[0]) => {
@@ -40,10 +40,32 @@ describe("the engine's ingest cases", () => {
 
   it("an uploader that was never given reports no answer rather than throwing", async () => {
     const { engine } = start({});
-    const queue = engine.createUploadQueue(vault, { maxBytes: 100, allowedMediaTypes: ["text/plain"] }, () => undefined);
+    const queue = engine.uploadQueue(vault, { maxBytes: 100, allowedMediaTypes: ["text/plain"] });
     queue.add([{ name: "a.txt", size: 1, type: "text/plain" }], { trustTier: "unverified", language: null });
     for (let i = 0; i < 10; i += 1) await Promise.resolve();
     expect(queue.state().items[0]?.state.kind).toBe("failed");
+  });
+});
+
+describe("the upload queue's life", () => {
+  const limits = { maxBytes: 100, allowedMediaTypes: ["text/plain"] };
+  const setup = async () => {
+    const uploader = scriptedUploader();
+    const engine = createEngine({ clock: manualClock(), settings: DEFAULT_SETTINGS, api: fakeApi({ session: identityWith([]) }), preferences: memoryPreferences(), drafts: memoryDraftStorage(), ids: countingIds(), uploader });
+    await engine.restoreSession();
+    return { engine, uploader };
+  };
+  it("is the same queue however often a screen asks, so moving away doesn't lose an upload", async () => {
+    const { engine } = await setup();
+    expect(engine.uploadQueue(vault, limits)).toBe(engine.uploadQueue(vault, limits));
+  });
+  it("aborts when the session ends, and the next user starts with an empty one", async () => {
+    const { engine, uploader } = await setup();
+    const queue = engine.uploadQueue(vault, limits);
+    queue.add([{ name: "a.txt", size: 1, type: "text/plain" }], { trustTier: "unverified", language: null });
+    await engine.signOut();
+    expect(uploader.aborted).toEqual(["a.txt"]);
+    expect(engine.uploadQueue(vault, limits)).not.toBe(queue);
   });
 });
 

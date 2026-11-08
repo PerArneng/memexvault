@@ -102,7 +102,7 @@ export const LiveBoard = ({ identity, vault, watch, rest, search }: { readonly i
   return (
     <div className="flex flex-col gap-4" data-applied-seq={state.seq ?? ""} data-document-count={state.documents.size}>
       {canUpload ? (
-        <UploadPanel vault={vault} onStored={() => watch.refresh()} />
+        <UploadPanel vault={vault} />
       ) : (
         <p data-no-upload={true} className="text-sm text-text-muted">Your token can read this vault, so you can watch what's happening here. Uploading, retrying and cancelling need <strong>propose</strong> scope.</p>
       )}

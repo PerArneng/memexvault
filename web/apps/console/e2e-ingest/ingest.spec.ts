@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, closeSync, ftruncateSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { startServer, stopServer } from "../e2e-shell/server";
 import { makePdf } from "../e2e-documents/make-pdf";
@@ -479,6 +480,18 @@ test("item 6: an oversized file, a disallowed type, a lost connection during upl
   expect(await stored()).toBe(1);
   record("item 6 lost upload", { size: body.length, reachedBeforeCut: reached });
 
+  // Moving to another screen and back doesn't stop an upload.
+  const moving = `moving-${run}.txt`;
+  proxy.slowUploads(4 * 1024 * 1024);
+  await files.setInputFiles({ name: moving, mimeType: "text/plain", buffer: Buffer.from(`A text that travels while someone looks elsewhere ${run}. `.repeat(200_000)) });
+  await expect(item(moving).getByRole("progressbar")).toBeVisible();
+  await page.getByRole("link", { name: "Documents" }).click();
+  await expect(page.getByRole("heading", { name: "Documents", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Ingest" }).click();
+  await expect(item(moving)).toBeVisible();
+  proxy.slowUploads(null);
+  await expect(item(moving)).toHaveAttribute("data-upload-state", "stored");
+
   // The same bytes again.
   await files.setInputFiles({ name: `again-${run}.txt`, mimeType: "text/plain", buffer: body });
   await expect(item(`again-${run}.txt`)).toHaveAttribute("data-upload-state", "duplicate");
@@ -490,6 +503,9 @@ test("item 6: an oversized file, a disallowed type, a lost connection during upl
   await expect(item(`tier-${run}.txt`)).toHaveAttribute("data-upload-state", "stored");
   const listed = (await page.request.get(`/api/v1/vaults/${vault}/sources?limit=200`).then((r) => r.json()) as { items: { name: string; trust_tier: string }[] }).items.find((s) => s.name === `tier-${run}.txt`);
   expect(listed?.trust_tier).toBe("trusted");
+  const axe = await new AxeBuilder({ page }).analyze();
+  expect(axe.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
+  await page.screenshot({ path: test.info().outputPath("board.png") });
   expect(cspProblems(problems)).toEqual([]);
 });
 
@@ -510,6 +526,8 @@ test("item 6: a read-scope user sees the view with no controls", async ({ page, 
   await expect(page.locator(`[data-document-activity="${source}"]`)).toBeVisible();
   await expect(page.locator("[data-job]").first()).toBeVisible();
   await expect(page.getByRole("button", { name: /Cancel job|Retry job/ })).toHaveCount(0);
+  const axe = await new AxeBuilder({ page }).analyze();
+  expect(axe.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
 
   await page.goto(`/vaults/${vault}/ingest/-/failed`);
   await expect(page.getByRole("heading", { name: "Failed jobs" })).toBeVisible();
@@ -680,10 +698,11 @@ test("item 2: 50 events a second for 5 minutes", async ({ page }) => {
       nextMinute += 1;
     }
   }
+  // Stop writing first, so everything written has had time to appear before the last look.
+  for (const t of timers) clearInterval(t);
+  const wrote = counters.written;
   await pause(3000);
   await drain();
-  const wrote = counters.written;
-  for (const t of timers) clearInterval(t);
   const elapsedS = (Date.now() - started) / 1000;
 
   // A later value on a row or a later position covers everything before it.

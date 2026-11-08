@@ -80,9 +80,11 @@ export const createEngine = (edges: Edges): Engine => {
   const notify = () => {
     for (const listener of [...listeners]) listener();
   };
+  let stopUploads = () => undefined as void;
   const dispatchSession = (event: SessionEvent) => {
     const next = sessionReducer(session, event);
     if (next !== session) {
+      if (session.status === "signed_in" && next.status !== "signed_in") stopUploads();
       session = next;
       notify();
     }
@@ -120,10 +122,13 @@ export const createEngine = (edges: Edges): Engine => {
     if (result.ok && session.status === "unknown") await restoreSession();
   };
 
+  const ingest = createIngestCases({ edges, watched });
+  stopUploads = ingest.stopUploads;
+
   return {
     ...createWikiCases({ edges, watched, principal: () => (session.status === "signed_in" ? session.identity.principal.id : "unknown") }),
     ...createDocumentCases({ edges, watched }),
-    ...createIngestCases({ edges, watched }),
+    ...ingest,
     startedAt: () => started,
     uptimeMs: () => clock.now() - started,
     settings: () => edges.settings,

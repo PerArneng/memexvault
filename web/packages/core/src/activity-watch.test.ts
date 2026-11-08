@@ -1,7 +1,7 @@
 import { vaultId } from "@memex/types";
 import type { ActivityPage, DurableFrame } from "@memex/types";
 import { describe, expect, it } from "vitest";
-import { createActivityWatch, MAX_PENDING_FRAMES, MIN_SNAPSHOT_GAP_MS } from "./activity-watch";
+import { createActivityWatch, MAX_PENDING_FRAMES, MAX_WAITING_EVENTS, MIN_SNAPSHOT_GAP_MS } from "./activity-watch";
 import { failed, ok } from "./api";
 import type { ApiResult } from "./api";
 import { documentActivity, scriptedFeed } from "./ingest-testing";
@@ -159,6 +159,25 @@ describe("createActivityWatch", () => {
     watch.tick();
     expect(watch.state().connection.status).toBe("live");
     expect(answers.length).toBe(1);
+  });
+
+  it("a stream ended by the server asks again, which is how the session learns it's over", async () => {
+    const { clock, feed, watch, answers, answer } = setup();
+    await answer(0, ["a"]);
+    clock.advance(MIN_SNAPSHOT_GAP_MS);
+    feed.emit({ type: "ended", reason: "auth_ended", failure: null });
+    watch.tick();
+    expect(watch.state().connection).toEqual({ status: "ended", reason: "auth_ended" });
+    expect(answers.length).toBe(1);
+  });
+
+  it("drops what has waited too long for a tick, and the jump asks for a snapshot", async () => {
+    const { feed, watch, answer } = setup();
+    await answer(0, ["a"]);
+    for (let seq = 1; seq <= MAX_WAITING_EVENTS + 5; seq += 1) feed.emit({ type: "frame", frame: durable(seq) });
+    watch.tick();
+    expect(watch.state().seq).toBe(MAX_WAITING_EVENTS + 5);
+    expect(watch.state().needsSnapshot).toBe(true);
   });
 
   it("stop closes the stream, and a late answer changes nothing", async () => {

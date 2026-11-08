@@ -13,13 +13,10 @@ const options = { trustTier: "unverified", language: null };
 
 const setup = () => {
   const uploader = scriptedUploader();
-  let stored = 0;
   let n = 0;
-  const queue = createUploadQueue({ vault: vaultId("v"), limits, uploader, nextId: () => `id-${String((n += 1))}`, onStored: () => {
-    stored += 1;
-  } });
+  const queue = createUploadQueue({ vault: vaultId("v"), limits, uploader, nextId: () => `id-${String((n += 1))}` });
   const states = () => queue.state().items.map((i) => [i.name, i.state.kind]);
-  return { uploader, queue, states, stored: () => stored };
+  return { uploader, queue, states };
 };
 
 describe("uploadRefusal", () => {
@@ -56,14 +53,13 @@ describe("createUploadQueue", () => {
   });
 
   it("runs a limited number at once and starts the next when one ends", async () => {
-    const { uploader, queue, states, stored } = setup();
+    const { uploader, queue, states } = setup();
     queue.add([file("1.pdf"), file("2.pdf"), file("3.pdf")], options);
     expect(uploader.started.length).toBe(MAX_CONCURRENT_UPLOADS);
     expect(states()[2]).toEqual(["3.pdf", "queued"]);
     await uploader.finish("1.pdf", ok({ source: source("s1"), existing: false, jobId: "j" }));
     expect(states()[0]).toEqual(["1.pdf", "stored"]);
     expect(uploader.started.map((s) => s.name)).toContain("3.pdf");
-    expect(stored()).toBe(1);
   });
 
   it("reports progress per file", () => {

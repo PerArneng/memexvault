@@ -18,6 +18,8 @@ export interface ActivityFeed {
 
 /** A pending list longer than this means the snapshot took far too long, so the next one starts over. */
 export const MAX_PENDING_FRAMES = 4096;
+/** What may wait for a tick, for when timers stop, as in a background tab. Past it they're dropped, and the jump in positions asks for a snapshot. */
+export const MAX_WAITING_EVENTS = 20_000;
 /** Snapshots are never closer than this, and never take more than a fifth of the time, whatever the size of the vault. */
 export const MIN_SNAPSHOT_GAP_MS = 1000;
 const SNAPSHOT_COST_FACTOR = 5;
@@ -77,6 +79,7 @@ export const createActivityWatch = ({ vault, clock, feed, page }: WatchDeps): Ac
 
   const onFeed = (event: FeedEvent) => {
     const at = clock.now();
+    if (incoming.length >= MAX_WAITING_EVENTS) incoming = [];
     switch (event.type) {
       case "frame":
         if (event.frame.kind === "durable" && pending !== null) {
@@ -90,6 +93,8 @@ export const createActivityWatch = ({ vault, clock, feed, page }: WatchDeps): Ac
         break;
       case "ended":
         incoming.push({ type: "ended", reason: event.reason });
+        // The next call meets the same answer, and that's what tells the session it has ended.
+        wanted = true;
         break;
     }
   };

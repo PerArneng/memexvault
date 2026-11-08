@@ -54,7 +54,7 @@ export type { EvidenceState, MediaKind, Playability, TrustEffect, TrustTierName 
 export type { DocumentCases, SourceList, SourceTrustOutcome } from "./document-cases";
 export { activityReducer, boardRows, durationText, framesPerSecond, INITIAL_ACTIVITY, MAX_BOARD_DOCUMENTS, pipelineSteps, progressText, stageCounts, stageIndex, stageLabel, STAGES, statusExplanation, throughputPerMinute } from "./activity";
 export type { ActivityEvent, ActivityState, BoardDocument, BoardFilter, Connection, PipelineFacts, PipelineStep, StageCount, StageName, StageVisit } from "./activity";
-export { createActivityWatch, MAX_PENDING_FRAMES, MIN_SNAPSHOT_GAP_MS } from "./activity-watch";
+export { createActivityWatch, MAX_PENDING_FRAMES, MAX_WAITING_EVENTS, MIN_SNAPSHOT_GAP_MS } from "./activity-watch";
 export type { ActivityFeed, ActivityWatch, FeedEvent } from "./activity-watch";
 export { createUploadQueue, formatBytes, isRecordingFile, MAX_CONCURRENT_UPLOADS, uploadRefusal } from "./upload-queue";
 export type { RunningUpload, UploadFile, Uploader, UploadItem, UploadItemState, UploadOptions, UploadQueue, UploadQueueState } from "./upload-queue";

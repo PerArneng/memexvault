@@ -106,7 +106,7 @@ export interface UploadQueue {
   cancel(id: string): void;
   retry(id: string): void;
   remove(id: string): void;
-  /** Aborts what's running, for when the screen goes away and no one could see how it ended. */
+  /** Aborts what's running, for when the session ends. Moving between screens doesn't stop an upload. */
   stop(): void;
 }
 
@@ -115,10 +115,9 @@ interface QueueDeps {
   readonly limits: UploadLimits;
   readonly uploader: Uploader;
   readonly nextId: () => string;
-  readonly onStored: () => void;
 }
 
-export const createUploadQueue = ({ vault, limits, uploader, nextId, onStored }: QueueDeps): UploadQueue => {
+export const createUploadQueue = ({ vault, limits, uploader, nextId }: QueueDeps): UploadQueue => {
   let items: readonly UploadItem[] = [];
   let state: UploadQueueState = { items };
   const files = new Map<string, UploadFile>();
@@ -149,7 +148,6 @@ export const createUploadQueue = ({ vault, limits, uploader, nextId, onStored }:
         if (result.ok) {
           files.delete(id);
           update(id, (i) => ({ ...i, state: { kind: result.value.existing ? "duplicate" : "stored", source: result.value.source } }));
-          onStored();
         } else {
           update(id, (i) => ({ ...i, state: { kind: "failed", reason: failureText(result.failure), failure: result.failure } }));
         }

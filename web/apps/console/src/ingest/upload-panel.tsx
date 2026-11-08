@@ -4,7 +4,7 @@ import type { UploadLimits, VaultId } from "@memex/types";
 import { Badge, Button, Input } from "@memex/ui";
 import type { Tone } from "@memex/ui";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import type { DragEvent } from "react";
 import { useEngine } from "../engine-context";
 import { QUERY_KEYS, unwrap } from "../query";
@@ -53,27 +53,16 @@ const ItemRow = ({ vault, item, queue }: { readonly vault: VaultId; readonly ite
   );
 };
 
-const Panel = ({ vault, limits, onStored }: { readonly vault: VaultId; readonly limits: UploadLimits; readonly onStored: () => void }) => {
+const Panel = ({ vault, limits }: { readonly vault: VaultId; readonly limits: UploadLimits }) => {
   const engine = useEngine();
   const input = useRef<HTMLInputElement>(null);
-  const [queue, setQueue] = useState<UploadQueue | null>(null);
-  const stored = useRef(onStored);
-  stored.current = onStored;
-  useEffect(() => {
-    const created = engine.createUploadQueue(vault, limits, () => stored.current());
-    setQueue(created);
-    return () => created.stop();
-  }, [engine, vault, limits]);
+  const queue = engine.uploadQueue(vault, limits);
   const [tier, setTier] = useState("unverified");
   const [language, setLanguage] = useState("");
   const [over, setOver] = useState(false);
-  const items = useSyncExternalStore(
-    (listener) => queue?.subscribe(listener) ?? (() => undefined),
-    () => queue?.state().items ?? NONE,
-  );
+  const { items } = useSyncExternalStore(queue.subscribe, queue.state);
 
   const add = (files: readonly File[]) => {
-    if (queue === null) return;
     const trimmed = language.trim();
     const hasRecording = files.some(isRecordingFile);
     queue.add(files, { trustTier: tier, language: hasRecording && trimmed !== "" ? trimmed : null });
@@ -129,15 +118,13 @@ const Panel = ({ vault, limits, onStored }: { readonly vault: VaultId; readonly 
         </fieldset>
         <Input label="Language of recordings, if known (such as sv)" value={language} maxLength={16} onChange={(e) => setLanguage(e.target.value)} />
       </div>
-      {items.length > 0 && <ul aria-label="Upload queue" className="flex flex-col gap-2">{items.map((item) => (queue === null ? null : <ItemRow key={item.id} vault={vault} item={item} queue={queue} />))}</ul>}
+      {items.length > 0 && <ul aria-label="Upload queue" className="flex flex-col gap-2">{items.map((item) => <ItemRow key={item.id} vault={vault} item={item} queue={queue} />)}</ul>}
     </section>
   );
 };
 
-const NONE: readonly UploadItem[] = [];
-
-export const UploadPanel = ({ vault, onStored }: { readonly vault: VaultId; readonly onStored: () => void }) => {
+export const UploadPanel = ({ vault }: { readonly vault: VaultId }) => {
   const engine = useEngine();
   const limits = useQuery({ queryKey: QUERY_KEYS.uploadLimits(vault), queryFn: async () => unwrap(await engine.getUploadLimits(vault)) });
-  return <QueryView query={limits} label="the upload limits">{(data) => <Panel vault={vault} limits={data} onStored={onStored} />}</QueryView>;
+  return <QueryView query={limits} label="the upload limits">{(data) => <Panel vault={vault} limits={data} />}</QueryView>;
 };

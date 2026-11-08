@@ -33,7 +33,10 @@ export interface BulkRetryOutcome {
 export interface IngestCases {
   watchActivity(vault: VaultId): ActivityWatch;
   getUploadLimits(vault: VaultId): Promise<ApiResult<UploadLimits>>;
-  createUploadQueue(vault: VaultId, limits: UploadLimits, onStored: () => void): UploadQueue;
+  /** One per vault for the session, so moving to another screen doesn't stop an upload. */
+  uploadQueue(vault: VaultId, limits: UploadLimits): UploadQueue;
+  /** Whoever signs in next mustn't inherit this queue. */
+  stopUploads(): void;
   listJobsInState(vault: VaultId, state: string): Promise<ApiResult<JobList>>;
   /** Every job about one document that this browser can find, oldest first. `current` is the job the board names, found even when the list is cut short. */
   listDocumentJobs(vault: VaultId, source: string, current: string | null): Promise<ApiResult<JobList>>;
@@ -61,6 +64,7 @@ const NO_UPLOADER: Uploader = {
 
 export const createIngestCases = ({ edges, watched }: IngestDeps): IngestCases => {
   const { api, clock, ids } = edges;
+  const queues = new Map<VaultId, UploadQueue>();
 
   const allJobs = async (vault: VaultId, filter: { readonly state: string | null; readonly kind: string | null }, maxPages: number): Promise<ApiResult<JobList>> => {
     const jobs: Job[] = [];
@@ -78,13 +82,14 @@ export const createIngestCases = ({ edges, watched }: IngestDeps): IngestCases =
   return {
     watchActivity: (vault) => createActivityWatch({ vault, clock, feed: edges.activity ?? NO_FEED, page: (v, cursor) => watched(api.listActivityDocuments(v, cursor)) }),
     getUploadLimits: (vault) => watched(api.getUploadLimits(vault)),
-    createUploadQueue: (vault, limits, onStored) => {
+    uploadQueue: (vault, limits) => {
+      const held = queues.get(vault);
+      if (held !== undefined) return held;
       const uploader = edges.uploader ?? NO_UPLOADER;
-      return createUploadQueue({
+      const queue = createUploadQueue({
         vault,
         limits,
         nextId: () => ids.next(),
-        onStored,
         uploader: {
           start: (v, file, options, onProgress) => {
             const upload = uploader.start(v, file, options, onProgress);
@@ -92,6 +97,12 @@ export const createIngestCases = ({ edges, watched }: IngestDeps): IngestCases =
           },
         },
       });
+      queues.set(vault, queue);
+      return queue;
+    },
+    stopUploads: () => {
+      for (const queue of queues.values()) queue.stop();
+      queues.clear();
     },
     listJobsInState: (vault, state) => allJobs(vault, { state, kind: null }, MAX_JOB_PAGES),
     listDocumentJobs: async (vault, source, current) => {
