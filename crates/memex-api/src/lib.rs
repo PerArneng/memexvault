@@ -1,4 +1,5 @@
 //! Pure: request and response types for the HTTP API, and their translation from domain data. No web framework.
+mod activity;
 mod audit;
 mod chat;
 mod convert;
@@ -7,6 +8,7 @@ mod extraction;
 mod meeting;
 mod pages;
 mod review;
+pub use activity::*;
 pub use audit::*;
 pub use chat::*;
 pub use convert::*;

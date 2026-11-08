@@ -1,4 +1,5 @@
 //! Pure: traits, the Engine, reducers and policy. No runtime, network or file access. Anything with an edge sits behind a trait here.
+pub mod activity;
 mod agent;
 pub mod audit;
 mod auth;
@@ -36,6 +37,10 @@ mod upcast;
 pub mod vector;
 pub mod vector_projector;
 
+pub use activity::{
+    ActivityLimits, Admission, BufferLimits, DocumentStage, EmbedState, FrameClass, Progress, ProgressBoard, ResumePlan, ResumeRequest, ResyncReason,
+    StageInputs,
+};
 pub use agent::{AgentOutcome, AgentRunner, run_with_retry};
 pub use audit::{AUDIT_JOB, AUDITOR, AuditLimits};
 pub use auth::{Caller, Decision, Operation, authorize};
@@ -57,13 +62,13 @@ pub use review::{REVIEW_JOB, ReviewLimits};
 pub use search::Reranker;
 pub use seed::Seed;
 pub use server::{
-    AuditBudget, AuditRunDetail, AutoCommitEntry, AutoCommitTable, BacklinkView, BatchDecision, ChatInput, ChatLimits, ChatSettingsUpdate, ChatToolAnswer,
-    ChatToolContext, ChatView, ClaimEvidence, ClaimRef, ClaimRefStatus, ClaimReference, CreatedSession, CreatedToken, EntityCandidate, EntityClaim, EntityEdit,
-    EntityResolution, EntityView, EvidenceLineage, ExtractJobError, ExtractionReport, FieldInput, ImportedPage, Lineage, MediaInfo, MeetingView, NeighborView,
-    NewEntity, NewPage, NewToken, OutgoingLink, PIPELINE_VERSION, PageChange, PageDiff, PageList, PageRedirect, PageRevisionView, PageView, ParticipantLink,
-    ParticipantView, PreparedChat, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT, Redirect, RenditionInput, ReviewDetail, ReviewEvidence, ReviewItem,
-    SearchEdges, Server, ServerEdges, ServerError, SplitRequest, TRANSCRIBE_JOB, TranscriptPage, TranscriptWindow, TriggerAudit, TypeDecision, UnresolvedLink,
-    new_chat_cancel,
+    ActivitySnapshot, AuditBudget, AuditRunDetail, AutoCommitEntry, AutoCommitTable, BacklinkView, BatchDecision, ChatInput, ChatLimits, ChatSettingsUpdate,
+    ChatToolAnswer, ChatToolContext, ChatView, ClaimEvidence, ClaimRef, ClaimRefStatus, ClaimReference, CreatedSession, CreatedToken, DocumentActivity,
+    EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, EvidenceLineage, ExtractJobError, ExtractionReport, FieldInput, ImportedPage,
+    Lineage, MediaInfo, MeetingView, NeighborView, NewEntity, NewPage, NewToken, OutgoingLink, PIPELINE_VERSION, PageChange, PageDiff, PageList, PageRedirect,
+    PageRevisionView, PageView, ParticipantLink, ParticipantView, PreparedChat, Proposal, ProposalOutcome, RENDITION_JOB, RESULT_LIMIT, Redirect,
+    RenditionInput, ReviewDetail, ReviewEvidence, ReviewItem, SearchEdges, Server, ServerEdges, ServerError, SplitRequest, TRANSCRIBE_JOB, TranscriptPage,
+    TranscriptWindow, TriggerAudit, TypeDecision, UnresolvedLink, new_chat_cancel,
 };
 pub use session::{LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, SESSION_TTL_MS};
 pub use settings::{Backends, CacheSettings, LlmSettings, Settings, SettingsError, TranscribeApi, TranscribeSettings};

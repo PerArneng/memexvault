@@ -656,6 +656,145 @@ export interface paths {
         };
         trace?: never;
     };
+    "/api/v1/vaults/{id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Follows everything happening in a vault as server-sent events. Frames are named `hello`, `durable`, `progress`, `resync`, `heartbeat` and `end`. `durable` and `resync` frames have ids, and a stream resumes after one with `Last-Event-ID` or `after`. A `resync` frame means fetch a new snapshot from `/activity/documents` and carry on. Frames hold ids, kinds, stages, counts and timings, and never document text. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description A position to carry on from, such as a snapshot's `head`, for clients that can't set `Last-Event-ID`. That header comes first when both are there. */
+                    after?: string | null;
+                };
+                header?: {
+                    /** @description The last frame id seen. A position that can't be resumed from gives a `resync` frame, not an error. */
+                    "Last-Event-ID"?: string | null;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description A stream of frames, each with the schema of its name: `DurableFrame`, `ProgressFrame`, `ResyncFrame`, `HelloFrame`, `HeartbeatFrame` or `EndFrame` */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/event-stream": string;
+                    };
+                };
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                /** @description This principal has as many streams open as it may, with the code `too_many_streams` */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/activity/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The live board: each document's stage and status, in id order. `head` is the log position this reflects, to follow the stream from. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string | null;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number | null;
+                    /** @description `created`, the default. */
+                    sort?: string | null;
+                    /** @description Only documents in this stage. */
+                    stage?: string | null;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ActivityDocumentPage"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/vaults/{id}/assertions/as-of": {
         parameters: {
             query?: never;
@@ -6327,6 +6466,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description A page of the live board. */
+        ActivityDocumentPage: {
+            /**
+             * Format: int64
+             * @description The log position this reflects, which a stream can follow from with `after`. -1 is before the first event.
+             */
+            head: number;
+            items: components["schemas"]["DocumentActivityDto"][];
+            next_cursor?: string | null;
+        };
         AssertionList: {
             items: Record<string, never>[];
         };
@@ -6442,6 +6591,28 @@ export interface components {
             /** @description `scheduled` or `on_demand`. */
             trigger: string;
             vault_findings: components["schemas"]["VaultFindingDto"][];
+        };
+        AuditRunFact: {
+            /** Format: int32 */
+            failed: number;
+            /** Format: int64 */
+            finished_at_ms?: number | null;
+            id: string;
+            job_id?: string | null;
+            /** Format: int32 */
+            llm_calls: number;
+            /** Format: int32 */
+            passed: number;
+            /** Format: int32 */
+            sample_size: number;
+            /** Format: int32 */
+            sampled: number;
+            /** @description `queued`, `running` or `finished`. */
+            state: string;
+            /** @description Why its LLM checks stopped short, in a word. */
+            stop?: string | null;
+            /** Format: int32 */
+            suspect: number;
         };
         AuditRunPage: {
             items: components["schemas"]["AuditRunDto"][];
@@ -6664,6 +6835,20 @@ export interface components {
             state: string;
             validators: Record<string, never>[];
         };
+        ChangeSetFact: {
+            /** Format: int64 */
+            commit_seq?: number | null;
+            /** Format: int64 */
+            decided_at_ms?: number | null;
+            id: string;
+            machine: boolean;
+            /** Format: int32 */
+            ops: number;
+            /** Format: int64 */
+            proposed_at_ms: number;
+            /** @description `pending`, `committed` or `rejected`. */
+            state: string;
+        };
         ChangeSetPage: {
             items: components["schemas"]["ChangeSetDto"][];
             next_cursor?: string | null;
@@ -6826,6 +7011,22 @@ export interface components {
             source_id: string;
             tokens: components["schemas"]["TokenUsageDto"];
         };
+        DerivationFact: {
+            id: string;
+            /** Format: int32 */
+            items: number;
+            job_id?: string | null;
+            /** @description `done` or `failed`. */
+            outcome: string;
+            /** Format: int32 */
+            refused: number;
+            rendition_id?: string | null;
+            /** Format: int32 */
+            segments: number;
+            source_id?: string | null;
+            /** Format: int64 */
+            tokens: number;
+        };
         DerivationPage: {
             items: components["schemas"]["DerivationDto"][];
             next_cursor?: string | null;
@@ -6833,10 +7034,83 @@ export interface components {
         DisableBody: {
             reason: string;
         };
+        /** @description One document on the live board. */
+        DocumentActivityDto: {
+            /** Format: int32 */
+            attempts: number;
+            /** @description The job this depends on now, if one does. */
+            job_id?: string | null;
+            logical_id: string;
+            /** Format: int64 */
+            next_run_at_ms?: number | null;
+            /** Format: int32 */
+            page_count?: number | null;
+            /** @description Some part of it didn't work, whatever stage it's in now. */
+            partial: boolean;
+            /** Format: int64 */
+            pending_review: number;
+            progress?: components["schemas"]["DocumentProgressDto"] | null;
+            /** Format: int64 */
+            recorded_at_ms: number;
+            rendition_id?: string | null;
+            /** Format: int32 */
+            segment_count?: number | null;
+            /** Format: int32 */
+            segments_extracted?: number | null;
+            source_id: string;
+            /** @description `stored`, `parsing`, `ocr`, `transcription`, `segmenting`, `indexing`, `embedding`, `extraction`, `review` or `done`. */
+            stage: string;
+            /** @description `queued`, `active`, `waiting`, `retrying`, `failed`, `partial` or `done`. */
+            status: string;
+            /** Format: int32 */
+            version_no: number;
+            /** Format: int64 */
+            waiting_since_ms?: number | null;
+        };
+        /** @description How far a worker has got. */
+        DocumentProgressDto: {
+            /** Format: int64 */
+            done: number;
+            stage: string;
+            /** Format: int64 */
+            time_ms: number;
+            /** Format: int64 */
+            total?: number | null;
+        };
+        /** @description One event from the log, reduced to what can safely be said about it. Its `seq` is the frame's SSE id. */
+        DurableFrame: {
+            audit_runs?: components["schemas"]["AuditRunFact"][];
+            changesets?: components["schemas"]["ChangeSetFact"][];
+            /** @description How many rows of each kind the event wrote. */
+            counts?: {
+                [key: string]: number;
+            };
+            derivations?: components["schemas"]["DerivationFact"][];
+            extractions?: components["schemas"]["ExtractionFact"][];
+            jobs?: components["schemas"]["JobFact"][];
+            /** @description The event's kind, or `other` for one this server doesn't list. */
+            kind: string;
+            /**
+             * Format: int32
+             * @description How many items didn't fit in the lists above.
+             */
+            omitted?: number;
+            renditions?: components["schemas"]["RenditionFact"][];
+            /** Format: int64 */
+            seq: number;
+            sources?: components["schemas"]["SourceFact"][];
+            /** Format: int64 */
+            time_ms: number;
+        };
         EditApproveBody: {
             /** @description What to approve instead of what was proposed, which stays on record. */
             ops: Record<string, never>[];
             reason?: string | null;
+        };
+        /** @description The last frame of a stream, and why. */
+        EndFrame: {
+            /** @description `auth_ended` (the token or session is over), `scope_lost` (it can't read this vault now), `vault_gone`, `unverifiable` (the store was away too long to check), `unavailable` or `server_stopping`. */
+            reason: string;
         };
         EntityDetailDto: {
             aliases: string[];
@@ -7022,6 +7296,27 @@ export interface components {
             /** Format: int64 */
             watermark?: number | null;
         };
+        ExtractionFact: {
+            /** Format: int32 */
+            batches_failed: number;
+            job_id?: string | null;
+            /** Format: int32 */
+            proposed: number;
+            /** Format: int32 */
+            rejected: number;
+            rendition_id: string;
+            /** Format: int32 */
+            segments_done: number;
+            /** Format: int32 */
+            segments_total: number;
+            source_id?: string | null;
+            /** @description `budget`, `failed_batches` or `superseded`, when a run ended short. */
+            stop?: string | null;
+            /** Format: int64 */
+            token_budget: number;
+            /** Format: int64 */
+            tokens: number;
+        };
         ExtractionStatusDto: {
             /** Format: int32 */
             batches_failed: number;
@@ -7137,6 +7432,21 @@ export interface components {
         HealthDto: {
             status: string;
         };
+        /** @description Says the stream is alive when nothing else has. */
+        HeartbeatFrame: {
+            /** Format: int64 */
+            head: number;
+        };
+        /** @description The first frame of every stream. */
+        HelloFrame: {
+            /**
+             * Format: int64
+             * @description Where the log's reader was as this stream opened. -1 is before the first event.
+             */
+            head: number;
+            /** @description Whether this stream carries on from a position the client named. */
+            resumed: boolean;
+        };
         HighlightDto: {
             broken: boolean;
             /** Format: int32 */
@@ -7180,6 +7490,37 @@ export interface components {
              * Format: int64
              * @description Set while the job waits for something that's away, such as the LLM.
              */
+            waiting_since_ms?: number | null;
+        };
+        /** @description A job at one moment. Its error messages, its input and who holds it stay out, as an error can quote a document. */
+        JobFact: {
+            /** Format: int32 */
+            attempts: number;
+            audit_run_id?: string | null;
+            changeset_id?: string | null;
+            /**
+             * Format: int32
+             * @description How many objects an embedding job holds.
+             */
+            docs?: number | null;
+            /** Format: int64 */
+            finished_at_ms?: number | null;
+            id: string;
+            /** @description `rendition`, `transcription`, `embed`, `extract`, `review`, `audit` or `other`. */
+            kind: string;
+            /** Format: int32 */
+            max_attempts: number;
+            /** Format: int64 */
+            next_run_at_ms: number;
+            rendition_id?: string | null;
+            source_id?: string | null;
+            /** @description The stage this job's work belongs to, when it's about a document. */
+            stage?: string | null;
+            /** @description `queued`, `running`, `done`, `dead` or `cancelled`. */
+            state: string;
+            /** @description `queued`, `active`, `waiting`, `retrying`, `failed` or `done`. */
+            status: string;
+            /** Format: int64 */
             waiting_since_ms?: number | null;
         };
         JobPage: {
@@ -7579,6 +7920,18 @@ export interface components {
             items: components["schemas"]["PrincipalDto"][];
             next_cursor?: string | null;
         };
+        /** @description What a worker last said about a job. In memory only, so it has no id and no resume. */
+        ProgressFrame: {
+            /** Format: int64 */
+            done: number;
+            job_id: string;
+            source_id?: string | null;
+            stage: string;
+            /** Format: int64 */
+            time_ms: number;
+            /** Format: int64 */
+            total?: number | null;
+        };
         ProposalBody: {
             idempotency_key: string;
             /** @description The ops, as defined by `memex_types::Op`. */
@@ -7696,6 +8049,17 @@ export interface components {
             source_id: string;
             superseded_by?: string | null;
         };
+        RenditionFact: {
+            /** Format: int64 */
+            created_at_ms: number;
+            id: string;
+            /** Format: int32 */
+            page_count: number;
+            /** Format: int32 */
+            segment_count: number;
+            source_id?: string | null;
+            superseded: boolean;
+        };
         RenditionList: {
             items: components["schemas"]["RenditionDto"][];
         };
@@ -7712,6 +8076,16 @@ export interface components {
             candidates: components["schemas"]["CandidateDto"][];
             /** @description `lexical`, if only exact matches could be looked for. */
             degraded: string[];
+        };
+        /** @description Fetch a new snapshot, then carry on from here. Also the frame's SSE id. */
+        ResyncFrame: {
+            /**
+             * Format: int64
+             * @description The position this stream continues from. -1 is before the first event.
+             */
+            head: number;
+            /** @description `overflow`, `unknown_position`, `log_gap` or `erased`. */
+            reason: string;
         };
         ReviewDetailDto: {
             /** @description Why auto-commit wouldn't take this even if earned. */
@@ -7879,6 +8253,14 @@ export interface components {
              * @description What optimistic edits base themselves on.
              */
             version: number;
+            /** Format: int32 */
+            version_no: number;
+        };
+        SourceFact: {
+            id: string;
+            logical_id?: string | null;
+            /** Format: int64 */
+            size: number;
             /** Format: int32 */
             version_no: number;
         };

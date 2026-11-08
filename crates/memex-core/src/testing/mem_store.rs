@@ -108,6 +108,83 @@ impl Snapshot for MemSnapshot<'_> {
         Ok(page.collect())
     }
 
+    fn document_facts(&self, sources: &[ObjectId]) -> Result<Vec<memex_types::DocumentFacts>, StoreError> {
+        self.count();
+        let job_of = |id: &ObjectId| match self.state.rows.get(&RowKey {
+            table: Table::Job,
+            id: id.clone(),
+        }) {
+            Some(Row::Job(j)) => Some(j.clone()),
+            _ => None,
+        };
+        let mut out = vec![];
+        for source in sources {
+            let rendition = self
+                .state
+                .rows
+                .values()
+                .filter_map(|r| match r {
+                    Row::Rendition(x) if &x.source_id == source => Some(x.clone()),
+                    _ => None,
+                })
+                .next_back();
+            let extraction = rendition.as_ref().and_then(|r| {
+                match self.state.rows.get(&RowKey {
+                    table: Table::Extraction,
+                    id: r.header.id.clone(),
+                }) {
+                    Some(Row::Extraction(x)) => Some(x.clone()),
+                    _ => None,
+                }
+            });
+            let extraction_job = extraction.as_ref().and_then(|x| job_of(&x.job_id));
+            let pending_review = rendition.as_ref().map_or(0, |r| {
+                self.state
+                    .rows
+                    .values()
+                    .filter(|row| {
+                        matches!(row, Row::ChangeSet(c)
+                            if c.state == memex_types::ChangeSetState::Pending
+                                && c.origin.as_ref().is_some_and(|o| o.rendition_ids.contains(&r.header.id)))
+                    })
+                    .count() as u64
+            });
+            out.push(memex_types::DocumentFacts {
+                source_id: source.clone(),
+                rendition,
+                extraction,
+                extraction_job,
+                pending_review,
+            });
+        }
+        Ok(out)
+    }
+
+    fn open_embed_sources(&self, limit: usize) -> Result<Vec<(ObjectId, JobState)>, StoreError> {
+        self.count();
+        let mut out = vec![];
+        for row in self.state.rows.values() {
+            let Row::Job(job) = row else { continue };
+            if job.kind != crate::EMBED_JOB || !matches!(job.state, JobState::Queued | JobState::Running | JobState::Dead) {
+                continue;
+            }
+            for id in crate::vector::embed_doc_ids(job) {
+                if let Some(Row::Segment(s)) = self.state.rows.get(&RowKey { table: Table::Segment, id })
+                    && !out.contains(&(s.source_id.clone(), job.state))
+                {
+                    out.push((s.source_id.clone(), job.state));
+                }
+            }
+        }
+        out.truncate(limit);
+        Ok(out)
+    }
+
+    fn event_time(&self, seq: u64) -> Result<Option<i64>, StoreError> {
+        self.count();
+        Ok(self.state.events.get(&seq).map(|e| e.time_ms))
+    }
+
     fn events(&self, after: Option<u64>) -> Result<Vec<Event>, StoreError> {
         self.count();
         let from = after.map_or(0, |a| a + 1);

@@ -3,8 +3,8 @@
 #![allow(clippy::disallowed_methods)]
 use crate::workers::{JobFailure, JobHandler};
 use memex_asr::worker::{EXIT_REFUSED, EXIT_WAITING, RESULT_FILE, SOURCE_FILE};
-use memex_core::{RenditionInput, Server, ServerEdges, ServerError};
-use memex_types::{JobRow, JobState, Mutation, ObjectId, TimedDocument, VaultId};
+use memex_core::{Progress, RenditionInput, Server, ServerEdges, ServerError};
+use memex_types::{JobRow, JobState, Mutation, ObjectId, ProgressUpdate, Stage, TimedDocument, VaultId};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -215,6 +215,18 @@ where
             }
             if last_check.elapsed() >= CHECK_EVERY {
                 last_check = Instant::now();
+                if let Some((done, total)) = memex_asr::worker::progress_of(dir) {
+                    self.server.report(
+                        vault,
+                        ProgressUpdate {
+                            job_id: job.header.id.clone(),
+                            source_id: job.input.get("source_id").and_then(|v| v.as_str()).map(|s| ObjectId(s.into())),
+                            stage: Stage::Transcription,
+                            done,
+                            total: Some(total),
+                        },
+                    );
+                }
                 if let Some(mb) = rss_mb(pid)
                     && mb >= self.command.max_rss_mb
                 {

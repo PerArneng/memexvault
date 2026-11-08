@@ -1,3 +1,4 @@
+mod activity;
 mod audit;
 mod chat;
 mod entities;
@@ -161,6 +162,7 @@ struct ApiDoc;
 /// The generated contract. The console's types come from this.
 pub fn openapi() -> utoipa::openapi::OpenApi {
     let mut doc = ApiDoc::openapi();
+    doc.merge(activity::ActivityDoc::openapi());
     doc.merge(audit::AuditDoc::openapi());
     doc.merge(chat::ChatDoc::openapi());
     doc.merge(entities::EntityDoc::openapi());
@@ -188,8 +190,17 @@ where
     router_with(server, console, Router::new())
 }
 
-/// `extra` holds routes another frontend serves, such as MCP. They get the same request id, log line and security headers as the API, and the composition root decides what goes in it.
+/// The router with a hub of its own. `serve_with` passes one it can stop at shutdown.
 pub fn router_with<E>(server: App<E>, console: ConsoleLookup, extra: Router<App<E>>) -> Router
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
+    router_with_hub(server, console, extra, Arc::new(crate::activity::Hub::default()))
+}
+
+/// `extra` holds routes another frontend serves, such as MCP. They get the same request id, log line and security headers as the API, and the composition root decides what goes in it.
+fn router_with_hub<E>(server: App<E>, console: ConsoleLookup, extra: Router<App<E>>, hub: Arc<crate::activity::Hub>) -> Router
 where
     E: ServerEdges + Send + Sync + 'static,
     Server<E>: Send + Sync,
@@ -247,6 +258,7 @@ where
         .route("/principals/{id}/disable", post(disable_principal::<E>))
         .route("/tokens", get(list_tokens::<E>).post(create_token::<E>))
         .route("/tokens/{id}", axum::routing::delete(revoke_token::<E>));
+    let api = activity::add_routes::<E>(api);
     let api = audit::add_routes::<E>(api);
     let api = chat::add_routes::<E>(api);
     let api = entities::add_routes::<E>(api);
@@ -260,6 +272,7 @@ where
         .fallback(move |Extension(rid): Extension<RequestId>, req: Request| browser::console_or_not_found(console, rid, req))
         .method_not_allowed_fallback(method_not_allowed)
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
+        .layer(Extension(hub))
         .layer(middleware::from_fn(browser::csrf_guard))
         .layer(middleware::from_fn_with_state(server.clone(), request_scope::<E>))
         .with_state(server)
@@ -1583,15 +1596,18 @@ where
 {
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!(addr = %listener.local_addr()?, "listening");
-    // A small event waiting on the last one's ACK would hold a stream back.
-    let listener = axum::serve::ListenerExt::tap_io(listener, |stream| {
-        if let Err(e) = stream.set_nodelay(true) {
-            tracing::warn!(error = %e, "couldn't set TCP_NODELAY");
-        }
-    });
+    let hub = Arc::new(crate::activity::Hub::default());
+    // The watcher sets TCP_NODELAY on every connection, which chat's small events need too.
+    // Graceful shutdown waits for every open response, and a stream is never done by itself.
+    let stopping = hub.clone();
+    let shutdown = async move {
+        shutdown.await;
+        stopping.stop();
+    };
+    let listener = axum::serve::ListenerExt::tap_io(crate::conn_watch::WatchedListener::new(listener, hub.conns()), |_| {});
     axum::serve(
         listener,
-        router_with(server, browser::embedded_asset, extra).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        router_with_hub(server, browser::embedded_asset, extra, hub).into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown)
     .await

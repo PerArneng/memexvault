@@ -1160,14 +1160,16 @@ fn every_list_route_in_the_openapi_document_has_cursor_limit_and_sort() {
         }
     }
     assert_eq!(
-        lists, 28,
-        "vaults, principals, tokens, changesets, changes, contradictions, sources, jobs, segments, re-anchor failures, flagged pages, two claim lists, entity types, entities, same-as suggestions, pages, revisions, backlinks, outgoing links, unresolved links, derivations, neighborhoods, the review queue, the auto-commit table, audit runs, audit checks and chat threads"
+        lists, 29,
+        "the live board, vaults, principals, tokens, changesets, changes, contradictions, sources, jobs, segments, re-anchor failures, flagged pages, two claim lists, entity types, entities, same-as suggestions, pages, revisions, backlinks, outgoing links, unresolved links, derivations, neighborhoods, the review queue, the auto-commit table, audit runs, audit checks and chat threads"
     );
     // Every route the router serves is documented.
     for p in [
         "/api/v1/health",
         "/api/v1/version",
         "/api/v1/whoami",
+        "/api/v1/vaults/{id}/activity",
+        "/api/v1/vaults/{id}/activity/documents",
         "/api/v1/vaults/{id}/entity-types",
         "/api/v1/vaults/{id}/entity-types/{name}/versions",
         "/api/v1/vaults/{id}/entity-types/{name}/preview",

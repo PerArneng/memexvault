@@ -394,13 +394,19 @@ Spec 029. Tools are `search`, `get`, `neighborhood`, `resolve`, `propose`, `inge
 
 ## Live activity
 
-One server-sent event stream per vault feeds the console's live views (spec 038). It carries metadata only, never document content.
+One server-sent event stream per vault feeds the console's live views, at `GET /api/v1/vaults/{id}/activity` (spec 038). It carries metadata only, never document content. `GET /vaults/{id}/activity/documents` is the snapshot: each document's stage and the log's `head`, to follow from with `?after=`.
 
-- **Durable events** come from the log and resume by sequence number, so a reconnect misses nothing.
-- **Progress messages,** such as OCR page 12 of 400, are in memory only and may be dropped.
-- **Each document has a stage model:** stored, parsing, OCR or transcription, segmenting, indexing, embedding, extraction, review, done. Failed,
-  partial and waiting are visible states.
-- **A slow client never slows ingest.** Its buffer is bounded, and overflow sends a resync frame, which makes the client fetch a new snapshot.
+- **Frames are built field by field** from a fixed list in `memex-api`: ids, kinds, stages, counts and timings. Names, metadata, error messages, quotes and failure reasons have no field to go in. An event kind nobody listed reads as `other`, and a new row kind won't compile until it's listed, where the easy choice is to count it. An id goes through only if it looks like one, so a link's `slug:` target can't.
+- **Durable events** come from the log and resume by sequence number, from `Last-Event-ID` or `?after=`, so a reconnect misses nothing. Their sequence is the frame's id, and -1 is before the first event.
+- **Progress messages,** such as OCR page 12 of 400, are in memory only and may be dropped. They go through the `Progress` trait, whose update has no field for text. It's a board on the `Server`, not an edge type on `ServerEdges`, as it holds no IO. Workers finishing a job clear its report.
+- **Each document has a stage model:** stored, parsing, OCR or transcription, segmenting, indexing, embedding, extraction, review, done. Failed, partial, waiting and retrying are visible states. The earliest unfinished work decides, so a later stage can't hide an earlier failure. It's pure, in `memex-core`. Indexing compares a rendition's time with the time of the event the slowest index has reached, since a row doesn't record its commit's sequence, so it can read as past indexing for the moment between building a rendition and committing it.
+- **One reader per vault.** A task per followed vault looks at the log's head every 200 ms in one statement with no transaction, and reads a page only when it moved. Waiting clients hold no Postgres connection and no lease. It keeps the last 4,096 frames, so most reconnects read nothing. Older positions read the log a page at a time, two clients at once over the whole server.
+- **A slow client never slows ingest.** Nothing here touches the writer. Each client's buffer is bounded (1,024 frames, 1 MiB), and overflow drops what's waiting and sends a resync frame at the current position, which makes the client fetch a new snapshot. A pure policy decides, and progress and heartbeats are dropped first.
+- **A client that never reads can't hear a resync,** and hyper stops polling a response while a write is stuck, so the connection itself is watched: writes refused for 30 s close it. Only a stream's connection is watched, so a paused download isn't touched.
+- **Scope.** Checked at open, then each distinct credential every second by the same reader, one after another, so a token revoked, a session ended, a principal disabled, a grant removed or a token expiring ends the stream with an `end` frame and a reason, and nothing follows it. What's waiting in its buffer is dropped too. Frames can still go out until the next check, so for at most a second after the change. If the store can't answer, a stream goes on for up to 10 s and then ends.
+- **A position that can't be resumed from gets a resync, not an error:** one ahead of the log, one that isn't a number, or one the log no longer holds, which is any gap in the sequence. A new cache generation does the same for every open stream and empties the frames in memory, which is how erasure (spec 030) reaches this: **it must call `bump_cache_generation`,** as it already has to for the caches. It can keep or remove envelopes, since either reads correctly: an emptied payload gives a frame with no details, and missing rows give a resync.
+- **A limit per principal** of 16 streams over all vaults. The next is refused with 429 and the code `too_many_streams`.
+- **Shutdown** ends every stream, as graceful shutdown would otherwise wait for them for ever.
 
 ## Chat agent
 

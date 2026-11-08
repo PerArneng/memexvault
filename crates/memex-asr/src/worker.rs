@@ -204,6 +204,21 @@ fn spans_of<E: Ears>(dir: &Path, ears: &E, pcm: &PcmFile) -> Result<Vec<Span>, W
     Ok(spans)
 }
 
+/// How many stretches of speech are done, of how many, from what the folder holds. None until the stretches are known. It reads the log for its line numbers, and only numbers leave here.
+pub fn progress_of(dir: &Path) -> Option<(u64, u64)> {
+    let spans: Vec<Span> = serde_json::from_slice(&fs::read(dir.join(SPANS_FILE)).ok()?).ok()?;
+    let lines = read_lines(&dir.join(PROGRESS_FILE)).ok()?;
+    let mut finished = vec![false; spans.len()];
+    for line in lines {
+        if line.words.is_some()
+            && let Some(slot) = finished.get_mut(line.i)
+        {
+            *slot = true;
+        }
+    }
+    Some((finished.iter().filter(|f| **f).count() as u64, spans.len() as u64))
+}
+
 /// Step 3: every stretch of speech, with saved progress. A stretch that crashed once runs again on token times, and one that crashed on those too is skipped and counted.
 fn heard<E: Ears>(dir: &Path, ears: &E, pcm: &PcmFile, spans: &[Span], language: Option<&str>, facts: &mut MediaFacts) -> Result<Vec<TimedWord>, WorkerFail> {
     let path = dir.join(PROGRESS_FILE);

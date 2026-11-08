@@ -33,6 +33,7 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 futures-util = { version = "0.3", default-features = false }
 memex-api.workspace = true
+socket2 = "0.6"
 similar = "=2.7.0"
 tower.workspace = true
 axum.workspace = true

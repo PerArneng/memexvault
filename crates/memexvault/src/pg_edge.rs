@@ -26,6 +26,18 @@ fn translate(vault: &VaultId, e: PgError) -> StoreError {
 }
 
 impl Snapshot for PostgresSnapshot<'_> {
+    fn document_facts(&self, sources: &[ObjectId]) -> Result<Vec<memex_types::DocumentFacts>, StoreError> {
+        self.inner.document_facts(sources).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn open_embed_sources(&self, limit: usize) -> Result<Vec<(ObjectId, JobState)>, StoreError> {
+        self.inner.open_embed_sources(limit).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn event_time(&self, seq: u64) -> Result<Option<i64>, StoreError> {
+        self.inner.event_time(seq).map_err(|e| translate(&self.vault, e))
+    }
+
     fn row_stamps(&self, keys: &[RowKey]) -> Result<Vec<Option<String>>, StoreError> {
         self.inner.row_stamps(keys).map_err(|e| translate(&self.vault, e))
     }

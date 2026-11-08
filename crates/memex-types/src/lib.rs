@@ -1,4 +1,5 @@
 //! Pure: ids, events and rows, shared by core and edges. No IO.
+mod activity;
 mod agent;
 mod audit;
 mod blob;
@@ -19,6 +20,7 @@ mod rows;
 mod search;
 mod vector;
 
+pub use activity::{DocumentFacts, ProgressEntry, ProgressUpdate, Stage, StageStatus};
 pub use agent::{
     AgentBudget, AgentError, AgentReply, AgentRequest, AgentUsage, ChatEnd, ChatHost, ChatRequest, ChatStop, ChatTurn, RunnerEvent, RunnerPart, ToolDefinition,
     estimate_tokens,

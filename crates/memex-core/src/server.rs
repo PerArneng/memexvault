@@ -1,3 +1,4 @@
+mod activity;
 mod audit;
 mod chat;
 mod entities;
@@ -6,6 +7,7 @@ mod meeting;
 mod pages;
 mod review;
 pub use self::meeting::{MediaInfo, MeetingView, ParticipantLink, ParticipantView, TranscriptPage, TranscriptWindow};
+pub use activity::{ActivitySnapshot, DocumentActivity};
 pub use audit::{AuditBudget, AuditRunDetail, TriggerAudit};
 pub use chat::{ChatInput, ChatLimits, ChatSettingsUpdate, ChatToolAnswer, ChatToolContext, ChatView, PreparedChat, new_chat_cancel};
 pub use entities::{
@@ -348,6 +350,9 @@ pub struct Server<E: ServerEdges> {
     id_counter: AtomicU64,
     /// None until the composition root has an LLM to send documents to.
     extraction: Mutex<Option<crate::extraction::ExtractionLimits>>,
+    /// What workers last said they were doing, in memory.
+    progress_board: crate::activity::ProgressBoard,
+    activity_limits: Mutex<crate::activity::ActivityLimits>,
     /// None until the composition root has a chat model.
     chat_limits: Mutex<Option<ChatLimits>>,
     /// The runs going now, and how to stop each. Lives in memory, as a run lives no longer than its process.
@@ -400,6 +405,8 @@ impl<E: ServerEdges> Server<E> {
             auditor: Mutex::new(None),
             id_counter: AtomicU64::new(0),
             extraction: Mutex::new(None),
+            progress_board: crate::activity::ProgressBoard::default(),
+            activity_limits: Mutex::new(crate::activity::ActivityLimits::default()),
             chat_limits: Mutex::new(None),
             chat_runs: Arc::default(),
         }
@@ -841,7 +848,24 @@ impl<E: ServerEdges> Server<E> {
             .collect();
         let docs = embeddable(&snap, docs).map_err(EmbedJobError::retry)?;
         drop(snap);
-        embed_missing(&self.vector, &self.embedder, vault, &input.model, docs)
+        let report = |done: usize, total: usize| {
+            crate::Progress::report(
+                self,
+                vault,
+                memex_types::ProgressUpdate {
+                    job_id: job.header.id.clone(),
+                    source_id: None,
+                    stage: memex_types::Stage::Embedding,
+                    done: done as u64,
+                    total: Some(total as u64),
+                },
+            );
+        };
+        let total = docs.len();
+        report(0, total);
+        let embedded = embed_missing(&self.vector, &self.embedder, vault, &input.model, docs)?;
+        report(total, total);
+        Ok(embedded)
     }
 
     /// Refuses to start on a generation the embedder can't serve: a model that's gone, or one whose dimension changed under the same name.

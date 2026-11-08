@@ -3,8 +3,8 @@
 #![allow(clippy::disallowed_methods)]
 use crate::workers::{JobFailure, JobHandler};
 use memex_core::ocr::{self, OcrPage};
-use memex_core::{RenditionInput, Server, ServerEdges, ServerError};
-use memex_types::{JobRow, Mutation, ObjectId, PageOutcome, PageRoute, ParsedDocument, VaultId, Word};
+use memex_core::{Progress, RenditionInput, Server, ServerEdges, ServerError};
+use memex_types::{JobRow, Mutation, ObjectId, PageOutcome, PageRoute, ParsedDocument, ProgressUpdate, Stage, VaultId, Word};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -117,10 +117,25 @@ fn run_ocr_worker(command: &WorkerCommand, pdf: &[u8], page: u32, dpi: u32) -> R
 
 /// Reads each page that needs it, one child per page, so a failure costs a page and not the document. Words go in page order.
 pub fn add_ocr(doc: &mut ParsedDocument, pdf: &[u8], ocr: Option<&WorkerCommand>) -> Vec<PageOutcome> {
+    add_ocr_reporting(doc, pdf, ocr, &mut |_, _| {})
+}
+
+/// As `add_ocr`, and says how far it has got among the pages OCR reads: how many are done, of how many.
+pub fn add_ocr_reporting(doc: &mut ParsedDocument, pdf: &[u8], ocr: Option<&WorkerCommand>, on_page: &mut dyn FnMut(u64, u64)) -> Vec<PageOutcome> {
     let routes = ocr::route_pages(doc);
     let checks = ocr::hidden_check_pages(doc, &routes);
     let mut outcomes = vec![];
     let mut words = vec![];
+    let total = doc
+        .pages
+        .iter()
+        .zip(&routes)
+        .filter(|(facts, route)| **route == PageRoute::Ocr || checks.contains(&facts.index))
+        .count() as u64;
+    let mut read = 0;
+    if ocr.is_some() && total > 0 {
+        on_page(0, total);
+    }
     for (facts, route) in doc.pages.clone().iter().zip(&routes) {
         let layer: Vec<Word> = doc.words.iter().filter(|w| w.page == facts.index).cloned().collect();
         let refs: Vec<&Word> = layer.iter().collect();
@@ -135,6 +150,10 @@ pub fn add_ocr(doc: &mut ParsedDocument, pdf: &[u8], ocr: Option<&WorkerCommand>
             (true, None) => None,
             (false, _) => None,
         };
+        if wanted && ocr.is_some() {
+            read += 1;
+            on_page(read, total);
+        }
         let (seen, failure) = match &result {
             Some(Ok(w)) => (Some(w.as_slice()), None),
             Some(Err(f)) => (None, Some(f.message.as_str())),
@@ -225,9 +244,22 @@ where
         if bytes.len() as u64 >= MAX_PARSE_BYTES {
             return Err(permanent(format!("over the parse limit of {MAX_PARSE_BYTES} bytes")));
         }
+        let report = |stage: Stage, done: u64, total: Option<u64>| {
+            self.server.report(
+                vault,
+                ProgressUpdate {
+                    job_id: job.header.id.clone(),
+                    source_id: Some(source_id.clone()),
+                    stage,
+                    done,
+                    total,
+                },
+            );
+        };
+        report(Stage::Parsing, 0, None);
         let input = if source.media_type == "application/pdf" {
             let mut doc = run_worker(&self.worker, bytes.clone())?;
-            let outcomes = add_ocr(&mut doc, &bytes, self.ocr.as_ref());
+            let outcomes = add_ocr_reporting(&mut doc, &bytes, self.ocr.as_ref(), &mut |done, total| report(Stage::Ocr, done, Some(total)));
             RenditionInput::Pdf(doc, outcomes)
         } else {
             let text = String::from_utf8(bytes).map_err(|_| permanent("the text isn't valid UTF-8"))?;
@@ -236,6 +268,7 @@ where
                 parser: "plain-1".into(),
             }
         };
+        report(Stage::Segmenting, 0, None);
         self.server.build_rendition(vault, &source_id, input).map_err(from_server)
     }
 }
@@ -289,6 +322,28 @@ mod tests {
     fn a_parser_that_ignores_a_large_input_does_not_deadlock() {
         let out = run_worker(&sh(r#"echo '{"parser":"p","pages":[],"words":[]}'"#, 5000), vec![0u8; 8 * 1024 * 1024]).unwrap();
         assert_eq!(out.parser, "p");
+    }
+
+    #[test]
+    fn ocr_says_how_far_it_has_got_and_counts_a_page_that_failed() {
+        let mut doc = ParsedDocument {
+            parser: "p".into(),
+            pages: (0..3)
+                .map(|index| memex_types::PageFacts {
+                    index,
+                    width: 100,
+                    height: 100,
+                    rotation: 0,
+                    class: memex_types::PageClass::ImageOnly,
+                    hidden_text_objects: 0,
+                })
+                .collect(),
+            words: vec![],
+        };
+        let mut seen = vec![];
+        let outcomes = add_ocr_reporting(&mut doc, b"pdf", Some(&sh("exit 3", 5000)), &mut |done, total| seen.push((done, total)));
+        assert_eq!(outcomes.len(), 3);
+        assert_eq!(seen, [(0, 3), (1, 3), (2, 3), (3, 3)]);
     }
 
     #[test]
