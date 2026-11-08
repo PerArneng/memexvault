@@ -37,4 +37,5 @@ export {
   sourcePageFromWire,
   transcriptFromWire,
 } from "./translate-documents";
+export { activityFrameFromWire, activityPageFromWire, documentActivityFromWire, jobFromWire, jobPageFromWire, uploadLimitsFromWire, uploadResultFromWire } from "./translate-activity";
 export type { LineageStep, ObjectPages, WireHeaders } from "./translate";

@@ -30,10 +30,10 @@ describe("sections by scope", () => {
     expect(SECTIONS.map((s) => s.label)).toEqual(["Ingest", "Documents", "Search", "Pages", "Entities", "Review", "Audit", "Chat", "Admin"]);
     expect(SECTIONS.map((s) => s.id)).toEqual([...SECTION_IDS]);
   });
-  it("read sees neither admin nor ingest", () => {
-    expect(ids("read")).toEqual(["documents", "search", "pages", "entities", "review", "audit", "chat"]);
+  it("read sees everything but admin, including ingest with no upload controls (spec 041)", () => {
+    expect(ids("read")).toEqual(["ingest", "documents", "search", "pages", "entities", "review", "audit", "chat"]);
   });
-  it("propose adds ingest, and still no admin", () => {
+  it("propose still has no admin", () => {
     expect(ids("propose")).toContain("ingest");
     expect(ids("propose")).not.toContain("admin");
   });

@@ -24,6 +24,7 @@
     "@memex/core": "workspace:*",
     "@memex/edge-browser": "workspace:*",
     "@memex/edge-http": "workspace:*",
+    "@memex/edge-sse": "workspace:*",
     "@memex/types": "workspace:*",
     "@memex/ui": "workspace:*",
     "@tanstack/react-query": "5.106.1",

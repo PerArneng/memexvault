@@ -33,7 +33,7 @@ describe("paletteEntries", () => {
   it("a read token is offered no admin screen", () => {
     const entries = paletteEntries({ ...input, identity: identityWith([{ vault: a, scope: "read" }]) });
     expect(entries.map((e) => e.label)).not.toContain("Go to Admin");
-    expect(entries.map((e) => e.label)).not.toContain("Go to Ingest");
+    expect(entries.map((e) => e.label)).toContain("Go to Ingest");
   });
   it("ids stay unique when two kinds share an id", () => {
     const entries = paletteEntries({ ...input, identity: identityWith([], true) });

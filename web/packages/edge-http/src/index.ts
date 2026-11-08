@@ -1,4 +1,5 @@
 import {
+  activityPageFromWire,
   changeOriginFromWire,
   citingClaimsFromWire,
   claimLineageFromWire,
@@ -6,6 +7,9 @@ import {
   failureFromWire,
   flaggedPagesFromWire,
   identityFromWire,
+  jobFromWire,
+  jobPageFromWire,
+  uploadLimitsFromWire,
   lineageStepFromWire,
   mediaFromWire,
   objectsFromWire,
@@ -162,6 +166,13 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
     reprocessSource: (vault, source) => attempt(() => client.POST("/api/v1/vaults/{id}/sources/{sid}/reprocess", { params: { path: { id: vault, sid: source } } }), none),
     setSourceTrust: (vault, source, change) =>
       attempt(() => client.POST("/api/v1/vaults/{id}/proposals", { params: { path: { id: vault } }, body: { ops: [proposalOfTrust(source, change.baseVersion, change.tier) as never], rationale: change.rationale, idempotency_key: change.idempotencyKey } }), wikiWriteFromWire),
+    listActivityDocuments: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/activity/documents", { params: { path: { id: vault }, query: page(cursor) } }), activityPageFromWire),
+    getUploadLimits: (vault) => attempt(() => client.GET("/api/v1/vaults/{id}/upload-limits", { params: { path: { id: vault } } }), uploadLimitsFromWire),
+    listJobs: (vault, { state, kind }, cursor) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/jobs", { params: { path: { id: vault }, query: { ...page(cursor), ...(state === null ? {} : { state }), ...(kind === null ? {} : { kind }) } } }), jobPageFromWire),
+    getJob: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/jobs/{jid}", { params: { path: { id: vault, jid: id } } }), jobFromWire),
+    retryJob: (vault, id) => attempt(() => client.POST("/api/v1/vaults/{id}/jobs/{jid}/retry", { params: { path: { id: vault, jid: id } } }), jobFromWire),
+    cancelJob: (vault, id) => attempt(() => client.POST("/api/v1/vaults/{id}/jobs/{jid}/cancel", { params: { path: { id: vault, jid: id } } }), jobFromWire),
     health: (timeoutMs) => attempt(() => client.GET("/api/v1/health", { signal: AbortSignal.timeout(timeoutMs) }), none),
   };
 };

@@ -52,3 +52,11 @@ export type { DocumentRoute, DocumentTab, SourceFilter, SourceViewRoute } from "
 export { activePart, canChangeSource, evidenceState, filterSources, flagText, flaggedSources, formatClock, formatSize, mediaKind, pageAngle, pageWordsByPage, partsInRange, playability, sourceKinds, TRUST_TIERS, trustEffect, wordAt } from "./documents";
 export type { EvidenceState, MediaKind, Playability, TrustEffect, TrustTierName } from "./documents";
 export type { DocumentCases, SourceList, SourceTrustOutcome } from "./document-cases";
+export { activityReducer, boardRows, durationText, framesPerSecond, INITIAL_ACTIVITY, MAX_BOARD_DOCUMENTS, pipelineSteps, progressText, stageCounts, stageIndex, stageLabel, STAGES, statusExplanation, throughputPerMinute } from "./activity";
+export type { ActivityEvent, ActivityState, BoardDocument, BoardFilter, Connection, PipelineStep, StageCount, StageName, StageVisit } from "./activity";
+export { createActivityWatch, MAX_PENDING_FRAMES, MIN_SNAPSHOT_GAP_MS } from "./activity-watch";
+export type { ActivityFeed, ActivityWatch, FeedEvent } from "./activity-watch";
+export { createUploadQueue, formatBytes, isRecordingFile, MAX_CONCURRENT_UPLOADS, uploadRefusal } from "./upload-queue";
+export type { RunningUpload, UploadFile, Uploader, UploadItem, UploadItemState, UploadOptions, UploadQueue, UploadQueueState } from "./upload-queue";
+export { ingestPath, parseIngestRoute } from "./ingest-cases";
+export type { BulkRetryOutcome, IngestApi, IngestCases, IngestRoute, JobList } from "./ingest-cases";

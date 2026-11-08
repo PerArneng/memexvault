@@ -30,6 +30,8 @@ import type {
   WikiWrite,
 } from "@memex/types";
 
+import type { IngestApi } from "./ingest-cases";
+
 export type { ApiFailure };
 
 export type ApiResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly failure: ApiFailure };
@@ -79,7 +81,7 @@ export interface TrustChange {
   readonly idempotencyKey: string;
 }
 
-export interface Api {
+export interface Api extends IngestApi {
   whoami(): Promise<ApiResult<Identity>>;
   signIn(token: string): Promise<ApiResult<Identity>>;
   signOut(): Promise<ApiResult<null>>;

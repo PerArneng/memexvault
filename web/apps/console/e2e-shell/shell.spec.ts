@@ -133,7 +133,7 @@ test("verification 2: a read token sees no admin navigation, and direct links ex
   const links = await nav(page).getByRole("link").allTextContents();
   expect(links).toEqual(["Documents", "Search", "Pages", "Entities", "Review", "Audit", "Chat"]);
 
-  for (const path of ["admin", "admin/tokens", "ingest"]) {
+  for (const path of ["admin", "admin/tokens"]) {
     await page.goto(`/vaults/${world.alpha.id}/${path}`);
     const message = page.getByRole("alert");
     await expect(message).toContainText("You don't have permission to use");
