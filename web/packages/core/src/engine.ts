@@ -17,6 +17,8 @@ import type { DocumentCases } from "./document-cases";
 import { createWikiCases } from "./wiki-cases";
 import type { IdSource, WikiCases } from "./wiki-cases";
 import type { DraftStorage } from "./draft";
+import { createReviewCases } from "./review-cases";
+import type { QueueFeed, ReviewCases } from "./review-cases";
 
 export interface Edges {
   readonly clock: Clock;
@@ -25,13 +27,15 @@ export interface Edges {
   readonly preferences: Preferences;
   readonly drafts: DraftStorage;
   readonly ids: IdSource;
+  /** Left out, the review screen reads by itself instead of following. */
+  readonly queueFeed?: QueueFeed;
 }
 
 /** A vault list can't run forever if a server hands back cursors in a loop: 50 pages of 200 is 10,000 vaults. */
 const MAX_VAULT_PAGES = 50;
 
 /** The single entry point for views. Later specs add a method per use case. */
-export interface Engine extends WikiCases, DocumentCases {
+export interface Engine extends WikiCases, DocumentCases, ReviewCases {
   startedAt(): EpochMs;
   uptimeMs(): number;
   settings(): Settings;
@@ -116,6 +120,7 @@ export const createEngine = (edges: Edges): Engine => {
   return {
     ...createWikiCases({ edges, watched, principal: () => (session.status === "signed_in" ? session.identity.principal.id : "unknown") }),
     ...createDocumentCases({ edges, watched }),
+    ...createReviewCases({ edges, watched }),
     startedAt: () => started,
     uptimeMs: () => clock.now() - started,
     settings: () => edges.settings,

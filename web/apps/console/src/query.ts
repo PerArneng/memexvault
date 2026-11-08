@@ -76,6 +76,16 @@ export const QUERY_KEYS = {
   derivation: (vault: string, rendition: string, segment: string) => ["documents", vault, "derivation", rendition, segment] as const,
   media: (vault: string, id: string) => ["documents", vault, "media", id] as const,
   transcript: (vault: string, id: string, fromMs: number | null) => ["documents", vault, "transcript", id, fromMs] as const,
+  /** Everything about one vault's review, so a decision can refresh all of it. */
+  review: (vault: string) => ["review", vault] as const,
+  reviewQueue: (vault: string, filter: unknown) => ["review", vault, "queue", filter] as const,
+  reviewCounts: (vault: string) => ["review", vault, "counts"] as const,
+  reviewItem: (vault: string, id: string) => ["review", vault, "item", id] as const,
+  changesets: (vault: string, state: string) => ["review", vault, "changesets", state] as const,
+  changeset: (vault: string, id: string) => ["review", vault, "changeset", id] as const,
+  inverse: (vault: string, id: string) => ["review", vault, "inverse", id] as const,
+  contradictions: (vault: string) => ["review", vault, "contradictions"] as const,
+  autoCommit: (vault: string) => ["review", vault, "auto-commit"] as const,
   // A changeset's author never changes, so this one can stay cached across writes.
   wikiAttribution: (vault: string, changeset: string) => ["attribution", vault, changeset] as const,
 };

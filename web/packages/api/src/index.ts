@@ -37,4 +37,5 @@ export {
   sourcePageFromWire,
   transcriptFromWire,
 } from "./translate-documents";
+export { autoCommitFromWire, batchFromWire, changesetFromWire, changesetPageFromWire, contradictionPageFromWire, inverseFromWire, queueCountsFromWire, reviewDetailFromWire, reviewFilterToWire, reviewPageFromWire } from "./translate-review";
 export type { LineageStep, ObjectPages, WireHeaders } from "./translate";

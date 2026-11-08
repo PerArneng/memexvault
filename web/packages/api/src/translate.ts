@@ -27,7 +27,7 @@ export const vaultFromWire = (v: Schemas["VaultDto"]): Vault => ({ id: vaultId(v
 export const vaultPageFromWire = (p: Schemas["VaultPage"]): Page<Vault> => ({ items: p.items.map(vaultFromWire), nextCursor: p.next_cursor ?? null });
 
 export const identityFromWire = (w: Schemas["WhoAmI"]): Identity => ({
-  principal: { id: w.principal.id, name: w.principal.name, serverAdmin: w.principal.server_admin },
+  principal: { id: w.principal.id, name: w.principal.name, serverAdmin: w.principal.server_admin, machine: w.principal.kind !== "human" },
   tokenId: w.token_id,
   grants: w.grants.map((g) => ({ vault: vaultId(g.vault_id), scope: g.scope })),
 });

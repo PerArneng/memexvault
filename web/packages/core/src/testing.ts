@@ -7,6 +7,11 @@ import type { DraftStorage } from "./draft";
 import type { Preferences } from "./preferences";
 import { slugify } from "./wikitext";
 import type { IdSource } from "./wiki-cases";
+import { createReviewFake } from "./testing-review";
+import type { ReviewSeed } from "./testing-review";
+
+export { changesetWith, combinationWith, createReviewFake, detailWith } from "./testing-review";
+export type { ReviewSeed } from "./testing-review";
 
 /** A clock tests move by hand, so nothing sleeps. */
 export interface ManualClock extends Clock {
@@ -63,7 +68,7 @@ export const countingIds = (): IdSource => {
 };
 
 export const identityWith = (grants: readonly Grant[], serverAdmin = false): Identity => ({
-  principal: { id: "p1", name: "pat", serverAdmin },
+  principal: { id: "p1", name: "pat", serverAdmin, machine: false },
   tokenId: "t1",
   grants,
 });
@@ -93,6 +98,8 @@ export interface FakeApiSeed {
   readonly wikiWritesPending?: boolean;
   /** Everything the document screens read. Anything left out is not found. */
   readonly documents?: DocumentsSeed;
+  /** What the review screens read. */
+  readonly review?: ReviewSeed;
 }
 
 export interface DocumentsSeed {
@@ -372,6 +379,7 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
         if (known.version !== change.baseVersion) return failed(httpFailure(409, "stale_version"));
         return ok({ changesetId: "cs-trust", state: docs.trustState ?? "committed", replayed: false, refusals: docs.trustState === "rejected" ? ["refused by a validator"] : [] });
       }),
+    ...createReviewFake(answer, seed.review),
     searchClaimIds: () => answer("searchClaimIds", () => ok(seed.claimHits ?? [])),
     readClaim: (_vault, id) =>
       answer("readClaim", () => {

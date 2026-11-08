@@ -62,6 +62,9 @@ importers:
       '@memex/edge-http':
         specifier: workspace:*
         version: link:../../packages/edge-http
+      '@memex/edge-sse':
+        specifier: workspace:*
+        version: link:../../packages/edge-sse
       '@memex/types':
         specifier: workspace:*
         version: link:../../packages/types

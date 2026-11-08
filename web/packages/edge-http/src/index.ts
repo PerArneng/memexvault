@@ -30,6 +30,16 @@ import {
   wikiSummaryPageFromWire,
   wikiUnresolvedPageFromWire,
   wikiWriteFromWire,
+  autoCommitFromWire,
+  batchFromWire,
+  changesetFromWire,
+  changesetPageFromWire,
+  contradictionPageFromWire,
+  inverseFromWire,
+  queueCountsFromWire,
+  reviewDetailFromWire,
+  reviewFilterToWire,
+  reviewPageFromWire,
 } from "@memex/api";
 import type { paths } from "@memex/api";
 import { failed, ok } from "@memex/core";
@@ -162,6 +172,35 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
     reprocessSource: (vault, source) => attempt(() => client.POST("/api/v1/vaults/{id}/sources/{sid}/reprocess", { params: { path: { id: vault, sid: source } } }), none),
     setSourceTrust: (vault, source, change) =>
       attempt(() => client.POST("/api/v1/vaults/{id}/proposals", { params: { path: { id: vault } }, body: { ops: [proposalOfTrust(source, change.baseVersion, change.tier) as never], rationale: change.rationale, idempotency_key: change.idempotencyKey } }), wikiWriteFromWire),
+    listReviewQueue: (vault, filter, cursor) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/review/queue", { params: { path: { id: vault }, query: { ...page(cursor), state: "pending", ...reviewFilterToWire(filter) } } }), reviewPageFromWire),
+    getQueueCounts: (vault) => attempt(() => client.GET("/api/v1/vaults/{id}/review/counts", { params: { path: { id: vault } } }), queueCountsFromWire),
+    getReviewItem: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/review/items/{cs}", { params: { path: { id: vault, cs: id } } }), reviewDetailFromWire),
+    decide: (vault, decision) => {
+      const path = { id: vault, cs: decision.id };
+      if (decision.kind === "approve") return attempt(() => client.POST("/api/v1/vaults/{id}/changesets/{cs}/approve", { params: { path }, body: { reason: decision.reason } }), changesetFromWire);
+      if (decision.kind === "reject") return attempt(() => client.POST("/api/v1/vaults/{id}/changesets/{cs}/reject", { params: { path }, body: { reason: decision.reason } }), changesetFromWire);
+      return attempt(() => client.POST("/api/v1/vaults/{id}/review/items/{cs}/edit-approve", { params: { path }, body: { ops: decision.ops as never, reason: decision.reason } }), changesetFromWire);
+    },
+    decideBatch: (vault, decisions) =>
+      attempt(
+        () =>
+          client.POST("/api/v1/vaults/{id}/review/batch", {
+            params: { path: { id: vault } },
+            body: { decisions: decisions.map((d) => ({ id: d.id, decision: d.kind, reason: d.reason, ...(d.kind === "edit_approve" ? { ops: d.ops as never } : {}) })) },
+          }),
+        batchFromWire,
+      ),
+    listChangesets: (vault, state, cursor) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/changesets", { params: { path: { id: vault }, query: { ...page(cursor), ...(state === "" ? {} : { state }) } } }), changesetPageFromWire),
+    getChangeset: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/changesets/{cs}", { params: { path: { id: vault, cs: id } } }), changesetFromWire),
+    getInverse: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/changesets/{cs}/inverse", { params: { path: { id: vault, cs: id } } }), inverseFromWire),
+    revertChangeset: (vault, id, reason) => attempt(() => client.POST("/api/v1/vaults/{id}/changesets/{cs}/revert", { params: { path: { id: vault, cs: id } }, body: { reason } }), changesetFromWire),
+    listContradictions: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/contradictions", { params: { path: { id: vault }, query: page(cursor) } }), contradictionPageFromWire),
+    listAutoCommit: (vault, cursor) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/review/auto-commit", { params: { path: { id: vault }, query: page(cursor) } }), (r) => ({ threshold: r.threshold, entries: r.items.map(autoCommitFromWire), nextCursor: r.next_cursor ?? null })),
+    disableAutoCommit: (vault, combination, reason) =>
+      attempt(() => client.POST("/api/v1/vaults/{id}/review/auto-commit/{combination}/disable", { params: { path: { id: vault, combination } }, body: { reason } }), autoCommitFromWire),
     health: (timeoutMs) => attempt(() => client.GET("/api/v1/health", { signal: AbortSignal.timeout(timeoutMs) }), none),
   };
 };
