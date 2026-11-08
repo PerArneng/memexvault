@@ -12,6 +12,9 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{Sleep, sleep};
 
+/// The kernel's send buffer on a watched connection, in bytes. A stream's own queue then holds nearly all of what a slow client is owed, under its limits.
+pub(crate) const STREAM_SEND_BUFFER: usize = 64 * 1024;
+
 /// Zero until the connection's handler asks to be watched.
 #[derive(Default)]
 struct Watch {
@@ -56,6 +59,7 @@ impl Listener for WatchedListener {
             WatchedIo {
                 inner: stream,
                 watch,
+                capped: false,
                 stuck: None,
                 peer,
                 table: self.table.clone(),
@@ -72,6 +76,8 @@ impl Listener for WatchedListener {
 pub struct WatchedIo {
     inner: TcpStream,
     watch: Arc<Watch>,
+    /// Whether the send buffer has been made small, once watched.
+    capped: bool,
     stuck: Option<Pin<Box<Sleep>>>,
     peer: SocketAddr,
     table: Arc<ConnTable>,
@@ -85,11 +91,16 @@ impl Drop for WatchedIo {
 
 impl WatchedIo {
     fn after_write<T>(&mut self, cx: &mut Context<'_>, polled: Poll<io::Result<T>>) -> Poll<io::Result<T>> {
+        let stall_ms = self.watch.stall_ms.load(Ordering::Relaxed);
+        if stall_ms != 0 && !self.capped {
+            self.capped = true;
+            // Left to itself the kernel grows a send buffer to megabytes, and a client that never reads would park that much before the stream's own queue noticed. A fixed size also stops it growing.
+            let _ = socket2::SockRef::from(&self.inner).set_send_buffer_size(STREAM_SEND_BUFFER);
+        }
         if polled.is_ready() {
             self.stuck = None;
             return polled;
         }
-        let stall_ms = self.watch.stall_ms.load(Ordering::Relaxed);
         if stall_ms == 0 {
             return polled;
         }
