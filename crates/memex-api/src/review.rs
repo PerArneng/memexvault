@@ -76,6 +76,9 @@ pub struct ReviewEvidenceDto {
     /// What the pipeline flagged on these pages, such as hidden text.
     #[schema(value_type = Vec<Object>)]
     pub page_flags: Vec<serde_json::Value>,
+    /// Where the quote is on its pages, in 1/100 pt, as it will be anchored when it commits. Empty when it has no place on a page or can't be found.
+    #[serde(default)]
+    pub rects: Vec<crate::RectDto>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

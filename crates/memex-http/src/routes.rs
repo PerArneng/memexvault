@@ -701,7 +701,7 @@ where
     }))
 }
 
-#[utoipa::path(post, path = "/api/v1/vaults/{id}/changesets/{cs}/approve", tag = "governance", params(("id" = String, Path), ("cs" = String, Path)), request_body = memex_api::ReasonBody, responses((status = 200, body = memex_api::ChangeSetDto), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]
+#[utoipa::path(post, path = "/api/v1/vaults/{id}/changesets/{cs}/approve", tag = "governance", params(("id" = String, Path), ("cs" = String, Path)), request_body = memex_api::ReasonBody, responses((status = 200, body = memex_api::ChangeSetDto), (status = 403, body = ErrorBody, description = "Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it."), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]
 async fn approve<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
@@ -721,7 +721,7 @@ where
     Ok(Json(row.into()))
 }
 
-#[utoipa::path(post, path = "/api/v1/vaults/{id}/changesets/{cs}/reject", tag = "governance", params(("id" = String, Path), ("cs" = String, Path)), request_body = memex_api::ReasonBody, responses((status = 200, body = memex_api::ChangeSetDto), (status = 400, body = ErrorBody), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]
+#[utoipa::path(post, path = "/api/v1/vaults/{id}/changesets/{cs}/reject", tag = "governance", params(("id" = String, Path), ("cs" = String, Path)), request_body = memex_api::ReasonBody, responses((status = 200, body = memex_api::ChangeSetDto), (status = 400, body = ErrorBody), (status = 403, body = ErrorBody, description = "Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it."), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]
 async fn reject<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
@@ -741,7 +741,7 @@ where
     Ok(Json(row.into()))
 }
 
-#[utoipa::path(post, path = "/api/v1/vaults/{id}/changesets/{cs}/revert", tag = "governance", params(("id" = String, Path), ("cs" = String, Path)), request_body = memex_api::ReasonBody, responses((status = 200, body = memex_api::ChangeSetDto), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]
+#[utoipa::path(post, path = "/api/v1/vaults/{id}/changesets/{cs}/revert", tag = "governance", params(("id" = String, Path), ("cs" = String, Path)), request_body = memex_api::ReasonBody, responses((status = 200, body = memex_api::ChangeSetDto), (status = 403, body = ErrorBody, description = "Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it."), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]
 async fn revert<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,

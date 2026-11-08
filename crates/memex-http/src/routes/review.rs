@@ -118,6 +118,17 @@ fn evidence_dto(e: ReviewEvidence) -> memex_api::ReviewEvidenceDto {
         page_to: e.page_to,
         superseded: e.superseded,
         page_flags: e.page_flags.iter().filter_map(|f| serde_json::to_value(f).ok()).collect(),
+        rects: e
+            .rects
+            .iter()
+            .map(|(page, r)| memex_api::RectDto {
+                page: *page,
+                x0: r.x0,
+                y0: r.y0,
+                x1: r.x1,
+                y1: r.y1,
+            })
+            .collect(),
     }
 }
 
@@ -207,7 +218,7 @@ where
 }
 
 /// Approves a person's corrected version. What was proposed stays on record, and it counts against the extractor. Only a person can do this.
-#[utoipa::path(post, path = "/api/v1/vaults/{id}/review/items/{cs}/edit-approve", tag = "review", params(("id" = String, Path), ("cs" = String, Path)), request_body = memex_api::EditApproveBody, responses((status = 200, body = memex_api::ChangeSetDto), (status = 400, body = ErrorBody), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]
+#[utoipa::path(post, path = "/api/v1/vaults/{id}/review/items/{cs}/edit-approve", tag = "review", params(("id" = String, Path), ("cs" = String, Path)), request_body = memex_api::EditApproveBody, responses((status = 200, body = memex_api::ChangeSetDto), (status = 400, body = ErrorBody), (status = 403, body = ErrorBody, description = "Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it."), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody)))]
 async fn edit_approve<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
@@ -229,7 +240,7 @@ where
 }
 
 /// Up to 200 decisions, each attributed and each on its own, so one conflict leaves the others as they are. A malformed request refuses the lot.
-#[utoipa::path(post, path = "/api/v1/vaults/{id}/review/batch", tag = "review", params(("id" = String, Path)), request_body = memex_api::BatchBody, responses((status = 200, body = memex_api::BatchResultsDto), (status = 400, body = ErrorBody), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody)))]
+#[utoipa::path(post, path = "/api/v1/vaults/{id}/review/batch", tag = "review", params(("id" = String, Path)), request_body = memex_api::BatchBody, responses((status = 200, body = memex_api::BatchResultsDto), (status = 400, body = ErrorBody), (status = 403, body = ErrorBody, description = "Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it."), (status = 404, body = ErrorBody)))]
 async fn decide_batch<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,

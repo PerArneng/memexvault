@@ -218,6 +218,7 @@ impl<E: ServerEdges> Server<E> {
                 vault: vault.clone(),
                 scope: Scope::Propose,
             }],
+            via_session: false,
         }
     }
 

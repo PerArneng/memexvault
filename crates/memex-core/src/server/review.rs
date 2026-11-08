@@ -37,6 +37,8 @@ pub struct ReviewEvidence {
     pub superseded: bool,
     /// What the pipeline flagged on its pages, such as hidden text.
     pub page_flags: Vec<PageFlag>,
+    /// Where the quote is on its pages, worked out as it will be when it commits. Empty when it has no place on a page, such as in plain text or a recording, or when it can't be found.
+    pub rects: Vec<(u32, memex_types::Rect)>,
 }
 
 /// Everything about one item.
@@ -450,7 +452,7 @@ impl<E: ServerEdges> Server<E> {
                 .collect(),
             None => vec![],
         };
-        let evidence = Self::evidence_view(&snap, &changeset.ops)?;
+        let evidence = self.evidence_view(vault, &snap, &changeset.ops)?;
         let item = Self::verdict_rows(&snap, vec![changeset])?.remove(0);
         Ok(ReviewDetail {
             item,
@@ -461,7 +463,7 @@ impl<E: ServerEdges> Server<E> {
         })
     }
 
-    fn evidence_view<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Vec<ReviewEvidence>, ServerError> {
+    fn evidence_view<S: Snapshot>(&self, vault: &VaultId, snap: &S, ops: &[Op]) -> Result<Vec<ReviewEvidence>, ServerError> {
         let places = review::evidence_places(snap, ops)?;
         let keys: Vec<RowKey> = places
             .source_ids
@@ -488,6 +490,8 @@ impl<E: ServerEdges> Server<E> {
                 _ => {}
             }
         }
+        // A rendition's word table is read once however many quotes cite it, and only for this one item, never for a list. A table that can't be read costs the highlight and not the item, as a person can still judge it from the quote.
+        let mut tables = std::collections::HashMap::new();
         let mut out = vec![];
         for op in ops {
             let claim = match op {
@@ -506,6 +510,18 @@ impl<E: ServerEdges> Server<E> {
                         page_flags.extend(p.flags.iter().cloned());
                     }
                 }
+                let rects = match (segment, rendition, source) {
+                    (Some(s), Some(r), Some(src)) => {
+                        let table = tables.entry(r.header.id.clone()).or_insert_with(|| self.canonical_of(vault, r).ok());
+                        table
+                            .as_ref()
+                            .and_then(|(canon, words)| {
+                                crate::rendition::locate_within(canon, words, &src.sha256, &r.header.id, &e.quote, s.start as usize, s.end as usize)
+                            })
+                            .map_or(vec![], |anchor| anchor.rects)
+                    }
+                    _ => vec![],
+                };
                 out.push(ReviewEvidence {
                     claim_id: id.clone(),
                     segment_id: e.segment_id.clone(),
@@ -518,6 +534,7 @@ impl<E: ServerEdges> Server<E> {
                     page_to: to,
                     superseded: rendition.is_some_and(|r| r.superseded_by.is_some()),
                     page_flags,
+                    rects,
                 });
             }
         }
@@ -571,6 +588,7 @@ impl<E: ServerEdges> Server<E> {
                 page_to: segment.as_ref().and_then(|s| s.page_to),
                 superseded: false,
                 page_flags: vec![],
+                rects: e.anchor.as_ref().map_or(vec![], |a| a.rects.clone()),
             });
         }
         Ok(out)
@@ -579,6 +597,7 @@ impl<E: ServerEdges> Server<E> {
     /// Many decisions, each attributed and each on its own, so the answer has one result per decision, in order.
     pub fn decide_batch(&self, caller: &Caller, vault: &VaultId, decisions: Vec<BatchDecision>) -> Result<Vec<Result<ChangeSetRow, ServerError>>, ServerError> {
         self.allow(caller, Operation::VaultContentReview(vault))?;
+        Self::no_agent_session(caller)?;
         self.vault_exists(vault)?;
         if decisions.len() > MAX_BATCH {
             return Err(ServerError::Invalid(format!("at most {MAX_BATCH} decisions at once")));
