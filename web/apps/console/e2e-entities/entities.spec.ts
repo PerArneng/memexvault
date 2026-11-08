@@ -3,7 +3,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type APIResponse, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { startServer, stopServer } from "../e2e-shell/server";
 
 // Spec 045. Everything runs on a real server with the real CSP. The review screen is spec 046's, so these look in the queue through the API.
@@ -16,7 +16,7 @@ const run = Date.now().toString(36);
 /** Spec 018: "indexing lag has p95 ≤1 s". Spec 023's item 1 holds a new type to the same target: "target ≤1 s". */
 const LAG_TARGET_MS = 1000;
 const LAG_TYPES = 5;
-const LAG_ENTITIES_PER_TYPE = 4;
+const LAG_ENTITIES_PER_TYPE = 8;
 
 let vault = "";
 let readToken = "";
@@ -35,15 +35,36 @@ const record = (name: string, value: unknown) => {
 const loadAverage = () => execFileSync("uptime").toString().trim().split("load averages:")[1]?.trim() ?? "unknown";
 const percentile = (values: readonly number[], p: number) => [...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(values.length * p))] ?? 0;
 
+/** The shared Postgres can run out of connections to other people's work, which a 503 reports. That's the machine and not this screen, so it's waited out. */
+const patiently = async (call: () => Promise<APIResponse>): Promise<APIResponse> => {
+  const deadline = Date.now() + 120_000;
+  for (;;) {
+    const res = await call();
+    if (res.status() !== 503 || Date.now() > deadline) return res;
+    await new Promise((done) => setTimeout(done, 1000));
+  }
+};
+
 const post = async <T>(request: APIRequestContext, path: string, data: unknown, status = 200, token = adminToken): Promise<T> => {
-  const res = await request.post(path, { headers: { authorization: `Bearer ${token}` }, data });
+  const res = await patiently(() => request.post(path, { headers: { authorization: `Bearer ${token}` }, data }));
   expect(res.status(), `${path}: ${await res.text()}`).toBe(status);
   return (await res.json()) as T;
 };
 const get = async <T>(request: APIRequestContext, path: string): Promise<T> => {
-  const res = await request.get(path, { headers: bearer });
+  const res = await patiently(() => request.get(path, { headers: bearer }));
   expect(res.status(), `${path}: ${await res.text()}`).toBe(200);
   return (await res.json()) as T;
+};
+
+/** A 503 can come after the write landed, so a retried name would conflict with itself. Each try here gets its own name. */
+const createNamed = async <T>(request: APIRequestContext, path: string, name: string, extra: Record<string, unknown>): Promise<T> => {
+  for (let attempt = 0; ; attempt += 1) {
+    const res = await request.post(path, { headers: bearer, data: { name: `${name}-${String(attempt)}`, ...extra } });
+    if (res.status() === 201) return (await res.json()) as T;
+    expect([409, 503], `${path}: ${await res.text()}`).toContain(res.status());
+    expect(attempt, `${path} kept failing`).toBeLessThan(60);
+    await new Promise((done) => setTimeout(done, 2000));
+  }
 };
 
 const newSession = async (browser: Browser, token = adminToken): Promise<{ context: BrowserContext; page: Page; problems: string[] }> => {
@@ -90,9 +111,9 @@ const typeFieldRow = (page: Page, index: number) => page.locator("[data-draft-fi
 test.beforeAll(async ({ request }) => {
   test.setTimeout(600_000);
   console.log(`server started in ${String(await startServer())} ms`);
-  vault = (await post<{ id: string }>(request, "/api/v1/vaults", { name: `entities-${run}` }, 201)).id;
+  vault = (await createNamed<{ id: string }>(request, "/api/v1/vaults", `entities-${run}`, {})).id;
   const makeToken = async (name: string, kind: string, scope: string) => {
-    const principal = await post<{ id: string }>(request, "/api/v1/principals", { name: `${name}-${run}`, kind }, 201);
+    const principal = await createNamed<{ id: string }>(request, "/api/v1/principals", `${name}-${run}`, { kind });
     return (await post<{ token: string }>(request, "/api/v1/tokens", { name, principal_id: principal.id, grants: [{ vault_id: vault, scope }] }, 201)).token;
   };
   readToken = await makeToken("reader", "human", "read");
@@ -179,7 +200,7 @@ test("item 1: a new type made in the UI is usable and searchable within the lag 
     await page.locator("#filter-0-op").selectOption("gte");
     await page.locator("#filter-0-value").fill("102");
     await page.getByRole("button", { name: "Apply filters" }).click();
-    await expect(page.locator("[data-filter-key][data-settled=true]")).toHaveAttribute("data-entity-count", "2");
+    await expect(page.locator("[data-filter-key][data-settled=true]")).toHaveAttribute("data-entity-count", String(LAG_ENTITIES_PER_TYPE - 2));
     await page.getByLabel("Find by name or keyword").fill(`marker${run}x${String(t)}y0`);
     await page.getByRole("button", { name: "Find", exact: true }).click();
     await expect(page.locator("[data-find-hit]")).toHaveCount(1);
@@ -224,7 +245,7 @@ test("the preview says additive and needs no approval, and that's what a submiss
   await page.getByRole("button", { name: "Preview the change" }).click();
   await expect(page.getByRole("button", { name: "Submit" })).toBeEnabled();
   await page.getByRole("button", { name: "Submit" }).click();
-  await expect(page.getByRole("heading", { name })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/-/types/${name}$`));
   const versions = await get<{ items: { version: number }[] }>(request, api(`/entity-types/${name}/versions`));
   expect(versions.items.map((v) => v.version)).toEqual([1, 2]);
   await context.close();
@@ -347,7 +368,7 @@ test("item 4: a breaking type change and a merge end up in the review queue, not
   await expect(page.locator("[data-same-as]").first()).toBeVisible();
   const [low, high] = [keep.entity_id, drop.entity_id].sort() as [string, string];
   await page.locator("[data-same-as='duplicate name']").getByRole("link", { name: /Preview merging/ }).click();
-  await expect(page).toHaveURL(new RegExp(`/${high}/merge\\?into=${low}`));
+  await expect(page).toHaveURL(new RegExp(`/${high}/merge/${low}$`));
   await expect(page.locator("[data-merge-preview]")).toBeVisible();
   await expect(page.locator("[data-merge-row=name]")).toHaveAttribute("data-merge-outcome", "same");
   await expect(page.locator("[data-merge-row=owner]")).toHaveAttribute("data-merge-outcome", "conflict");
@@ -362,8 +383,8 @@ test("item 4: a breaking type change and a merge end up in the review queue, not
 
   // A split waits as well, and shows what would move.
   await page.goto(screen(`/${low}/split`));
-  const claim = page.locator("[data-split-claim]").first();
-  await claim.locator("input").check();
+  // The name stays, as this entity would be invalid without it, which the server refuses: moving something it needs is a refusal to show, not a queue entry.
+  await page.locator("[data-split-claim]").filter({ hasText: "owner" }).locator("input").check();
   await expect(page.locator("[data-split-moved='1']")).toBeVisible();
   await fillField(page, "split", "name", "A new name");
   await page.getByRole("button", { name: "Send this split to review" }).click();
@@ -375,6 +396,13 @@ test("item 4: a breaking type change and a merge end up in the review queue, not
   const agent = await newSession(browser, agentToken);
   await agent.page.goto(screen(`/-/types/${type}/new`));
   await fillField(agent.page, "new", "name", "From an agent");
+  await agent.page.getByRole("button", { name: "Propose this entity" }).click();
+  // A machine's value needs evidence, and the server's reason is what the page shows.
+  await expect(agent.page.getByText("This entity was refused.")).toBeVisible();
+  await expect(agent.page.getByRole("alert").filter({ hasText: "has no evidence" })).toBeVisible();
+  await agent.page.locator("[data-field-input=name] summary").click();
+  await agent.page.locator("#new-name-segment").fill(segmentAt(0).id);
+  await agent.page.locator("#new-name-quote").fill(quoteOf(segmentAt(0)));
   await agent.page.getByRole("button", { name: "Propose this entity" }).click();
   await expect(agent.page.locator("[data-proposal=pending]")).toBeVisible();
   await agent.context.close();
@@ -419,7 +447,6 @@ test("item 7: field values containing HTML render as plain text", async ({ brows
   await page.goto(screen(`/-/types/${type}`));
   await expect(rawText.first()).toBeVisible();
   await noMarkup();
-  await page.getByRole("button", { name: "Sort by" }).first().isVisible();
 
   await page.goto(screen(`/${made.entity_id}`));
   await expect(page.locator("[data-field=notes] [data-claim-value]").first()).toHaveText(`${HOSTILE} notes`);
@@ -427,7 +454,7 @@ test("item 7: field values containing HTML render as plain text", async ({ brows
   await expect(page.locator("[data-aliases]")).toHaveText(`${HOSTILE} alias`);
   await noMarkup();
 
-  await page.goto(screen(`/${made.entity_id}/merge?into=${other.entity_id}`));
+  await page.goto(screen(`/${made.entity_id}/merge/${other.entity_id}`));
   await expect(page.locator("[data-merge-row=name]")).toContainText(`${HOSTILE} name`);
   await noMarkup();
 
@@ -482,8 +509,16 @@ test("filters, columns and sort live in the URL, and the sort says it only cover
   await page.getByRole("button", { name: "Apply filters" }).click();
   await expect(page.getByText("Give a value for owner.")).toBeVisible();
 
+  // A search that looks like a number stays what was asked, whatever the router does to the URL.
+  await page.goto(screen(`/-/types/${type}`));
+  await page.getByLabel("Find by name or keyword").fill("123");
+  await page.getByRole("button", { name: "Find", exact: true }).click();
+  await expect(page.locator("[data-find='123']")).toBeVisible();
+  await page.reload();
+  await expect(page.locator("[data-find='123']")).toBeVisible();
+
   // Reload keeps it all.
-  const url = screen(`/-/types/${type}?f=${encodeURIComponent("price:gte:97")}&f=${encodeURIComponent("price:lt:100")}&cols=name,price&sort=price:desc`);
+  const url = screen(`/-/types/${type}?f=${encodeURIComponent("price:gte:97\nprice:lt:100")}&cols=name,price&sort=price:desc`);
   await page.goto(url);
   await expect(page.locator("[data-filter-key][data-settled=true]")).toHaveAttribute("data-entity-count", "3");
   await expect(page.getByRole("columnheader")).toHaveText(["name", "price ↓", "Conflicts"]);
@@ -567,10 +602,11 @@ test("loading, empty, error and malformed states all read properly", async ({ br
     else await route.continue();
   });
   await page.goto(screen(`/-/types/${type}`));
-  await expect(page.getByText("It broke")).toBeVisible();
-  await expect(page.getByText("request id: req-e2e")).toBeVisible();
+  const table = page.getByRole("region", { name: `${type} entities` });
+  await expect(table.getByText("It broke")).toBeVisible();
+  await expect(table.getByText("request id: req-e2e")).toBeVisible();
   failing = false;
-  await page.getByRole("button", { name: "Retry" }).click();
+  await table.getByRole("button", { name: "Retry" }).click();
   await expect(page.getByText("No entities of this type yet.")).toBeVisible();
 
   // A schema this console can't make sense of comes from the server's own response, so the screen has to survive it.
@@ -606,7 +642,7 @@ test("axe finds no violations on the type list, the editor, the table and the de
   await check("schema", `/-/types/${type}/schema`, "[data-schema-field]");
   await check("new entity", `/-/types/${type}/new`, "[data-field-input]");
   await check("detail", `/${a.entity_id}`, "[data-field]");
-  await check("merge", `/${a.entity_id}/merge?into=${b.entity_id}`, "[data-merge-preview]");
+  await check("merge", `/${a.entity_id}/merge/${b.entity_id}`, "[data-merge-preview]");
   await check("split", `/${a.entity_id}/split`, "[data-split-preview]");
   await page.keyboard.press("Tab");
   expect(cspProblems(problems)).toEqual([]);

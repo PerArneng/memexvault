@@ -42,6 +42,9 @@ export const parseEntityFilter = (raw: string): EntityFilter | null => {
 
 export const entityFilterText = (filter: EntityFilter): string => `${filter.field}:${filter.op}:${filter.value}`;
 
+/** All filters in one query value, a line each. The router rewrites a repeated parameter as a JSON array, and a filter's input is a single line. */
+const FILTER_SEPARATOR = "\n";
+
 const sortFrom = (raw: string | undefined): EntitySort | null => {
   if (raw === undefined) return null;
   const at = raw.lastIndexOf(":");
@@ -53,6 +56,7 @@ const sortFrom = (raw: string | undefined): EntitySort | null => {
 /** `rest` is the path after `entities`, already decoded, and `query` gives every value of a name. A URL anyone typed lands on `unknown` rather than throwing. */
 export const parseEntityRoute = (rest: readonly string[], query: (name: string) => readonly string[]): EntityRoute => {
   const [first, second, third, fourth, ...more] = rest;
+  // The target of a merge is in the path, as the router reads a query value that looks like a number as one, and an id can.
   if (first === undefined) return { kind: "types" };
   if (more.length > 0) return { kind: "unknown" };
   if (first === "-") {
@@ -64,7 +68,7 @@ export const parseEntityRoute = (rest: readonly string[], query: (name: string) 
         return {
           kind: "table",
           type: third,
-          filters: query("f").flatMap((raw) => parseEntityFilter(raw) ?? []),
+          filters: (query("f")[0] ?? "").split(FILTER_SEPARATOR).flatMap((raw) => parseEntityFilter(raw) ?? []),
           columns: columns === undefined ? null : columns.split(",").filter((c) => c !== ""),
           sort: sortFrom(query("sort")[0]),
           find: query("find")[0] ?? "",
@@ -82,10 +86,10 @@ export const parseEntityRoute = (rest: readonly string[], query: (name: string) 
         return { kind: "unknown" };
     }
   }
+  if (second === "merge" && fourth === undefined) return { kind: "merge", id: first, into: third ?? "" };
   if (third !== undefined || fourth !== undefined) return { kind: "unknown" };
   if (second === undefined) return { kind: "entity", id: first };
   if (second === "edit") return { kind: "edit", id: first };
-  if (second === "merge") return { kind: "merge", id: first, into: query("into")[0] ?? "" };
   if (second === "split") return { kind: "split", id: first };
   return { kind: "unknown" };
 };
@@ -106,7 +110,7 @@ export const entityPath = (vault: VaultId, route: Exclude<EntityRoute, { readonl
       return `${root}/-/new-type`;
     case "table":
       return withQuery(typeRoot(route.type), [
-        ...route.filters.map((f): [string, string] => ["f", entityFilterText(f)]),
+        ...(route.filters.length === 0 ? [] : [["f", route.filters.map(entityFilterText).join(FILTER_SEPARATOR)] as [string, string]]),
         ...(route.columns === null ? [] : [["cols", route.columns.join(",")] as [string, string]]),
         ...(route.sort === null ? [] : [["sort", `${route.sort.field}:${route.sort.direction}`] as [string, string]]),
         ...(route.find === "" ? [] : [["find", route.find] as [string, string]]),
@@ -124,7 +128,7 @@ export const entityPath = (vault: VaultId, route: Exclude<EntityRoute, { readonl
     case "edit":
       return `${one(route.id)}/edit`;
     case "merge":
-      return withQuery(`${one(route.id)}/merge`, route.into === "" ? [] : [["into", route.into]]);
+      return route.into === "" ? `${one(route.id)}/merge` : `${one(route.id)}/merge/${encodeURIComponent(route.into)}`;
     case "split":
       return `${one(route.id)}/split`;
   }

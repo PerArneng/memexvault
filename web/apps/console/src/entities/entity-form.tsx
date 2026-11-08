@@ -90,7 +90,7 @@ const AliasBox = ({ value, onChange }: { readonly value: string; readonly onChan
   </div>
 );
 
-const EditForm = ({ vault, entity }: { readonly vault: VaultId; readonly entity: EntityDetail }) => {
+const EditForm = ({ vault, entity, outcome, setOutcome }: { readonly vault: VaultId; readonly entity: EntityDetail; readonly outcome: EntityProposal | null; readonly setOutcome: (next: EntityProposal) => void }) => {
   const engine = useEngine();
   const refresh = useRefreshEntities(vault);
   const { query, view } = useEntityType(vault, entity.typeName);
@@ -99,7 +99,6 @@ const EditForm = ({ vault, entity }: { readonly vault: VaultId; readonly entity:
   const [aliases, setAliases] = useState(entity.aliases.join("\n"));
   const [note, setNote] = useState(DEFAULT_NOTE);
   const [problems, setProblems] = useState<readonly string[]>([]);
-  const [outcome, setOutcome] = useState<EntityProposal | null>(null);
   const currentOf = (name: string) => entity.fields.find((f) => f.field === name);
   const submit = useMutation({
     mutationFn: (fields: readonly EntityFieldInput[]) => {
@@ -166,13 +165,15 @@ const EditForm = ({ vault, entity }: { readonly vault: VaultId; readonly entity:
 export const EditEntity = ({ vault, id }: { readonly vault: VaultId; readonly id: string }) => {
   const engine = useEngine();
   const query = useQuery({ queryKey: ENTITY_KEYS.entity(vault, id), queryFn: async () => unwrap(await engine.getEntity(vault, id)) });
+  // Held here, as a saved edit gives the entity a new version, which starts the form afresh and mustn't take the answer with it.
+  const [outcome, setOutcome] = useState<EntityProposal | null>(null);
   return (
     <section aria-label="Edit entity" className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-medium">Edit</h2>
         <AppLink to={entityPath(vault, { kind: "entity", id })}>Back to the entity</AppLink>
       </div>
-      <QueryView query={query} label="this entity">{(entity) => <EditForm key={entity.version} vault={vault} entity={entity} />}</QueryView>
+      <QueryView query={query} label="this entity">{(entity) => <EditForm key={entity.version} vault={vault} entity={entity} outcome={outcome} setOutcome={setOutcome} />}</QueryView>
     </section>
   );
 };

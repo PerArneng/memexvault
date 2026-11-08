@@ -24,9 +24,20 @@ export const ENTITY_KEYS = {
 export const SELECT_CLASS = "h-8 rounded-md border border-border-strong bg-surface-raised px-2 text-sm text-text";
 export const FIELD_LABEL = "text-xs text-text-muted";
 
+/** The router writes a query value that would read as JSON in quotes, such as a search for 123, so this reads it back to what was asked. */
+const plainValue = (raw: string): string => {
+  if (!raw.startsWith('"')) return raw;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === "string" ? parsed : raw;
+  } catch {
+    return raw;
+  }
+};
+
 export const routeFrom = (rest: readonly string[], search: string): EntityRoute => {
   const query = new URLSearchParams(search);
-  return parseEntityRoute(rest, (name) => query.getAll(name));
+  return parseEntityRoute(rest, (name) => query.getAll(name).map(plainValue));
 };
 
 export const useRefreshEntities = (vault: VaultId) => {

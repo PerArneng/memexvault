@@ -41,7 +41,13 @@ const percentile = (values: readonly number[], p: number) => [...values].sort((a
 const summary = (values: readonly number[]) => ({ n: values.length, p50: Math.round(percentile(values, 0.5) * 10) / 10, p95: Math.round(percentile(values, 0.95) * 10) / 10, p99: Math.round(percentile(values, 0.99) * 10) / 10, max: Math.round(Math.max(...values) * 10) / 10 });
 
 const post = async <T>(request: APIRequestContext, path: string, data: unknown, status = 200): Promise<T> => {
-  const res = await request.post(path, { headers: bearer, data });
+  // The shared Postgres can run out of connections to other people's work, which a 503 reports. That's waited out.
+  const deadline = Date.now() + 120_000;
+  let res = await request.post(path, { headers: bearer, data });
+  while (res.status() === 503 && Date.now() < deadline) {
+    await new Promise((done) => setTimeout(done, 1000));
+    res = await request.post(path, { headers: bearer, data });
+  }
   expect(res.status(), `${path}: ${await res.text()}`).toBe(status);
   return (await res.json()) as T;
 };
@@ -95,7 +101,16 @@ test.beforeAll(async ({ request }) => {
   test.setTimeout(1_800_000);
   test.skip(CONTAINER === undefined, "needs MEMEX_E2E_PG_CONTAINER, as the rows go straight into the database");
   console.log(`server started in ${String(await startServer())} ms`);
-  vault = (await post<{ id: string }>(request, "/api/v1/vaults", { name: `entities-scale-${run}` }, 201)).id;
+  // A 503 can come after the write landed, so each try gets its own name.
+  for (let attempt = 0; vault === ""; attempt += 1) {
+    const res = await request.post("/api/v1/vaults", { headers: bearer, data: { name: `entities-scale-${run}-${String(attempt)}` } });
+    if (res.status() === 201) vault = ((await res.json()) as { id: string }).id;
+    else {
+      expect([409, 503], await res.text()).toContain(res.status());
+      expect(attempt).toBeLessThan(60);
+      await new Promise((done) => setTimeout(done, 2000));
+    }
+  }
   await post(request, `/api/v1/vaults/${vault}/entity-types`, {
     name: TYPE,
     schema: { type: "object", additionalProperties: false, properties: {
@@ -176,7 +191,7 @@ const LANES: readonly Lane[] = [
 ];
 
 const keyOf = (filters: readonly (readonly [string, string, string])[]) => filters.map(([f, o, v]) => `${f}:${o}:${v}`).join("&");
-const tableUrl = (filters: readonly (readonly [string, string, string])[]) => `/vaults/${vault}/entities/-/types/${TYPE}?${filters.map(([f, o, v]) => `f=${encodeURIComponent(`${f}:${o}:${v}`)}`).join("&")}`;
+const tableUrl = (filters: readonly (readonly [string, string, string])[]) => `/vaults/${vault}/entities/-/types/${TYPE}?f=${encodeURIComponent(filters.map(([f, o, v]) => `${f}:${o}:${v}`).join("\n"))}`;
 
 const measureLanes = async (page: Page, trialsPerLane: number, navigate: boolean) => {
   const out: Record<string, ReturnType<typeof summary>> = {};

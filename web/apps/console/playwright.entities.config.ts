@@ -11,5 +11,5 @@ export default defineConfig({
   timeout: 300_000,
   // A generous wait, as these often run on a loaded machine, where the server can stall for many seconds.
   expect: { timeout: 45_000 },
-  use: { baseURL: `http://${bind}`, colorScheme: "dark", viewport: { width: 1400, height: 1200 } },
+  use: { baseURL: `http://${bind}`, colorScheme: "dark", viewport: { width: 1400, height: 1200 }, actionTimeout: 60_000 },
 });

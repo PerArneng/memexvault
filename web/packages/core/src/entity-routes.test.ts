@@ -35,13 +35,13 @@ describe("entity routes", () => {
   }
 
   it("lands on unknown rather than throwing, for anything typed", () => {
-    for (const rest of [["-"], ["-", "nope"], ["-", "types"], ["-", "types", "T", "nope"], ["e1", "nope"], ["e1", "edit", "more"], ["-", "types", "T", "new", "more"]]) {
+    for (const rest of [["-"], ["-", "nope"], ["-", "types"], ["-", "types", "T", "nope"], ["e1", "nope"], ["e1", "merge", "e2", "more"], ["e1", "split", "more"], ["e1", "edit", "more"], ["-", "types", "T", "new", "more"]]) {
       expect(parseEntityRoute(rest, () => []).kind).toBe("unknown");
     }
   });
 
   it("drops filters and sorts that can't be one", () => {
-    const query = (name: string) => ({ f: ["nope", "a:bad:1", ":eq:1", "a:eq:1"], sort: ["x"] })[name] ?? [];
+    const query = (name: string) => ({ f: ["nope\na:bad:1\n:eq:1\na:eq:1"], sort: ["x"] })[name] ?? [];
     const route = parseEntityRoute(["-", "types", "T"], query);
     expect(route).toMatchObject({ filters: [{ field: "a", op: "eq", value: "1" }], sort: null });
   });
