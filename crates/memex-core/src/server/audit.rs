@@ -1,5 +1,4 @@
 //! The audit agent on the facade: the schedule, a run's job, and planted errors in a test vault. It proposes through the same gate as anyone, holds only propose scope, and its results are events like everything else.
-use super::extraction::LEASE_MARGIN_MS;
 use super::{ExtractJobError, Proposal, ProposedBy, Server, ServerEdges, ServerError};
 use crate::audit::{self, AUDIT_JOB, AUDITOR, AuditLimits, Candidate, EvidenceFacts, RecallReport};
 use crate::auth::{Caller, Operation};
@@ -18,8 +17,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const AUDIT_ATTEMPTS: u32 = 3;
 const STATE_ID: &str = "audit";
-/// How long a worker keeps the job while it reads the whole vault, which has no call to time itself by.
-const SCAN_HOLD_MS: i64 = 900_000;
 /// Further than this behind the log, an index comparison isn't worth attempting.
 const MAX_LAG_EVENTS: u64 = 5000;
 const QUOTE_SHOWN_CHARS: usize = 500;
@@ -700,8 +697,8 @@ impl<E: ServerEdges> Server<E> {
         Ok(planted)
     }
 
-    fn keep_job(&self, vault: &VaultId, job: &JobRow, for_ms: i64, rows: Vec<Mutation>) -> Result<(), ExtractJobError> {
-        if self.hold_job(vault, job, for_ms, false, rows)? {
+    fn keep_job(&self, vault: &VaultId, job: &JobRow, rows: Vec<Mutation>) -> Result<(), ExtractJobError> {
+        if self.hold_job(vault, job, false, rows)? {
             Ok(())
         } else {
             Err(ExtractJobError::Lost)
@@ -717,7 +714,7 @@ impl<E: ServerEdges> Server<E> {
         if run.state == AuditRunState::Finished {
             return Ok(vec![]);
         }
-        self.keep_job(vault, job, SCAN_HOLD_MS, vec![])?;
+        self.keep_job(vault, job, vec![])?;
         if run.started_at_ms.is_none() {
             self.take_sample(vault, job, &mut run)?;
         }
@@ -812,7 +809,7 @@ impl<E: ServerEdges> Server<E> {
                 finished_at_ms: None,
             })));
         }
-        self.keep_job(vault, job, SCAN_HOLD_MS, rows)
+        self.keep_job(vault, job, rows)
     }
 
     /// Counts and hashes of the store against each index, and which sampled claims the keyword index holds. Nothing is concluded from an index that hasn't reached what would matter: events that touched nothing it holds don't count against it, so an index a little behind the log can still be compared.
@@ -1059,7 +1056,7 @@ impl<E: ServerEdges> Server<E> {
         }
         if !rows.is_empty() {
             rows.push(Mutation::Put(Row::AuditRun(run.clone())));
-            self.keep_job(vault, job, SCAN_HOLD_MS, rows)?;
+            self.keep_job(vault, job, rows)?;
         }
         Ok(out)
     }
@@ -1201,14 +1198,14 @@ impl<E: ServerEdges> Server<E> {
         run.header.version += 1;
         rows.push(Mutation::Put(Row::AuditCheck(check)));
         rows.push(Mutation::Put(Row::AuditRun(run.clone())));
-        let mut next = jobs::lease_extended(current, self.now() + SCAN_HOLD_MS);
+        let mut next = jobs::lease_extended(current, self.now() + jobs::LEASE_MS);
         next.wait = None;
         rows.push(Mutation::Put(Row::Job(next)));
         self.state_event(&lease, AUDITOR, rows).map_err(ExtractJobError::from)
     }
 
     /// Records what a call spent, against the run and the day, in the same event as what it found.
-    fn spend(&self, vault: &VaultId, job: &JobRow, hold: i64, usage: &AgentUsage, rows: Vec<Mutation>) -> Result<(), ExtractJobError> {
+    fn spend(&self, vault: &VaultId, job: &JobRow, usage: &AgentUsage, rows: Vec<Mutation>) -> Result<(), ExtractJobError> {
         let lease = self.lease(vault).map_err(ExtractJobError::from)?;
         let vault_lock = self.vault_lock(vault);
         let _one_at_a_time = vault_lock.lock().expect("lock");
@@ -1226,7 +1223,7 @@ impl<E: ServerEdges> Server<E> {
         state.header.version += 1;
         let mut rows = rows;
         rows.push(Mutation::Put(Row::AuditState(state)));
-        rows.push(Mutation::Put(Row::Job(jobs::lease_extended(current, self.now() + hold))));
+        rows.push(Mutation::Put(Row::Job(jobs::lease_extended(current, self.now() + jobs::LEASE_MS))));
         self.state_event(&lease, AUDITOR, rows).map_err(ExtractJobError::from)
     }
 
@@ -1268,8 +1265,7 @@ impl<E: ServerEdges> Server<E> {
                 return Ok(None);
             }
         };
-        let hold = limits.timeout_ms as i64 * 2 + LEASE_MARGIN_MS;
-        self.keep_job(vault, job, hold, vec![])?;
+        self.keep_job(vault, job, vec![])?;
         let request = AgentRequest {
             instruction: instruction.into(),
             input,
@@ -1302,7 +1298,7 @@ impl<E: ServerEdges> Server<E> {
             attempts: outcome.attempts,
         };
         // The tokens are spent whatever comes next, so they're on record first.
-        self.spend(vault, job, hold, &outcome.usage, vec![Mutation::Put(Row::AuditRun(run.clone()))])?;
+        self.spend(vault, job, &outcome.usage, vec![Mutation::Put(Row::AuditRun(run.clone()))])?;
         match outcome.result {
             Ok(reply) => Ok(Some((Ok(reply.json), llm))),
             Err(e) if e.is_outage() => {
@@ -1412,7 +1408,7 @@ impl<E: ServerEdges> Server<E> {
                             llm: Some(llm),
                         });
                         check.header.version += 1;
-                        self.keep_job(vault, job, SCAN_HOLD_MS, vec![Mutation::Put(Row::AuditCheck(check.clone()))])?;
+                        self.keep_job(vault, job, vec![Mutation::Put(Row::AuditCheck(check.clone()))])?;
                     }
                 }
             }
@@ -1579,7 +1575,7 @@ impl<E: ServerEdges> Server<E> {
             vec![
                 Mutation::Put(Row::AuditState(state)),
                 Mutation::Put(Row::AuditRun(run.clone())),
-                Mutation::Put(Row::Job(jobs::lease_extended(current, self.now() + SCAN_HOLD_MS))),
+                Mutation::Put(Row::Job(jobs::lease_extended(current, self.now() + jobs::LEASE_MS))),
             ],
         )
         .map_err(ExtractJobError::from)
