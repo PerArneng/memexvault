@@ -1,4 +1,5 @@
 import {
+  activityPageFromWire,
   changeOriginFromWire,
   citingClaimsFromWire,
   claimVersionFromWire,
@@ -17,6 +18,9 @@ import {
   failureFromWire,
   flaggedPagesFromWire,
   identityFromWire,
+  jobFromWire,
+  jobPageFromWire,
+  uploadLimitsFromWire,
   lineageStepFromWire,
   mediaFromWire,
   objectsFromWire,
@@ -246,6 +250,13 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
     listSameAs: (vault, type, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/entities/same-as", { params: { path: { id: vault }, query: { type, ...page(cursor) } } }), sameAsPageFromWire),
     listNeighbors: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/objects/{oid}/neighborhood", { params: { path: { id: vault, oid: id }, query: { limit: 50 } } }), neighborPageFromWire),
     readClaimVersion: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/assertions/{aid}/lineage", { params: { path: { id: vault, aid: id } } }), claimVersionFromWire),
+    listActivityDocuments: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/activity/documents", { params: { path: { id: vault }, query: page(cursor) } }), activityPageFromWire),
+    getUploadLimits: (vault) => attempt(() => client.GET("/api/v1/vaults/{id}/upload-limits", { params: { path: { id: vault } } }), uploadLimitsFromWire),
+    listJobs: (vault, { state, kind }, cursor) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/jobs", { params: { path: { id: vault }, query: { ...page(cursor), ...(state === null ? {} : { state }), ...(kind === null ? {} : { kind }) } } }), jobPageFromWire),
+    getJob: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/jobs/{jid}", { params: { path: { id: vault, jid: id } } }), jobFromWire),
+    retryJob: (vault, id) => attempt(() => client.POST("/api/v1/vaults/{id}/jobs/{jid}/retry", { params: { path: { id: vault, jid: id } } }), jobFromWire),
+    cancelJob: (vault, id) => attempt(() => client.POST("/api/v1/vaults/{id}/jobs/{jid}/cancel", { params: { path: { id: vault, jid: id } } }), jobFromWire),
     getRenditionReading: (vault, rendition) => attempt(() => client.GET("/api/v1/vaults/{id}/renditions/{rid}", { params: { path: { id: vault, rid: rendition } } }), renditionReadingFromWire),
     search: (vault, request, cancel) =>
       attempt(

@@ -244,6 +244,14 @@ impl<E: ServerEdges> Server<E> {
         Ok(source)
     }
 
+    /// Says whether a recording's file is there, for a route that has to choose its status before it reads anything.
+    pub fn check_recording_blob(&self, caller: &Caller, vault: &VaultId, id: &ObjectId) -> Result<(), ServerError> {
+        let source = self.recording(caller, vault, id)?;
+        let hash = memex_types::BlobHash::parse(&source.sha256).map_err(|e| ServerError::Invalid(e.to_string()))?;
+        self.blobs.read(vault, &hash, 0, Some(0))?;
+        Ok(())
+    }
+
     /// A recording's bytes from `offset`, at most `len`, handed to `sink` in pieces until it says stop. Memory stays flat however large the file or the range.
     pub fn stream_recording(
         &self,

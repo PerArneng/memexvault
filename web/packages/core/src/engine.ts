@@ -19,6 +19,10 @@ import type { IdSource, WikiCases } from "./wiki-cases";
 import type { DraftStorage } from "./draft";
 import { createEntityCases } from "./entity-cases";
 import type { EntityCases } from "./entity-cases";
+import type { ActivityFeed } from "./activity-watch";
+import { createIngestCases } from "./ingest-cases";
+import type { IngestCases } from "./ingest-cases";
+import type { Uploader } from "./upload-queue";
 import { createSearchCases } from "./search-cases";
 import type { SearchCases } from "./search-cases";
 
@@ -29,13 +33,16 @@ export interface Edges {
   readonly preferences: Preferences;
   readonly drafts: DraftStorage;
   readonly ids: IdSource;
+  /** Left out by tests of other screens, which never open a live view or upload. */
+  readonly activity?: ActivityFeed;
+  readonly uploader?: Uploader;
 }
 
 /** A vault list can't run forever if a server hands back cursors in a loop: 50 pages of 200 is 10,000 vaults. */
 const MAX_VAULT_PAGES = 50;
 
 /** The single entry point for views. Later specs add a method per use case. */
-export interface Engine extends WikiCases, DocumentCases, EntityCases, SearchCases {
+export interface Engine extends WikiCases, DocumentCases, EntityCases, SearchCases, IngestCases {
   startedAt(): EpochMs;
   uptimeMs(): number;
   settings(): Settings;
@@ -77,9 +84,11 @@ export const createEngine = (edges: Edges): Engine => {
   const notify = () => {
     for (const listener of [...listeners]) listener();
   };
+  let stopUploads: () => void = () => undefined;
   const dispatchSession = (event: SessionEvent) => {
     const next = sessionReducer(session, event);
     if (next !== session) {
+      if (session.status === "signed_in" && next.status !== "signed_in") stopUploads();
       session = next;
       notify();
     }
@@ -117,10 +126,14 @@ export const createEngine = (edges: Edges): Engine => {
     if (result.ok && session.status === "unknown") await restoreSession();
   };
 
+  const ingest = createIngestCases({ edges, watched });
+  stopUploads = ingest.stopUploads;
+
   return {
     ...createWikiCases({ edges, watched, principal: () => (session.status === "signed_in" ? session.identity.principal.id : "unknown") }),
     ...createDocumentCases({ edges, watched }),
     ...createEntityCases({ edges, watched }),
+    ...ingest,
     ...createSearchCases({ edges, watched }),
     startedAt: () => started,
     uptimeMs: () => clock.now() - started,

@@ -12,11 +12,12 @@ export interface Section {
 }
 
 /**
- * Reading the review queue needs only `read`, and approving needs `admin`, which the screen itself will enforce. Chat is open to
+ * Reading the review queue needs only `read`, and approving needs `admin`, which the screen itself will enforce. The same goes for Ingest,
+ * where `read` watches and uploading, retrying and cancelling need `propose`. Chat is open to
  * `read`, since spec 049 lets a read token chat and refuses only its proposals.
  */
 export const SECTIONS: readonly Section[] = [
-  { id: "ingest", label: "Ingest", needs: "propose" },
+  { id: "ingest", label: "Ingest", needs: "read" },
   { id: "documents", label: "Documents", needs: "read" },
   { id: "search", label: "Search", needs: "read" },
   { id: "pages", label: "Pages", needs: "read" },

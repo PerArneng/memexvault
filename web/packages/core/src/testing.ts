@@ -9,6 +9,8 @@ import { slugify } from "./wikitext";
 import { fakeEntityApi } from "./testing-entities";
 import type { EntitiesSeed } from "./testing-entities";
 import type { IdSource } from "./wiki-cases";
+import { fakeIngestApi } from "./ingest-testing";
+import type { IngestSeed } from "./ingest-testing";
 
 /** A clock tests move by hand, so nothing sleeps. */
 export interface ManualClock extends Clock {
@@ -77,6 +79,7 @@ export const httpFailure = (status: number, code: string, message = code): ApiFa
 export const UNREACHABLE: ApiFailure = { kind: "unreachable", message: "no answer" };
 
 export interface FakeApiSeed {
+  readonly ingest?: IngestSeed;
   /** Which token signs in as whom. */
   readonly tokens?: Readonly<Record<string, Identity>>;
   readonly vaults?: readonly Vault[];
@@ -196,6 +199,7 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
   const notFound = httpFailure(404, "not_found");
 
   const api: FakeApi = {
+    ...fakeIngestApi(seed.ingest ?? {}),
     down: false,
     calls,
     failNext: (failure) => {

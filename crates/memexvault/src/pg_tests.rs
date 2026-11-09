@@ -508,7 +508,7 @@ fn job_server(data: &str, offset_ms: i64) -> memex_core::Server<JobEdges> {
 struct DerivedOnce;
 
 impl crate::workers::JobHandler for DerivedOnce {
-    fn run(&self, _: &VaultId, job: &memex_types::JobRow) -> Result<Vec<memex_types::Mutation>, crate::workers::JobFailure> {
+    fn run(&self, _: &VaultId, job: &memex_types::JobRow, _: &crate::workers::JobHold) -> Result<Vec<memex_types::Mutation>, crate::workers::JobFailure> {
         use memex_core::Seed;
         let id = crate::edges::SystemSeed.next_u64();
         if id.is_multiple_of(10) {
@@ -561,6 +561,268 @@ fn pg_job_child() {
     for t in crate::workers::start(server, pools, stop) {
         let _ = t.join();
     }
+}
+
+/// A job's work that never ends by itself, so only a kill or a lost lease ends it.
+struct RunsUntilStopped;
+
+impl crate::workers::JobHandler for RunsUntilStopped {
+    fn run(&self, _: &VaultId, _: &memex_types::JobRow, hold: &crate::workers::JobHold) -> Result<Vec<memex_types::Mutation>, crate::workers::JobFailure> {
+        while !hold.lost() {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        Err(crate::workers::JobFailure::lost())
+    }
+}
+
+/// The victim for the lease test: one worker on a job that doesn't end, until it's killed.
+#[test]
+#[ignore = "helper for the lease kill test"]
+fn pg_job_child_long() {
+    let data = std::env::var("MEMEX_KILL_DATA").expect("data");
+    let server = Arc::new(job_server(&data, 0));
+    server.open_vaults().expect("open");
+    let pools = vec![crate::workers::Pool {
+        kind: memex_core::RENDITION_JOB.into(),
+        workers: 1,
+        handler: Arc::new(RunsUntilStopped),
+    }];
+    println!("ready");
+    for t in crate::workers::start(server, pools, Arc::new(AtomicBool::new(false))) {
+        let _ = t.join();
+    }
+}
+
+fn wall_ms() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("time").as_millis() as i64
+}
+
+/// Spec 082, item 3, in real time and with no models: a process renewing a job's lease is killed. The lease it left runs out within one lease of the kill, nothing can claim the job before that, and the next attempt finishes it.
+#[test]
+#[ignore = "needs Postgres; about 2 minutes, for real leases"]
+fn pg_job_lease_a_killed_process_frees_its_job_within_one_lease() {
+    let lease_ms = memex_core::jobs::LEASE_MS;
+    let data = std::env::temp_dir().join(format!("memex-lease-{}", std::process::id()));
+    let data_s = data.to_string_lossy().to_string();
+    let mut admin = sql();
+    store();
+    admin
+        .batch_execute("DELETE FROM memex_server.tokens; DELETE FROM memex_server.principals; DELETE FROM memex_server.vault_meta;")
+        .expect("clean");
+    let server = job_server(&data_s, 0);
+    let token = server.bootstrap("harness").expect("bootstrap").token;
+    let caller = server.authenticate(&token).expect("auth");
+    let v = server.create_vault(&caller, "lease").expect("vault").id;
+    let req = memex_core::UploadRequest {
+        name: "d.txt".into(),
+        trust_tier: "unverified".into(),
+        metadata: json!({}),
+        replaces: None,
+    };
+    server
+        .upload(&caller, &v, req, memex_core::UploadLimits::default(), &mut &b"a document"[..])
+        .expect("upload");
+    let schema = memex_store_postgres::schema_for(&v);
+    drop(server);
+    let until = |c: &mut Client| -> Option<i64> {
+        c.query_opt(&format!("SELECT lease_until_ms FROM {schema}.jobs WHERE state = 'running'"), &[])
+            .expect("lease")
+            .and_then(|r| r.get(0))
+    };
+    let mut child = Command::new(std::env::current_exe().expect("exe"))
+        .args(["--exact", "pg_tests::pg_job_child_long", "--ignored", "--nocapture", "--test-threads=1"])
+        .env("MEMEX_KILL_DATA", &data_s)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn");
+    let t = Instant::now();
+    let first = loop {
+        if let Some(u) = until(&mut admin) {
+            break u;
+        }
+        assert!(t.elapsed() < Duration::from_secs(120), "the child never claimed the job");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    // Past the first lease's end, so this only holds if it was renewed.
+    let t = Instant::now();
+    let mut renewed = 0;
+    let mut last = first;
+    while wall_ms() < first + 5_000 {
+        let u = until(&mut admin).expect("still running, as nothing has ended it");
+        if u != last {
+            renewed += 1;
+            last = u;
+        }
+        assert!(t.elapsed() < Duration::from_secs(600));
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    assert!(renewed >= 2, "renewed {renewed} times in a whole lease");
+    child.kill().expect("kill");
+    child.wait().expect("wait");
+    let killed_at = wall_ms();
+    let left = until(&mut admin).expect("nothing has ended it yet");
+    assert!(left - killed_at <= lease_ms, "the lease it left has {} ms to run", left - killed_at);
+    // Nothing renews it now, and the next worker can have it when it runs out.
+    let next = job_server(&data_s, 0);
+    let t = Instant::now();
+    loop {
+        match next.open_vaults() {
+            Ok(_) => break,
+            Err(_) if t.elapsed() < Duration::from_secs(30) => std::thread::sleep(Duration::from_millis(5)),
+            Err(e) => panic!("{e}"),
+        }
+    }
+    let job = loop {
+        if let Some(j) = next.claim_job(&v, memex_core::RENDITION_JOB, "next").expect("claim") {
+            break j;
+        }
+        assert!(wall_ms() < left + 30_000, "the job stayed held long after its lease ended");
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    let claimed_at = wall_ms();
+    assert!(claimed_at >= left, "claimed {} ms before the lease ended", left - claimed_at);
+    assert_eq!(job.attempts.len(), 2);
+    assert!(job.attempts[0].error.as_deref().is_some_and(|e| e.contains("stopped")), "{:?}", job.attempts);
+    assert!(next.complete_job(&v, &job, vec![]).expect("complete"));
+    println!(
+        "lease kill: renewed {renewed} times in {} ms, the lease had {} ms left at the kill, claimed {} ms after the kill and {} ms after the lease ended, 2 attempts, done",
+        killed_at - first + lease_ms,
+        left - killed_at,
+        claimed_at - killed_at,
+        claimed_at - left
+    );
+    let _ = std::fs::remove_dir_all(&data);
+}
+
+struct ManualLeaseEdges;
+
+impl memex_core::ServerEdges for ManualLeaseEdges {
+    type Registry = crate::registry_edge::PostgresRegistry;
+    type Store = PostgresStore;
+    type Blobs = crate::edges::FsBlobStore<memex_blob_fs::RealFs>;
+    type Clock = ManualClock;
+    type Seed = crate::edges::SystemSeed;
+    type Rasterizer = crate::rendition_job::ChildRasterizer;
+    type Lexical = memex_core::testing::MemLexical;
+    type Vector = memex_core::testing::MemVector;
+    type Embedder = memex_core::testing::FakeEmbedder;
+    type Reranker = memex_core::testing::FakeReranker;
+    type Caches = memex_core::NoCaches;
+}
+
+/// A handler that does `during` and then reports a result, so a refused result shows as no rendition job done.
+struct LeaseScript<F>(F);
+
+impl<F: Fn(&memex_types::JobRow, &crate::workers::JobHold) + Send + Sync> crate::workers::JobHandler for LeaseScript<F> {
+    fn run(&self, _: &VaultId, job: &memex_types::JobRow, hold: &crate::workers::JobHold) -> Result<Vec<memex_types::Mutation>, crate::workers::JobFailure> {
+        (self.0)(job, hold);
+        Ok(vec![])
+    }
+}
+
+/// Spec 082, items 2 and 4, through Postgres, on a clock the test moves.
+#[test]
+#[ignore = "needs Postgres"]
+fn pg_job_lease_renewal_cancel_and_takeover() {
+    let data = std::env::temp_dir().join(format!("memex-lease-manual-{}", std::process::id()));
+    let mut admin = sql();
+    store();
+    admin
+        .batch_execute("DELETE FROM memex_server.tokens; DELETE FROM memex_server.principals; DELETE FROM memex_server.vault_meta;")
+        .expect("clean");
+    let pg = Arc::new(PgStore::connect(&url(), 8).expect("connect"));
+    let s = memex_core::Server::<ManualLeaseEdges>::new(
+        crate::registry_edge::PostgresRegistry(pg.clone()),
+        PostgresStore(pg),
+        crate::edges::FsBlobStore(memex_blob_fs::FsBlobs::new(&data, memex_blob_fs::RealFs)),
+        ManualClock::starting_at(wall_ms()),
+        crate::edges::SystemSeed,
+        memex_core::testing::mem_search(),
+    );
+    let token = s.bootstrap("harness").expect("bootstrap").token;
+    let caller = s.authenticate(&token).expect("auth");
+    let v = s.create_vault(&caller, "lease-manual").expect("vault").id;
+    let upload = |text: &str| {
+        let req = memex_core::UploadRequest {
+            name: "d.txt".into(),
+            trust_tier: "unverified".into(),
+            metadata: json!({}),
+            replaces: None,
+        };
+        s.upload(&caller, &v, req, memex_core::UploadLimits::default(), &mut text.as_bytes())
+            .expect("upload");
+    };
+    let renew_every = Duration::from_millis(memex_core::jobs::RENEW_EVERY_MS as u64);
+    let job_now = |job: &memex_types::JobRow| s.get_job(&caller, &v, &job.header.id).expect("job");
+    let eventually = |what: &str, done: &dyn Fn() -> bool| {
+        for _ in 0..1200 {
+            if done() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        panic!("this never happened: {what}");
+    };
+    let kind = memex_core::RENDITION_JOB;
+
+    // Three leases and more, in one attempt, with a second worker refused each time.
+    upload("one");
+    let long = LeaseScript(|job: &memex_types::JobRow, hold: &crate::workers::JobHold| {
+        let mut until = job.lease_until_ms;
+        for _ in 0..10 {
+            s.engine().clock().advance(renew_every);
+            eventually("the lease moves on", &|| job_now(job).lease_until_ms > until);
+            until = job_now(job).lease_until_ms;
+            assert!(s.claim_job(&v, kind, "second").expect("claim").is_none());
+            assert!(!hold.lost());
+        }
+    });
+    assert!(crate::workers::run_one(&s, &long, kind, "first"));
+    let jobs = |state| {
+        s.engine()
+            .store()
+            .snapshot(&v)
+            .expect("snapshot")
+            .jobs(Some(kind), Some(state), None, 10)
+            .expect("jobs")
+    };
+    let done = jobs(memex_types::JobState::Done);
+    assert_eq!((done.len(), done[0].attempts.len()), (1, 1));
+    println!("lease renewal on Postgres: one attempt, version {}", done[0].header.version);
+
+    // Cancelled during a renewal: the handler hears and its completion is refused.
+    upload("two");
+    let cancelled = LeaseScript(|job: &memex_types::JobRow, hold: &crate::workers::JobHold| {
+        s.cancel_job(&caller, &v, &job.header.id).expect("cancel");
+        s.engine().clock().advance(renew_every);
+        eventually("the handler hears", &|| hold.lost());
+    });
+    assert!(crate::workers::run_one(&s, &cancelled, kind, "first"));
+    assert_eq!(jobs(memex_types::JobState::Cancelled).len(), 1);
+    assert_eq!(jobs(memex_types::JobState::Done).len(), 1, "it wasn't recorded as done");
+
+    // Taken: the new holder keeps it, whatever the old one says.
+    upload("three");
+    let taken = LeaseScript(|_: &memex_types::JobRow, hold: &crate::workers::JobHold| {
+        let second = loop {
+            s.engine().clock().advance(Duration::from_millis(memex_core::jobs::LEASE_MS as u64));
+            if let Some(j) = s.claim_job(&v, kind, "second").expect("claim") {
+                break j;
+            }
+        };
+        s.engine().clock().advance(renew_every);
+        eventually("the handler hears", &|| hold.lost());
+        assert_eq!(job_now(&second).lease_owner.as_deref(), Some("second"));
+    });
+    assert!(crate::workers::run_one(&s, &taken, kind, "first"));
+    let running = jobs(memex_types::JobState::Running);
+    assert_eq!(
+        (running.len(), running[0].lease_owner.as_deref(), running[0].attempts.len()),
+        (1, Some("second"), 2)
+    );
+    assert_eq!(jobs(memex_types::JobState::Done).len(), 1);
+    let _ = std::fs::remove_dir_all(&data);
 }
 
 #[test]

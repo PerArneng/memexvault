@@ -39,6 +39,7 @@ impl ApiError {
             ServerError::Unauthenticated => StatusCode::UNAUTHORIZED,
             ServerError::Forbidden | ServerError::ChatDisabled => StatusCode::FORBIDDEN,
             ServerError::NotFound => StatusCode::NOT_FOUND,
+            ServerError::BlobMissing => StatusCode::GONE,
             ServerError::Invalid(_) => StatusCode::BAD_REQUEST,
             ServerError::Conflict(_) | ServerError::StaleVersion { .. } | ServerError::NotReversible(_) | ServerError::AlreadyBootstrapped => {
                 StatusCode::CONFLICT

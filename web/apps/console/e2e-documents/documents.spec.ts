@@ -554,14 +554,12 @@ test("item 5: a 400-page document opens with its first page within 1 s when warm
   test.setTimeout(1_800_000);
   const built = Date.now();
   const source = await upload(request, `long-${run}.pdf`, makePdf(400, (page) => `Document page ${String(page + 1)} of the long document`));
-  // A rendition job holds a 60 s lease that nothing renews, and sampling for hidden text OCRs about 42 of these pages, so on the real server this job
-  // is taken back from its own worker until it goes dead. That's a backend bug, recorded in the spec's Result. Here the lease is kept alive, in this database only, so the word table is real.
-  test.skip(PG_CONTAINER === undefined, "set MEMEX_E2E_PG_CONTAINER: a job this long can't finish without it");
-  const schema = vaultSchema();
-  const keepLease = setInterval(() => {
-    sql(`update "${schema}".jobs set lease_until_ms = ${String(Date.now() + 3_600_000)} where kind = 'rendition' and state = 'running'`);
-  }, 15_000);
-  const rendition = await renditionOf(request, source.id, 25).finally(() => clearInterval(keepLease));
+  const rendition = await renditionOf(request, source.id, 25);
+  // Spec 082: this takes longer than one lease, and its worker keeps the lease itself, so the first attempt finishes it.
+  const jobs = await get<{ items: readonly { readonly kind: string; readonly input: { readonly source_id?: string }; readonly attempts: readonly unknown[]; readonly state: string }[] }>(request, api("/jobs?kind=rendition&limit=200"));
+  const job = jobs.items.find((j) => j.kind === "rendition" && j.input.source_id === source.id);
+  record("the 400-page document's job", { state: job?.state, attempts: job?.attempts.length, ms: Date.now() - built, load: loadAverage() });
+  expect(job?.attempts.length).toBe(1);
   record("the 400-page document", { ms: Date.now() - built, load: loadAverage(), bytes: (await get<{ size: number }>(request, api(`/sources/${source.id}`))).size, segments: rendition.segment_count });
   const pagesFact = await get<{ page_count: number }>(request, api(`/sources/${source.id}/pages`));
   expect(pagesFact.page_count).toBe(400);
@@ -952,11 +950,14 @@ test("item 6: a broken anchor, a superseded rendition, a missing blob, an erased
   expect(file, "the blob").toBeDefined();
   rmSync(join(inFolder, file ?? ""));
   const asked = await request.get(api(`/sources/${lost.id}/pages/0/image`), { headers: bearer });
-  record("the server on a missing blob", { status: asked.status(), body: (await asked.text()).slice(0, 200) });
+  const said = (await asked.json()) as { readonly error: { readonly code: string; readonly message: string } };
+  record("the server on a missing blob", { status: asked.status(), body: said });
+  expect(asked.status()).toBe(410);
+  expect(said.error.code).toBe("blob_missing");
   await page.goto(docsPath(`/${lost.id}`));
   const failure = page.locator(`[data-page-failure="1"]`);
   await expect(failure).toContainText("Couldn't show page 1.");
-  await expect(failure).toContainText("the original file may be missing from the server");
+  await expect(failure).toContainText(said.error.message);
   record("the screen on a missing blob", await failure.textContent());
 
   // An erased source. Erasure is spec 030, which isn't built, so the row is removed from this database, and what the server then says is real. The screen says what a token can know.

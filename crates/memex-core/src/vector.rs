@@ -246,6 +246,7 @@ pub fn embed_missing<V: VectorIndex, E: Embedder>(
     vault: &VaultId,
     model: &str,
     docs: Vec<EmbeddableDoc>,
+    keep_going: &dyn Fn() -> bool,
 ) -> Result<usize, EmbedJobError> {
     let texts: BTreeMap<String, String> = docs.into_iter().map(|d| (d.hash, d.text)).collect();
     let hashes: Vec<String> = texts.keys().cloned().collect();
@@ -277,6 +278,9 @@ pub fn embed_missing<V: VectorIndex, E: Embedder>(
             expected: info.dimension,
             got: wrong.len() as u32,
         }));
+    }
+    if !keep_going() {
+        return Err(EmbedJobError::retry("this worker no longer holds the job"));
     }
     let rows: Vec<(String, Vec<f32>)> = missing.into_iter().map(|(h, _)| h).zip(vectors).collect();
     let count = rows.len();

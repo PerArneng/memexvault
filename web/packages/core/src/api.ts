@@ -41,6 +41,8 @@ import type {
 } from "@memex/types";
 import type { SearchRequest } from "./search";
 
+import type { IngestApi } from "./ingest-cases";
+
 export type { ApiFailure };
 
 export type ApiResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly failure: ApiFailure };
@@ -155,7 +157,7 @@ export interface CancelSignal {
   readonly aborted: boolean;
 }
 
-export interface Api {
+export interface Api extends IngestApi {
   whoami(): Promise<ApiResult<Identity>>;
   signIn(token: string): Promise<ApiResult<Identity>>;
   signOut(): Promise<ApiResult<null>>;

@@ -69,6 +69,8 @@ A live screen fetches a snapshot, then follows the activity stream from the snap
 events. On a resync frame, the screen fetches a new snapshot. Rendering is batched, so a burst of events can't block input, and long lists are
 virtualized.
 
+Spec 041 built this for Ingest. `ActivityWatch` in `core` holds the picture and no timer: the view calls `tick` five times a second, which applies whatever arrived in one batch and is the only thing that notifies. A frame says what's so, not what changed, so going over one twice is harmless, and frames that arrive during a snapshot are replayed on it. The stage model stays on the server: a frame moves a document only where it can't be wrong, up to the end of parsing, and anything it can't place, such as an embedding job, which isn't tied to one document, marks the picture for a new snapshot, at most once a second and at most a fifth of the time. `SseActivityFeed` uses `fetch` rather than `EventSource`, which hides a refusal's status and can't notice a connection that died silently, and it resumes by itself from the last position. Anything else that wants the stream calls `follow`.
+
 ## Security
 
 All vault content is untrusted, including document text, OCR output, entity fields, page bodies and model replies.

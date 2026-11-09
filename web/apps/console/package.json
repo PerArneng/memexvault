@@ -13,6 +13,7 @@
     "e2e:wiki": "playwright test --config playwright.wiki.config.ts",
     "e2e:documents": "playwright test --config playwright.documents.config.ts",
     "e2e:entities": "playwright test --config playwright.entities.config.ts",
+    "e2e:ingest": "playwright test --config playwright.ingest.config.ts",
     "e2e:search": "playwright test --config playwright.search.config.ts"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
     "@memex/core": "workspace:*",
     "@memex/edge-browser": "workspace:*",
     "@memex/edge-http": "workspace:*",
+    "@memex/edge-sse": "workspace:*",
     "@memex/types": "workspace:*",
     "@memex/ui": "workspace:*",
     "@tanstack/react-query": "5.106.1",
