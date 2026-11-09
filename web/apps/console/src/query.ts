@@ -20,9 +20,10 @@ const failureOf = (error: unknown): ApiFailure | null => (error instanceof Failu
 export const createQueryClient = (engine: Engine): QueryClient =>
   new QueryClient({
     queryCache: new QueryCache({
-      onError: (error) => {
+      onError: (error, query) => {
         const failure = failureOf(error);
-        if (failure !== null) engine.reportFailure(failure, "read");
+        // A screen that explains its own failures in place needs no toast saying the same.
+        if (failure !== null && query.meta?.ownsErrors !== true) engine.reportFailure(failure, "read");
       },
     }),
     mutationCache: new MutationCache({
@@ -76,6 +77,8 @@ export const QUERY_KEYS = {
   derivation: (vault: string, rendition: string, segment: string) => ["documents", vault, "derivation", rendition, segment] as const,
   media: (vault: string, id: string) => ["documents", vault, "media", id] as const,
   transcript: (vault: string, id: string, fromMs: number | null) => ["documents", vault, "transcript", id, fromMs] as const,
+  search: (vault: string, request: unknown) => ["search", vault, request] as const,
+  reading: (vault: string, rendition: string) => ["documents", vault, "reading", rendition] as const,
   // A changeset's author never changes, so this one can stay cached across writes.
   wikiAttribution: (vault: string, changeset: string) => ["attribution", vault, changeset] as const,
 };

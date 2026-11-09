@@ -94,6 +94,8 @@ export const segmentFromWire = (s: Schemas["SegmentDto"]): Segment => ({
   sourceId: s.source_id,
   renditionId: s.rendition_id ?? null,
   text: s.text,
+  start: s.start,
+  end: s.end,
   heading: s.heading ?? null,
   language: s.language ?? null,
   pageFrom: s.page_from ?? null,
