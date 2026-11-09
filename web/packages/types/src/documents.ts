@@ -87,6 +87,9 @@ export interface Segment {
   readonly sourceId: string;
   readonly renditionId: string | null;
   readonly text: string;
+  /** UTF-8 byte offsets into the rendition's canonical text. */
+  readonly start: number;
+  readonly end: number;
   readonly heading: string | null;
   readonly language: string | null;
   readonly pageFrom: number | null;

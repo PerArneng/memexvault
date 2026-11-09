@@ -63,6 +63,7 @@ export type ApiFailure =
   | { readonly kind: "protocol"; readonly status: number; readonly message: string };
 
 export * from "./documents";
+export * from "./search";
 export * from "./wiki";
 
 /**

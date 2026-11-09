@@ -37,4 +37,5 @@ export {
   sourcePageFromWire,
   transcriptFromWire,
 } from "./translate-documents";
+export { evidencePackageFromWire, renditionReadingFromWire } from "./translate-search";
 export type { LineageStep, ObjectPages, WireHeaders } from "./translate";

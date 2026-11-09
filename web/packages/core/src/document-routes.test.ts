@@ -70,6 +70,7 @@ describe("a path", () => {
     "s1?tab=segments&rendition=r1",
     "s1?page=1&claim=a1&evidence=e1",
     "s1?t=61000&end=64000",
+    "s1?page=3&segment=seg%2F1",
     "-/claims/a1?evidence=e1",
     "?q=a%20b&tier=trusted&flagged=1",
   ])("for %s reads back as the same route", (path) => {
