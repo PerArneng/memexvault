@@ -852,12 +852,12 @@ fn a_crash_after_a_derivation_makes_its_proposals_with_no_second_call() {
         created_at_ms: 1,
     };
     assert!(
-        w.s.hold_job(&w.v, &held, 1000, true, vec![memex_types::Mutation::Put(Row::Derivation(derivation))])
+        w.s.hold_job(&w.v, &held, true, vec![memex_types::Mutation::Put(Row::Derivation(derivation))])
             .unwrap()
     );
     assert!(w.changesets().is_empty());
 
-    w.s.engine().clock().advance(Duration::from_secs(2));
+    w.s.engine().clock().advance(Duration::from_secs(61));
     let agent = ScriptedAgent::answering(claims_each);
     w.work_ok(&agent);
     assert!(agent.requests().is_empty(), "the reply is on record");

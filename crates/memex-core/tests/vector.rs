@@ -462,6 +462,28 @@ fn bad_query_text_is_refused_and_other_vaults_stay_apart() {
 }
 
 #[test]
+fn an_embed_job_that_has_gone_stores_nothing() {
+    let w = world();
+    w.record(vec![Mutation::Put(Row::Segment(segment("s1", "the pump failed", Status::Active)))]);
+    let mut job = None;
+    for _ in 0..100 {
+        w.s.project_vector(&w.v).unwrap();
+        job = w.s.claim_job(&w.v, EMBED_JOB, "w").unwrap();
+        if job.is_some() {
+            break;
+        }
+    }
+    let job = job.expect("an embed job");
+    let e = w.s.run_embed_job_while(&w.v, &job, &|| false).unwrap_err();
+    assert!(e.retryable, "{e:?}");
+    assert_eq!(
+        w.s.run_embed_job_while(&w.v, &job, &|| true).unwrap(),
+        1,
+        "nothing had been stored, so it's all still to do"
+    );
+}
+
+#[test]
 fn a_job_key_follows_the_current_text() {
     let doc = |id: &str| EmbedDocRef {
         kind: DocKind::Segment,

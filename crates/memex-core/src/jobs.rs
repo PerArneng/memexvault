@@ -4,6 +4,8 @@ use serde_json::Value;
 
 /// How long a worker may hold a job before it counts as dead.
 pub const LEASE_MS: i64 = 60_000;
+/// How often a running job's lease is renewed, so one slow or failed renewal doesn't lose the job.
+pub const RENEW_EVERY_MS: i64 = LEASE_MS / 3;
 /// How long a waiting job sleeps at most, so it picks up soon after whatever it waits for comes back.
 pub const WAIT_CAP_MS: i64 = 300_000;
 

@@ -33,7 +33,7 @@ pub struct ErrorBody {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ErrorDetail {
-    /// A stable machine-readable code, such as `not_found`.
+    /// A stable machine-readable code, such as `not_found`. `blob_missing`, with status 410, means a stored file that should be there isn't, so trying again won't help until it's restored.
     pub code: String,
     pub message: String,
     pub request_id: String,

@@ -573,6 +573,7 @@ fn tool_error_code(e: &ServerError) -> &'static str {
     match e {
         ServerError::Forbidden => "forbidden",
         ServerError::NotFound => "not_found",
+        ServerError::BlobMissing => "blob_missing",
         ServerError::Invalid(_) => "invalid",
         ServerError::Conflict(_) | ServerError::StaleVersion { .. } => "conflict",
         ServerError::Busy | ServerError::RateLimited { .. } | ServerError::Unavailable(_) | ServerError::NotCaughtUp { .. } => "unavailable",

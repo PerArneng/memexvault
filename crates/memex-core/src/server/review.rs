@@ -1,5 +1,5 @@
 //! The review gate on the facade: the queue, the reviewer agent's job, and what each combination has earned.
-use super::extraction::{EXTRACTOR, LEASE_MARGIN_MS};
+use super::extraction::EXTRACTOR;
 use super::{ExtractJobError, ProposedBy, Server, ServerEdges, ServerError};
 use crate::auth::{Caller, Operation};
 use crate::review::{self, ReviewLimits, SampleBy};
@@ -659,8 +659,7 @@ impl<E: ServerEdges> Server<E> {
         if previous.as_ref().is_some_and(|v| review::verdict_is_current(v, &prompt.hash)) {
             return Ok(vec![]);
         }
-        let hold = limits.timeout_ms as i64 * 2 + LEASE_MARGIN_MS;
-        if !self.hold_job(vault, job, hold, false, vec![])? {
+        if !self.hold_job(vault, job, false, vec![])? {
             return Err(ExtractJobError::Lost);
         }
         let request = AgentRequest {

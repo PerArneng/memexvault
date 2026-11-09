@@ -117,7 +117,7 @@ where
     }))
 }
 
-#[utoipa::path(get, path = "/api/v1/vaults/{id}/sources/{sid}/transcript", tag = "meetings", params(("id" = String, Path), ("sid" = String, Path), memex_api::TranscriptQuery), responses((status = 200, body = memex_api::TranscriptDto), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody, description = "Not transcribed yet")))]
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/sources/{sid}/transcript", tag = "meetings", params(("id" = String, Path), ("sid" = String, Path), memex_api::TranscriptQuery), responses((status = 200, body = memex_api::TranscriptDto), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody), (status = 409, body = ErrorBody, description = "Not transcribed yet"), (status = 410, body = ErrorBody)))]
 async fn get_transcript<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
@@ -170,7 +170,7 @@ pub(super) fn past_the_end(value: &str, size: u64) -> bool {
     a.parse::<u64>().is_ok_and(|start| start >= size)
 }
 
-#[utoipa::path(get, path = "/api/v1/vaults/{id}/sources/{sid}/stream", tag = "meetings", params(("id" = String, Path), ("sid" = String, Path)), responses((status = 200, description = "The original recording, as it was uploaded, to play"), (status = 206, description = "Part of it, for a Range request. A player seeks to a cited time with these."), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody), (status = 416, description = "The range starts past the end")))]
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/sources/{sid}/stream", tag = "meetings", params(("id" = String, Path), ("sid" = String, Path)), responses((status = 200, description = "The original recording, as it was uploaded, to play"), (status = 206, description = "Part of it, for a Range request. A player seeks to a cited time with these."), (status = 400, body = ErrorBody), (status = 404, body = ErrorBody), (status = 416, description = "The range starts past the end"), (status = 410, body = ErrorBody)))]
 async fn stream_media<E>(
     State(server): State<App<E>>,
     Extension(rid): Extension<RequestId>,
@@ -185,7 +185,12 @@ where
     let (vault, source) = (VaultId(id), ObjectId(sid));
     let (auth_headers, stream_headers) = (headers.clone(), headers);
     let (read_vault, read_source) = (vault.clone(), source.clone());
-    let row = authed(server.clone(), auth_headers, &rid, move |s, c| s.recording_row(c, &read_vault, &read_source)).await?;
+    let row = authed(server.clone(), auth_headers, &rid, move |s, c| {
+        // Once the stream starts it has said 200, so a missing file has to be found first.
+        s.check_recording_blob(c, &read_vault, &read_source)?;
+        s.recording_row(c, &read_vault, &read_source)
+    })
+    .await?;
     if range.as_deref().is_some_and(|r| past_the_end(r, row.size)) {
         let mut res = StatusCode::RANGE_NOT_SATISFIABLE.into_response();
         if let Ok(v) = HeaderValue::from_str(&format!("bytes */{}", row.size)) {

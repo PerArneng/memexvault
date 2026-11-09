@@ -2560,7 +2560,7 @@
       "ErrorDetail": {
         "properties": {
           "code": {
-            "description": "A stable machine-readable code, such as `not_found`.",
+            "description": "A stable machine-readable code, such as `not_found`. `blob_missing`, with status 410, means a stored file that should be there isn't, so trying again won't help until it's restored.",
             "type": "string"
           },
           "current": {
@@ -7846,6 +7846,15 @@
                 }
               }
             }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -7917,6 +7926,15 @@
                 }
               }
             }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -7956,6 +7974,15 @@
             }
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "410": {
             "content": {
               "application/json": {
                 "schema": {
@@ -12112,6 +12139,15 @@
                 }
               }
             }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -13844,6 +13880,15 @@
                 }
               }
             }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -14147,6 +14192,15 @@
                 }
               }
             }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -14220,6 +14274,15 @@
                 }
               }
             }
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -14275,6 +14338,15 @@
             }
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "410": {
             "content": {
               "application/json": {
                 "schema": {
@@ -14436,6 +14508,15 @@
               }
             }
           },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "416": {
             "description": "The range starts past the end"
           }
@@ -14572,6 +14653,15 @@
               }
             },
             "description": "Not transcribed yet"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         },
         "tags": [
