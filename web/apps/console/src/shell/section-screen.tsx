@@ -15,6 +15,7 @@ const WikiScreen = lazy(() => import("../wiki/wiki-screen"));
 const DocumentsScreen = lazy(() => import("../documents/documents-screen"));
 // Lazy, as nothing before a signed-in user watches ingest needs the live board.
 const IngestScreen = lazy(() => import("../ingest/ingest-screen"));
+const SearchScreen = lazy(() => import("../search/search-screen"));
 
 interface SectionScreenProps {
   readonly identity: Identity;
@@ -32,7 +33,7 @@ const Allowed = ({ identity, vault, section, rest }: { readonly identity: Identi
         <div className="flex flex-col gap-4">
           <p className="text-sm text-text-muted">
             In vault <span className="text-text">{data.name}</span>
-            {section.id !== "pages" && section.id !== "documents" && section.id !== "ingest" && rest[0] !== undefined && <> · <span className="font-mono text-text">{rest[0]}</span></>}
+            {section.id !== "pages" && section.id !== "documents" && section.id !== "ingest" && section.id !== "search" && rest[0] !== undefined && <> · <span className="font-mono text-text">{rest[0]}</span></>}
           </p>
           {section.id === "pages" ? (
             <Suspense fallback={<Skeleton className="h-24 w-full" />}>
@@ -45,6 +46,10 @@ const Allowed = ({ identity, vault, section, rest }: { readonly identity: Identi
           ) : section.id === "ingest" ? (
             <Suspense fallback={<Skeleton className="h-24 w-full" />}>
               <IngestScreen identity={identity} vault={vault} rest={rest} />
+            </Suspense>
+          ) : section.id === "search" ? (
+            <Suspense fallback={<Skeleton className="h-24 w-full" />}>
+              <SearchScreen vault={vault} rest={rest} />
             </Suspense>
           ) : (
             /* Each feature screen replaces this in its own spec. */

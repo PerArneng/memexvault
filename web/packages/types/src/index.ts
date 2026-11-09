@@ -64,6 +64,7 @@ export type ApiFailure =
 
 export * from "./activity";
 export * from "./documents";
+export * from "./search";
 export * from "./wiki";
 
 /**

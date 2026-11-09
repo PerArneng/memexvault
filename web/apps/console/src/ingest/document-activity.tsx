@@ -144,7 +144,7 @@ export const DocumentActivityView = ({ identity, vault, id, watch }: { readonly 
             </div>
           )}
           {explanation !== null && <p data-explanation={doc.status} className={`rounded-md border p-2 text-sm ${doc.status === "failed" ? "border-danger bg-danger-surface" : "border-border-strong bg-surface-raised"}`}>{explanation}</p>}
-          <AppLink to={documentPath(vault, { kind: "source", id, tab: "view", page: null, zoom: null, claim: null, evidence: null, fromMs: null, toMs: null, rendition: null })} className={LINK_BUTTON}>Open in Documents</AppLink>
+          <AppLink to={documentPath(vault, { kind: "source", id, tab: "view", page: null, zoom: null, claim: null, evidence: null, fromMs: null, toMs: null, rendition: null, segment: null })} className={LINK_BUTTON}>Open in Documents</AppLink>
           <section aria-label="Timeline" className="flex flex-col gap-2">
             <h3 className="font-medium">Timeline</h3>
             <StageTimeline doc={doc} facts={facts} />

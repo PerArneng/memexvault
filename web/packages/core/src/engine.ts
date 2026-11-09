@@ -21,6 +21,8 @@ import type { ActivityFeed } from "./activity-watch";
 import { createIngestCases } from "./ingest-cases";
 import type { IngestCases } from "./ingest-cases";
 import type { Uploader } from "./upload-queue";
+import { createSearchCases } from "./search-cases";
+import type { SearchCases } from "./search-cases";
 
 export interface Edges {
   readonly clock: Clock;
@@ -38,7 +40,7 @@ export interface Edges {
 const MAX_VAULT_PAGES = 50;
 
 /** The single entry point for views. Later specs add a method per use case. */
-export interface Engine extends WikiCases, DocumentCases, IngestCases {
+export interface Engine extends WikiCases, DocumentCases, IngestCases, SearchCases {
   startedAt(): EpochMs;
   uptimeMs(): number;
   settings(): Settings;
@@ -129,6 +131,7 @@ export const createEngine = (edges: Edges): Engine => {
     ...createWikiCases({ edges, watched, principal: () => (session.status === "signed_in" ? session.identity.principal.id : "unknown") }),
     ...createDocumentCases({ edges, watched }),
     ...ingest,
+    ...createSearchCases({ edges, watched }),
     startedAt: () => started,
     uptimeMs: () => clock.now() - started,
     settings: () => edges.settings,

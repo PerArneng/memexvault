@@ -1,5 +1,5 @@
 import { epochMs, vaultId } from "@memex/types";
-import type { ChangeOrigin, ClaimLineage, Derivation, DocumentSource, EpochMs, FlaggedPage, Grant, Identity, MediaFacts, ObjectSummary, Page, PageList, PageWord, Rendition, Segment, Transcript, Vault, VaultId, WikiClaim, WikiPage, WikiPageSummary, WikiRevision, WikiWrite } from "@memex/types";
+import type { ChangeOrigin, EvidencePackage, RenditionReading, ClaimLineage, Derivation, DocumentSource, EpochMs, FlaggedPage, Grant, Identity, MediaFacts, ObjectSummary, Page, PageList, PageWord, Rendition, Segment, Transcript, Vault, VaultId, WikiClaim, WikiPage, WikiPageSummary, WikiRevision, WikiWrite } from "@memex/types";
 import { failed, ok } from "./api";
 import type { Api, ApiFailure, ApiResult } from "./api";
 import type { Clock } from "./clock";
@@ -96,6 +96,10 @@ export interface FakeApiSeed {
   readonly wikiWritesPending?: boolean;
   /** Everything the document screens read. Anything left out is not found. */
   readonly documents?: DocumentsSeed;
+  /** What each search query answers. A query left out finds nothing. */
+  readonly searches?: Readonly<Record<string, EvidencePackage>>;
+  /** Each rendition's text and words. */
+  readonly readings?: Readonly<Record<string, RenditionReading>>;
 }
 
 export interface DocumentsSeed {
@@ -376,6 +380,9 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
         if (known.version !== change.baseVersion) return failed(httpFailure(409, "stale_version"));
         return ok({ changesetId: "cs-trust", state: docs.trustState ?? "committed", replayed: false, refusals: docs.trustState === "rejected" ? ["refused by a validator"] : [] });
       }),
+    getRenditionReading: (_vault, rendition) => answer("getRenditionReading", () => found(seed.readings?.[rendition])),
+    search: (_vault, request) =>
+      answer("search", () => ok(seed.searches?.[request.q] ?? { path: "natural", items: [], lowRelevance: true, notices: [], budget: { limit: request.budgetTokens, used: 0, truncated: false }, degraded: [], facets: null, debug: null, nextCursor: null, asOf: null })),
     searchClaimIds: () => answer("searchClaimIds", () => ok(seed.claimHits ?? [])),
     readClaim: (_vault, id) =>
       answer("readClaim", () => {
