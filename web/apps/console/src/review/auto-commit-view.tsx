@@ -79,7 +79,7 @@ export const AutoCommitView = ({ identity, vault }: { readonly identity: Identit
   return (
     <div className="flex flex-col gap-3">
       <section aria-label="How auto-commit works" className="rounded-md border border-border p-3 text-sm" data-testid="auto-commit-rules">
-        <h3 className="mb-1 font-medium">How auto-commit works</h3>
+        <h2 className="mb-1 font-medium">How auto-commit works</h2>
         <ul className="list-disc pl-5 text-text-muted">{AUTO_COMMIT_RULES.map((r) => <li key={r}>{r}</li>)}</ul>
       </section>
       <QueryView query={query} label="the auto-commit table" isEmpty={(d) => d.entries.length === 0} empty={<EmptyState title="No combination has any samples yet.">Everything waits for a person until one earns auto-commit.</EmptyState>}>

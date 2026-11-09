@@ -86,7 +86,7 @@ const Inverse = ({ vault, changeset, canDecide }: { readonly vault: VaultId; rea
   };
   return (
     <section aria-label="Undoing it" className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium">Undoing it</h3>
+      <h2 className="text-sm font-medium">Undoing it</h2>
       {done !== null && (
         <div data-testid="reverted">
           <Callout tone="info" title="Reverted. The revert is a change of its own.">
@@ -138,7 +138,7 @@ export const ChangesetDetail = ({ identity, vault, id }: { readonly identity: Id
           <Rationale text={c.rationale} />
           <OpsList ops={c.ops} label="What it does" />
           {c.originalOps !== null && <OpsList ops={c.originalOps} label="What was first proposed" />}
-          <section aria-label="Validators" className="flex flex-col gap-1"><h3 className="text-sm font-medium">Validators</h3><ValidatorsView validators={c.validators} /></section>
+          <section aria-label="Validators" className="flex flex-col gap-1"><h2 className="text-sm font-medium">Validators</h2><ValidatorsView validators={c.validators} /></section>
           {c.state === "committed" && accessText !== null && <div data-testid="no-decisions"><Callout tone="warning" title="You can't revert anything here.">{accessText}</Callout></div>}
           {c.state === "committed" && <Inverse vault={vault} changeset={c} canDecide={access.kind === "allowed"} />}
         </div>

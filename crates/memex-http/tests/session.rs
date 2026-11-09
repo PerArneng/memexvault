@@ -581,9 +581,8 @@ async fn an_admin_agent_decides_nothing_through_a_session_and_keeps_what_its_bea
     let w = world();
     let root = w.s.authenticate(&w.admin).unwrap();
     let p = w.s.create_principal(&root, "agent", PrincipalKind::Agent, false).unwrap();
-    let token = w
-        .s
-        .create_token(
+    let token =
+        w.s.create_token(
             &root,
             NewToken {
                 principal_id: Some(p.id),
@@ -641,7 +640,11 @@ async fn an_admin_agent_decides_nothing_through_a_session_and_keeps_what_its_bea
     }
     let (status, out, _) = w.send(get_with_cookie(&format!("{base}/changesets/{cs}"), &cookie)).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(serde_json::from_slice::<Value>(&out).unwrap()["state"], "pending", "none of that decided anything");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&out).unwrap()["state"],
+        "pending",
+        "none of that decided anything"
+    );
 
     // The same agent with its token: an ordinary item can be approved and reverted, as spec 025 recorded. This is the gap the session rule leaves.
     let (status, out, _) = w.send(bearer(format!("{base}/changesets/{cs}/approve"), &token, json!({"reason": "r"}))).await;

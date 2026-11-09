@@ -1,5 +1,5 @@
 import { afterRemoving, decisionAccess, decisionAccessText, defaultApproveReason, describeOp, documentPath, INITIAL_QUEUE, NO_FILTER, opsAsText, parseEditedOps, QUEUE_KEY_HELP, queueCommandFor, queueReconciled, queueStep, reviewPath, selectedIn, sourcePlace, summarizeBatch, VERDICT_FILTERS } from "@memex/core";
-import type { QueueCommand, QueueFeedEvent, QueueRefusal, QueueState } from "@memex/core";
+import type { DecisionOutcome, QueueCommand, QueueFeedEvent, QueueRefusal, QueueState } from "@memex/core";
 import type { Identity, Page, ReviewDecision, ReviewDetail, ReviewFilter, ReviewItem, VaultId } from "@memex/types";
 import { Badge, Button, EmptyState, Input } from "@memex/ui";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -207,7 +207,7 @@ const EditForm = ({ detail, problem, busy, onSubmit, onCancel }: { readonly deta
 
 const KeyHelp = () => (
   <div data-testid="key-help" className="rounded-lg border border-border-strong bg-surface-raised p-3">
-    <h3 className="mb-2 text-sm font-medium">Keys</h3>
+    <h2 className="mb-2 text-sm font-medium">Keys</h2>
     <dl className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-sm">
       {QUEUE_KEY_HELP.map((k) => (
         <div key={k.keys} className="contents"><dt className="font-mono text-xs text-text-muted">{k.keys}</dt><dd>{k.what}</dd></div>
@@ -308,34 +308,54 @@ export const QueueView = ({ identity, vault, filter, item }: { readonly identity
     setLeaving((l) => l.filter((id) => !gone.includes(id)));
   }, [refresh]);
 
-  /** One decision. The queue moves on at once, and comes back to the item if it didn't go through. */
-  const decide = useCallback(async (decision: ReviewDecision, what: string) => {
-    setNotice(null);
-    setProblem(null);
-    if (decision.kind !== "approve" || decision.reason !== defaultApproveReason) setBusy(true);
-    const before = ids;
-    moveOn(before, [decision.id]);
-    const outcome = await engine.decide(vault, decision);
-    setBusy(false);
+  const report = useCallback((outcome: DecisionOutcome, decision: ReviewDecision, what: string) => {
     if (outcome.kind === "done") {
       setNotice({ tone: "info", title: `${what}.`, detail: `Recorded as ${outcome.changeset.decidedBy ?? "you"}${outcome.changeset.state === "rejected" && decision.kind !== "reject" ? ", but it was rejected" : ""}.` });
-      await settle([decision.id]);
+    } else {
+      setNotice({ tone: "danger", ...outcomeNotice(outcome) });
+    }
+  }, []);
+
+  /** A plain approval. The queue moves on at once, and the item comes back if it didn't go through. */
+  const approveNow = useCallback(async (decision: ReviewDecision) => {
+    setNotice(null);
+    moveOn(ids, [decision.id]);
+    report(await engine.decide(vault, decision), decision, "Approved");
+    await settle([decision.id]);
+  }, [engine, ids, moveOn, report, settle, vault]);
+
+  /** A decision someone typed something for. The form stays until the server has answered, so a refusal costs them none of it. */
+  const decideFromForm = useCallback(async (decision: ReviewDecision, what: string) => {
+    setNotice(null);
+    setProblem(null);
+    setBusy(true);
+    const outcome = await engine.decide(vault, decision);
+    setBusy(false);
+    if (outcome.kind === "invalid") {
+      setProblem(outcome.message);
       return;
     }
-    const words = outcomeNotice(outcome);
-    setNotice({ tone: "danger", ...words });
+    if (outcome.kind === "failed") {
+      setProblem(outcomeNotice(outcome).detail);
+      return;
+    }
+    moveOn(ids, [decision.id]);
+    report(outcome, decision, what);
     await settle([decision.id]);
-  }, [engine, ids, moveOn, settle, vault]);
+  }, [engine, ids, moveOn, report, settle, vault]);
 
   const decideBatch = useCallback(async (kind: "approve" | "reject", reason: string) => {
     const chosen = selectedIn(state, ids);
     setBusy(true);
     setNotice(null);
-    const before = ids;
-    moveOn(before, chosen);
     const decisions: readonly ReviewDecision[] = chosen.map((id) => (kind === "approve" ? { kind: "approve", id, reason } : { kind: "reject", id, reason }));
     const result = await engine.decideBatch(vault, decisions);
     setBusy(false);
+    if (!result.ok && result.failure.kind === "unreachable") {
+      setProblem(outcomeNotice({ kind: "failed", failure: result.failure }).detail);
+      return;
+    }
+    moveOn(ids, chosen);
     if (result.ok) {
       const summary = summarizeBatch(result.value);
       setNotice(summary.problems.length === 0
@@ -352,7 +372,7 @@ export const QueueView = ({ identity, vault, filter, item }: { readonly identity
     const out = queueStep(state, command, view);
     if (out.refused !== null) setNotice({ tone: "warning", title: REFUSALS[out.refused], detail: decisionAccessText(access) ?? "" });
     setState(out.state);
-    if (out.approve && current !== null) void decide({ kind: "approve", id: current, reason: defaultApproveReason }, "Approved");
+    if (out.approve && current !== null) void approveNow({ kind: "approve", id: current, reason: defaultApproveReason });
     if (out.openSource && detail !== null) {
       const evidence = detail.evidence[state.evidence] ?? detail.evidence[0];
       if (evidence?.sourceId != null) {
@@ -361,7 +381,7 @@ export const QueueView = ({ identity, vault, filter, item }: { readonly identity
       }
     }
     if (out.state.panel.kind === "none" && state.panel.kind !== "none") focusList();
-  }, [access, canDecide, current, decide, detail, focusList, go, ids, pending, state, vault]);
+  }, [access, approveNow, canDecide, current, detail, focusList, go, ids, pending, state, vault]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -422,19 +442,19 @@ export const QueueView = ({ identity, vault, filter, item }: { readonly identity
                 <p className="text-sm text-text-muted">This item isn't in the list as filtered. <AppLink to={reviewPath(vault, { kind: "queue", filter, item: null })}>Back to the queue</AppLink></p>
               )}
               {state.panel.kind === "approve_note" && current !== null && (
-                <ReasonForm label="A note on this approval" confirmLabel="Approve" required={false} initial={defaultApproveReason} busy={busy} onCancel={closePanel} onSubmit={(reason) => void decide({ kind: "approve", id: current, reason: reason === "" ? defaultApproveReason : reason }, "Approved")} />
+                <ReasonForm label="A note on this approval" confirmLabel="Approve" required={false} initial={defaultApproveReason} busy={busy} problem={problem} onCancel={closePanel} onSubmit={(reason) => void decideFromForm({ kind: "approve", id: current, reason: reason === "" ? defaultApproveReason : reason }, "Approved")} />
               )}
               {state.panel.kind === "reject" && current !== null && (
-                <ReasonForm label="Why this is rejected" confirmLabel="Reject" required={true} danger={true} busy={busy} problem={problem} onCancel={closePanel} onSubmit={(reason) => void decide({ kind: "reject", id: current, reason }, "Rejected")} />
+                <ReasonForm label="Why this is rejected" confirmLabel="Reject" required={true} danger={true} busy={busy} problem={problem} onCancel={closePanel} onSubmit={(reason) => void decideFromForm({ kind: "reject", id: current, reason }, "Rejected")} />
               )}
               {state.panel.kind === "edit" && detail !== null && (
-                <EditForm key={detail.changeset.id} detail={detail} problem={problem} busy={busy} onCancel={closePanel} onSubmit={(ops, reason) => void decide({ kind: "edit_approve", id: detail.changeset.id, ops, reason }, "Approved with your edit")} />
+                <EditForm key={detail.changeset.id} detail={detail} problem={problem} busy={busy} onCancel={closePanel} onSubmit={(ops, reason) => void decideFromForm({ kind: "edit_approve", id: detail.changeset.id, ops, reason }, "Approved with your edit")} />
               )}
               {state.panel.kind === "batch_approve" && (
-                <ReasonForm label={`Approve ${String(chosen.length)} selected items. A note, recorded on each`} confirmLabel={`Approve ${String(chosen.length)}`} required={false} initial={defaultApproveReason} busy={busy} onCancel={closePanel} onSubmit={(reason) => void decideBatch("approve", reason === "" ? defaultApproveReason : reason)} />
+                <ReasonForm label={`Approve ${String(chosen.length)} selected items. A note, recorded on each`} confirmLabel={`Approve ${String(chosen.length)}`} required={false} initial={defaultApproveReason} busy={busy} problem={problem} onCancel={closePanel} onSubmit={(reason) => void decideBatch("approve", reason === "" ? defaultApproveReason : reason)} />
               )}
               {state.panel.kind === "batch_reject" && (
-                <ReasonForm label={`Reject ${String(chosen.length)} selected items. The reason, recorded on each`} confirmLabel={`Reject ${String(chosen.length)}`} required={true} danger={true} busy={busy} onCancel={closePanel} onSubmit={(reason) => void decideBatch("reject", reason)} />
+                <ReasonForm label={`Reject ${String(chosen.length)} selected items. The reason, recorded on each`} confirmLabel={`Reject ${String(chosen.length)}`} required={true} danger={true} busy={busy} problem={problem} onCancel={closePanel} onSubmit={(reason) => void decideBatch("reject", reason)} />
               )}
               {canDecide && pending && state.panel.kind === "none" && (
                 <div role="group" aria-label="Decide this item" className="flex flex-wrap items-center gap-2">

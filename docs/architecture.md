@@ -289,6 +289,7 @@ Spec 025. Everything pending is the queue, in `/vaults/{id}/review`, with filter
 - **Never auto-commits, however much is earned:** a machine's claim citing any source below `trusted`, so both `untrusted` and `unverified`, or one with no source row to show its tier, invisible characters, or a page flagged for hidden text. The user decided the bar is `trusted`. So auto-commit only ever applies to sources a person has marked `trusted` or `verified`, and everything else waits for a person however good its combination's record. An agent can't get a source there itself: it can't upload at those tiers, and its request to raise a source needs a person's approval. This limits where a planted instruction can act, and nothing judges the text itself.
 - **The remaining limit:** a planted sentence in plain view, in a source a person marked `trusted`, looks like any other claim once its combination has earned it. It commits as `asserted`, can touch nothing else, and it's the audit's to find.
 - **Decisions.** Every one has who, when and why: a person, `auto-commit` with its counts and bound, `validators`, or `pipeline`. Asking for the same decision again changes nothing, while someone else's decision on the same item is a conflict that names them. An edit keeps what was proposed on the row, and only a person can make one.
+- **A pending quote's place.** An item's detail shows each quote's rects, found read-only with the same locator that anchors it at commit, so a reviewer sees it on the page before deciding. Lists don't compute them (spec 046).
 - **A replaced rendition.** Evidence must cite a document's current rendition, so a proposal on an old one can't be approved. The new rendition's extraction run retires extraction's pending proposals on old ones, without counting against the extractor, and proposes what's still there. Other proposals stay, for a person to clear.
 
 ### Audit agent
@@ -373,6 +374,7 @@ from it.
 - **Writes** to knowledge objects are proposals, as in [Governance](#governance).
 - **Browsers** authenticate with a session cookie (spec 037). API and MCP clients use bearer tokens. Both resolve to the same principal and
   scopes. `POST /api/v1/session` exchanges a token for a session, `DELETE` ends it, and `/api/v1/whoami` answers for both.
+- **An agent decides nothing through a session** (spec 046): approving, rejecting, editing then approving, batches and reverts by an agent principal on a session cookie return 403 `agent_session`, whatever its scope. The same agent's bearer token keeps what spec 025 lets it do.
 - **Sessions** last 12 hours, are stored as hashes in `memex_server.sessions`, and pass the token's checks on every request, so revoking the token or disabling the principal ends them at once.
 - **CSRF.** The cookie is `SameSite=Strict`, and any state-changing request a cookie would authorize, and signing in, needs an `x-memex-csrf` header. A bearer header decides alone when present, and needs no such header.
 - **Failed sign-ins** are limited to 10 a minute per peer address, in memory, and then return 429 with `Retry-After`, even for the right token. Behind a proxy all clients share one count.

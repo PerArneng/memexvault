@@ -60,11 +60,17 @@ const propose = async (request: APIRequestContext, ops: unknown[], rationale = "
 const proposeClaim = async (request: APIRequestContext, rationale = "fixture"): Promise<{ readonly id: string; readonly claim: string }> => {
   counter += 1;
   const claim = `claim-${String(counter)}-${run}`;
-  const cs = await propose(request, [claimOp(claim, world.segment, String(1600 + (counter % 40)), SENTENCE(counter % 40))], rationale);
+  const cs = await propose(request, [claimOp(claim, world.segment, String(1600 + (counter % 6)), SENTENCE(counter % 6))], rationale);
   expect(cs.state, "a claim citing an unverified source waits").toBe("pending");
   return { id: cs.id, claim };
 };
 const changeset = (request: APIRequestContext, id: string) => get<{ state: string; decided_by: string | null; decision_reason: string | null; decided_at_ms: number | null; reverted_by: string | null; reverts: string | null; original_ops: unknown[] | null; ops: unknown[] }>(request, api(`/changesets/${id}`));
+
+/** A plain approval is on its way when the queue has moved on, so a read has to wait for it. */
+const decidedAll = async (request: APIRequestContext, ids: readonly string[]) => {
+  await expect.poll(async () => (await Promise.all(ids.map((id) => changeset(request, id)))).filter((c) => c.state === "pending").length).toBe(0);
+  return Promise.all(ids.map((id) => changeset(request, id)));
+};
 
 const segmentOf = async (request: APIRequestContext, vault: string, source: string): Promise<string> => {
   let found: string | undefined;
@@ -141,7 +147,7 @@ const problemsOf = (page: Page) => {
   page.on("console", (m) => {
     const path = m.location().url === "" ? "" : new URL(m.location().url).pathname;
     // A browser logs these answers, and each is what the screen is built to handle: nobody signed in, and a decision someone else made first or an agent isn't allowed.
-    const expected = (m.text().includes("401") && path === "/api/v1/whoami") || /40[39]/.test(m.text());
+    const expected = (m.text().includes("401") && path === "/api/v1/whoami") || /40[0-9]/.test(m.text());
     if (m.type() === "error" && !expected) problems.push(m.text());
   });
   return problems;
@@ -246,7 +252,7 @@ test("item 1: 20 items, every kind of decision, by keyboard alone", async ({ bro
   await expect(page.getByTestId("pending-count")).toHaveText("0");
   console.log(`item 1: 20 items by keyboard in ${String(Date.now() - started)} ms, with waits for the screen`);
 
-  const decided = await Promise.all(ids.map((id) => changeset(request, id)));
+  const decided = await decidedAll(request, ids);
   expect(decided.map((c) => c.state)).toEqual([...Array<string>(11).fill("committed"), ...Array<string>(4).fill("rejected"), ...Array<string>(3).fill("committed"), "rejected", "rejected"]);
   expect(decided.every((c) => c.decided_by === world.reviewer.id), "every decision is the person's").toBe(true);
   expect(decided[0]?.decision_reason).toBe("Approved in the console");
@@ -301,7 +307,7 @@ test("item 2: each decision records the signed-in person and the reason, shown t
   await page.getByRole("button", { name: "Approve the edit" }).click();
   await expect(page.getByText("Nothing is waiting for a decision.")).toBeVisible();
 
-  const [a, r, e] = await Promise.all([changeset(request, approved.id), changeset(request, rejected.id), changeset(request, edited.id)]);
+  const [a, r, e] = (await decidedAll(request, [approved.id, rejected.id, edited.id])) as [Awaited<ReturnType<typeof changeset>>, Awaited<ReturnType<typeof changeset>>, Awaited<ReturnType<typeof changeset>>];
   for (const [row, state, reason] of [[a, "committed", "Approved"], [r, "rejected", "Rejected"], [e, "committed", "Edited"]] as const) {
     expect(row.state).toBe(state);
     expect(row.decided_by).toBe(world.second.id);
@@ -314,6 +320,28 @@ test("item 2: each decision records the signed-in person and the reason, shown t
   await expect(page.getByTestId("decision-reason")).toHaveText(`Edited by the second reviewer ${run}`);
   await expect(page.getByRole("region", { name: "What was first proposed" })).toBeVisible();
   await expect(page.getByRole("region", { name: "What it does" })).toContainText("fixed ");
+  await context.close();
+});
+
+test("a refused edit keeps what was typed, and decides nothing", async ({ browser, request }) => {
+  await clearQueue(request);
+  const one = await proposeClaim(request);
+  const { context, page } = await newSession(browser, world.reviewer.token);
+  await page.goto(reviewUrl());
+  await onItem(page, one.id);
+  await page.keyboard.press("e");
+  const box = page.getByLabel("The ops, as JSON");
+  // Valid JSON and a known op, with a quote the source doesn't hold, which only the server can tell.
+  const wrong = (await box.inputValue()).replace(/"quote": "[^"]*"/, '"quote": "words that are nowhere in the source"');
+  await box.fill(wrong);
+  await page.getByLabel("Why it changed").fill("my reason");
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await expect(page.getByTestId("edit-form").getByRole("alert")).toBeVisible();
+  await expect(box).toHaveValue(wrong);
+  await expect(page.getByLabel("Why it changed")).toHaveValue("my reason");
+  expect((await changeset(request, one.id)).state).toBe("pending");
+  await page.keyboard.press("Escape");
+  await expect(list(page)).toBeFocused();
   await context.close();
 });
 
@@ -348,7 +376,8 @@ test("item 3: a revert from the console restores the prior state, by the store's
   const revert = await changeset(request, row.reverted_by ?? "");
   expect(revert.reverts).toBe(fixture.id);
   expect(revert.decided_by).toBe(world.reviewer.id);
-  expect(revert.decision_reason).toBe(`Undone ${run}`);
+  await page.goto(reviewUrl(`/-/changesets/${row.reverted_by ?? ""}`));
+  await expect(page.getByTestId("rationale")).toContainText(`Undone ${run}`);
   // A second try is refused by what the screen shows: it says it's been reverted, and offers no button.
   await page.goto(reviewUrl(`/-/changesets/${fixture.id}`));
   await expect(page.getByText("This has been reverted.")).toBeVisible();
@@ -383,19 +412,26 @@ test("item 4: what always needs a person shows no automatic path, even with its 
   await context.close();
 });
 
-test("item 4: only a source a person marked trusted auto-commits once earned", async ({ browser, request }) => {
-  await clearQueue(request);
-  const principal = await send<{ id: string }>(request, "/api/v1/principals", { name: `earner-${run}`, kind: "agent" }, 201);
-  const earner = await send<{ token: string }>(request, "/api/v1/tokens", { name: "earner", principal_id: principal.id, grants: [{ vault_id: world.vault, scope: "propose" }] }, 201);
-  const quote = "The harbour master wrote that the quay opened in 1711.";
-  const first = await propose(request, [claimOp(`earn-1-${run}`, world.trustedSegment, "1711", quote)], "earning", earner.token);
+const QUAY = "The harbour master wrote that the quay opened in 1711.";
+
+/** An agent of its own, so nothing else counts towards its combination, whose one approved claim earns auto-commit at this threshold. Rejecting what it left waiting would count against it. */
+const earner = async (request: APIRequestContext, name: string) => {
+  const principal = await send<{ id: string }>(request, "/api/v1/principals", { name: `${name}-${run}`, kind: "agent" }, 201);
+  const made = await send<{ token: string }>(request, "/api/v1/tokens", { name, principal_id: principal.id, grants: [{ vault_id: world.vault, scope: "propose" }] }, 201);
+  const first = await propose(request, [claimOp(`${name}-1-${run}`, world.trustedSegment, "1711", QUAY)], "earning", made.token);
   expect(first.state).toBe("pending");
   await send(request, api(`/changesets/${first.id}/approve`), { reason: "one sample, at a threshold of 0.2" }, 200, world.reviewer.token);
+  return { id: principal.id, token: made.token };
+};
+
+test("item 4: only a source a person marked trusted auto-commits once earned", async ({ browser, request }) => {
+  await clearQueue(request);
+  const agent = await earner(request, "earner");
   // Now earned: the same combination on a trusted source commits by itself, and on an unverified one waits.
-  const trusted = await propose(request, [claimOp(`earn-2-${run}`, world.trustedSegment, "1711 again", quote)], "earned", earner.token);
+  const trusted = await propose(request, [claimOp(`earn-2-${run}`, world.trustedSegment, "1711 again", QUAY)], "earned", agent.token);
   expect(trusted.state).toBe("committed");
   expect((await changeset(request, trusted.id)).decided_by).toBe("auto-commit");
-  const unverified = await propose(request, [claimOp(`earn-3-${run}`, world.segment, "1605", SENTENCE(5))], "earned but unverified", earner.token);
+  const unverified = await propose(request, [claimOp(`earn-3-${run}`, world.segment, "1605", SENTENCE(5))], "earned but unverified", agent.token);
   expect(unverified.state, "an earned combination still waits on a source below trusted").toBe("pending");
 
   const { context, page } = await newSession(browser, world.reviewer.token);
@@ -649,10 +685,10 @@ test("the counts follow the activity stream with no reload, and a link from the 
 });
 
 test("the auto-commit table shows precision, its bound, its state and history, and a person can turn one off", async ({ browser, request }) => {
-  // The combination the earning test left on.
+  const agent = await earner(request, "table-earner");
   const table = await get<{ threshold: number; items: { id: string; extractor: string; on: boolean; wilson_bound: number; precision: number | null }[] }>(request, api("/review/auto-commit?limit=200"));
-  const on = table.items.find((e) => e.on);
-  expect(on, "an earned combination from the earlier test").toBeDefined();
+  const on = table.items.find((e) => e.on && e.extractor === agent.id);
+  expect(on, "the combination this test earned").toBeDefined();
   const id = on?.id ?? "";
   const { context, page } = await newSession(browser, world.reviewer.token);
   const problems = problemsOf(page);

@@ -66,7 +66,7 @@ views -> ui
 ## Live data
 
 A live screen fetches a snapshot, then follows the activity stream from the snapshot's sequence number. A pure reducer in `core` merges
-events. On a resync frame, the screen fetches a new snapshot. Rendering is batched, so a burst of events can't block input, and long lists are
+events. On a resync frame, the screen fetches a new snapshot. The review queue follows the same stream through `QueueFeed` in `edge-sse`, and refetches its counts when a durable frame touches changesets (spec 046). Rendering is batched, so a burst of events can't block input, and long lists are
 virtualized.
 
 ## Security

@@ -8,7 +8,7 @@ import { EpistemicOf, StateBadge, TrustOf, WhoBadge } from "./review-common";
 
 export const OpsList = ({ ops, label }: { readonly ops: readonly unknown[]; readonly label: string }) => (
   <section aria-label={label} className="flex flex-col gap-2">
-    <h3 className="text-sm font-medium">{label}</h3>
+    <h2 className="text-sm font-medium">{label}</h2>
     {ops.map((op, i) => {
       const summary = describeOp(op);
       return (
@@ -80,8 +80,9 @@ export const DecisionFacts = ({ changeset }: { readonly changeset: ChangeSet }) 
       <dt className="text-text-muted">Decided by</dt>
       <dd data-testid="decided-by">{changeset.decidedBy}</dd>
       {changeset.decidedAt !== null && <><dt className="text-text-muted">When</dt><dd>{formatTime(changeset.decidedAt)}</dd></>}
-      <dt className="text-text-muted">Reason</dt>
-      <dd data-testid="decision-reason" className="break-words whitespace-pre-wrap">{changeset.decisionReason ?? "None given"}</dd>
+      {/* A revert's reason is its rationale, which is shown just below. */}
+      {(changeset.decisionReason !== null || changeset.reverts === null) && <><dt className="text-text-muted">Reason</dt>
+      <dd data-testid="decision-reason" className="break-words whitespace-pre-wrap">{changeset.decisionReason ?? "None given"}</dd></>}
     </dl>
   );
 
@@ -98,7 +99,7 @@ export const ChangeHeader = ({ changeset }: { readonly changeset: ChangeSet }) =
 
 export const Rationale = ({ text }: { readonly text: string }) => (
   <section aria-label="Rationale" className="flex flex-col gap-1">
-    <h3 className="text-sm font-medium">Rationale</h3>
+    <h2 className="text-sm font-medium">Rationale</h2>
     <p data-testid="rationale" className="text-sm break-words whitespace-pre-wrap">{text === "" ? "None given" : text}</p>
   </section>
 );
@@ -113,16 +114,16 @@ export const ItemView = ({ detail }: { readonly detail: ReviewDetail }) => (
     <OpsList ops={detail.changeset.ops} label="What it does" />
     {detail.changeset.originalOps !== null && <OpsList ops={detail.changeset.originalOps} label="What was first proposed" />}
     <section aria-label="Reviewer agent" className="flex flex-col gap-1">
-      <h3 className="text-sm font-medium">Reviewer agent</h3>
+      <h2 className="text-sm font-medium">Reviewer agent</h2>
       <VerdictView verdict={detail.verdict} />
     </section>
     <section aria-label="Validators" className="flex flex-col gap-1">
-      <h3 className="text-sm font-medium">Validators</h3>
+      <h2 className="text-sm font-medium">Validators</h2>
       <ValidatorsView validators={detail.changeset.validators} />
     </section>
     {detail.combinations.length > 0 && (
       <section aria-label="Its combination" className="flex flex-col gap-1">
-        <h3 className="text-sm font-medium">Its combination</h3>
+        <h2 className="text-sm font-medium">Its combination</h2>
         <ul className="flex flex-col gap-1 text-sm">
           {detail.combinations.map((c) => (
             <li key={c.id} className="flex flex-wrap items-center gap-2">

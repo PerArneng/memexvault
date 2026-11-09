@@ -1687,7 +1687,11 @@ fn a_pending_quote_gets_the_same_rects_it_is_anchored_to_at_commit() {
         .into_iter()
         .find_map(|r| if let Row::Segment(s) = r { Some(s.header.id) } else { None })
         .unwrap();
-    let cs = w.s.propose(&w.agent, &w.v, agent_claim("c1", &[&segment], "byggdes i Stockholm"), false).unwrap().changeset.unwrap();
+    let cs =
+        w.s.propose(&w.agent, &w.v, agent_claim("c1", &[&segment], "byggdes i Stockholm"), false)
+            .unwrap()
+            .changeset
+            .unwrap();
     assert_eq!(cs.state, ChangeSetState::Pending);
     let pending = w.s.review_item(&w.admin, &w.v, &cs.header.id).unwrap().evidence;
     assert_eq!(pending.len(), 1);
@@ -1710,7 +1714,11 @@ fn a_quote_with_no_page_has_no_rects_and_the_item_still_opens() {
         .into_iter()
         .find_map(|r| if let Row::Segment(s) = r { Some(s.header.id) } else { None })
         .unwrap();
-    let cs = w.s.propose(&w.agent, &w.v, agent_claim("c1", &[&segment], "byggdes i Stockholm"), false).unwrap().changeset.unwrap();
+    let cs =
+        w.s.propose(&w.agent, &w.v, agent_claim("c1", &[&segment], "byggdes i Stockholm"), false)
+            .unwrap()
+            .changeset
+            .unwrap();
     let detail = w.s.review_item(&w.admin, &w.v, &cs.header.id).unwrap();
     assert_eq!(detail.evidence[0].source_id.as_ref(), Some(&source));
     assert!(detail.evidence[0].rects.is_empty());
