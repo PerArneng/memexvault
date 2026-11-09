@@ -5,15 +5,23 @@ import type {
   ClaimLineage,
   Derivation,
   DocumentSource,
+  EntityDetail,
+  EntityRedirect,
+  EntityResolution,
+  EntitySummary,
+  EntityType,
+  EntityTypePreview,
   EvidencePackage,
   FlaggedPage,
   Identity,
   MediaFacts,
+  Neighbor,
   ObjectSummary,
   Page,
   PageList,
   PageWord,
   Rendition,
+  SameAsSuggestion,
   RenditionReading,
   Segment,
   Transcript,
@@ -84,6 +92,66 @@ export interface TrustChange {
   readonly idempotencyKey: string;
 }
 
+export interface NewEntityType {
+  readonly name: string;
+  readonly baseVersion: number | null;
+  readonly schema: unknown;
+  readonly rationale: string;
+  readonly idempotencyKey: string;
+}
+
+export interface EntityEvidenceInput {
+  readonly segmentId: string;
+  readonly quote: string;
+}
+
+export interface EntityFieldInput {
+  readonly field: string;
+  readonly value: unknown;
+  readonly evidence: readonly EntityEvidenceInput[];
+  /** The claim this replaces. Without it, the value goes beside the others. */
+  readonly replaces: { readonly assertionId: string; readonly version: number } | null;
+}
+
+export interface NewEntityInput {
+  readonly type: string;
+  readonly aliases: readonly string[];
+  readonly fields: readonly EntityFieldInput[];
+  readonly rationale: string;
+  readonly idempotencyKey: string;
+}
+
+export interface EntityEditInput {
+  readonly baseVersion: number;
+  /** Null keeps them. */
+  readonly aliases: readonly string[] | null;
+  readonly fields: readonly EntityFieldInput[];
+  readonly rationale: string;
+  readonly idempotencyKey: string;
+}
+
+export interface EntityMergeInput {
+  readonly into: string;
+  readonly rationale: string;
+  readonly idempotencyKey: string;
+}
+
+export interface EntitySplitInput {
+  readonly baseVersion: number;
+  readonly moved: readonly string[];
+  readonly aliases: readonly string[];
+  readonly fields: readonly EntityFieldInput[];
+  readonly rationale: string;
+  readonly idempotencyKey: string;
+}
+
+export interface EntityListRequest {
+  readonly type: string;
+  /** `<field>:<op>:<value>`. */
+  readonly filters: readonly string[];
+  readonly cursor: string | null;
+}
+
 /** What this layer needs of an `AbortSignal`, as a pure package can't name that. */
 export interface CancelSignal {
   readonly aborted: boolean;
@@ -142,6 +210,22 @@ export interface Api extends IngestApi {
   reprocessSource(vault: VaultId, source: string): Promise<ApiResult<null>>;
   setSourceTrust(vault: VaultId, source: string, change: TrustChange): Promise<ApiResult<WikiWrite>>;
 
+  listEntityTypes(vault: VaultId, cursor: string | null): Promise<ApiResult<Page<EntityType>>>;
+  listEntityTypeVersions(vault: VaultId, name: string): Promise<ApiResult<readonly EntityType[]>>;
+  previewEntityType(vault: VaultId, name: string, schema: unknown): Promise<ApiResult<EntityTypePreview>>;
+  submitEntityType(vault: VaultId, input: NewEntityType): Promise<ApiResult<WikiWrite>>;
+  listEntities(vault: VaultId, request: EntityListRequest): Promise<ApiResult<Page<EntitySummary>>>;
+  getEntity(vault: VaultId, id: string): Promise<ApiResult<EntityDetail>>;
+  getEntityRedirect(vault: VaultId, id: string): Promise<ApiResult<EntityRedirect>>;
+  createEntity(vault: VaultId, input: NewEntityInput): Promise<ApiResult<{ readonly entityId: string; readonly write: WikiWrite }>>;
+  editEntity(vault: VaultId, id: string, input: EntityEditInput): Promise<ApiResult<WikiWrite>>;
+  mergeEntity(vault: VaultId, id: string, input: EntityMergeInput): Promise<ApiResult<WikiWrite>>;
+  splitEntity(vault: VaultId, id: string, input: EntitySplitInput): Promise<ApiResult<{ readonly entityId: string; readonly write: WikiWrite }>>;
+  resolveEntities(vault: VaultId, mention: string, type: string | null): Promise<ApiResult<EntityResolution>>;
+  listSameAs(vault: VaultId, type: string, cursor: string | null): Promise<ApiResult<Page<SameAsSuggestion>>>;
+  listNeighbors(vault: VaultId, id: string): Promise<ApiResult<Page<Neighbor>>>;
+  /** A claim's version as it stands, for a value that replaces it. Null if the server doesn't say. */
+  readClaimVersion(vault: VaultId, id: string): Promise<ApiResult<number | null>>;
   /** One rendition's text with its word table, which is large on a long document. */
   getRenditionReading(vault: VaultId, rendition: string): Promise<ApiResult<RenditionReading>>;
 

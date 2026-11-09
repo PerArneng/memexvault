@@ -37,6 +37,19 @@ export {
   sourcePageFromWire,
   transcriptFromWire,
 } from "./translate-documents";
+export {
+  claimVersionFromWire,
+  entityDetailFromWire,
+  entityPageFromWire,
+  entityRedirectFromWire,
+  entityResolutionFromWire,
+  entitySummaryFromWire,
+  entityTypeFromWire,
+  entityTypePageFromWire,
+  entityTypePreviewFromWire,
+  neighborPageFromWire,
+  sameAsPageFromWire,
+} from "./translate-entities";
 export { activityFrameFromWire, activityPageFromWire, documentActivityFromWire, jobFromWire, jobPageFromWire, uploadLimitsFromWire, uploadResultFromWire } from "./translate-activity";
 export { evidencePackageFromWire, renditionReadingFromWire } from "./translate-search";
 export type { LineageStep, ObjectPages, WireHeaders } from "./translate";

@@ -2,6 +2,16 @@ import {
   activityPageFromWire,
   changeOriginFromWire,
   citingClaimsFromWire,
+  claimVersionFromWire,
+  entityDetailFromWire,
+  entityPageFromWire,
+  entityRedirectFromWire,
+  entityResolutionFromWire,
+  entityTypeFromWire,
+  entityTypePageFromWire,
+  entityTypePreviewFromWire,
+  neighborPageFromWire,
+  sameAsPageFromWire,
   claimLineageFromWire,
   derivationPageFromWire,
   evidencePackageFromWire,
@@ -39,7 +49,7 @@ import {
 } from "@memex/api";
 import type { paths } from "@memex/api";
 import { failed, ok } from "@memex/core";
-import type { Api, ApiResult, SearchRequest } from "@memex/core";
+import type { Api, ApiResult, EntityFieldInput, SearchRequest } from "@memex/core";
 import createClient from "openapi-fetch";
 
 /** The server wants this on anything a cookie would authorize. Its presence is the defence, so the value doesn't matter. */
@@ -55,6 +65,12 @@ interface Answer<D> {
   readonly response: Response;
 }
 
+const fieldInputToWire = (f: EntityFieldInput) => ({
+  field: f.field,
+  value: f.value as Record<string, never>,
+  evidence: f.evidence.map((e) => ({ segment_id: e.segmentId, quote: e.quote })),
+  ...(f.replaces === null ? {} : { replaces: { assertion_id: f.replaces.assertionId, version: f.replaces.version } }),
+});
 const csv = (values: readonly string[]): string | undefined => (values.length === 0 ? undefined : values.join(","));
 
 /** The query the search route takes, with only what's set, as `as_of` refuses to sit beside some of these. */
@@ -191,6 +207,49 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
     reprocessSource: (vault, source) => attempt(() => client.POST("/api/v1/vaults/{id}/sources/{sid}/reprocess", { params: { path: { id: vault, sid: source } } }), none),
     setSourceTrust: (vault, source, change) =>
       attempt(() => client.POST("/api/v1/vaults/{id}/proposals", { params: { path: { id: vault } }, body: { ops: [proposalOfTrust(source, change.baseVersion, change.tier) as never], rationale: change.rationale, idempotency_key: change.idempotencyKey } }), wikiWriteFromWire),
+    listEntityTypes: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/entity-types", { params: { path: { id: vault }, query: page(cursor) } }), entityTypePageFromWire),
+    listEntityTypeVersions: (vault, name) => attempt(() => client.GET("/api/v1/vaults/{id}/entity-types/{name}/versions", { params: { path: { id: vault, name } } }), (r) => r.items.map(entityTypeFromWire)),
+    previewEntityType: (vault, name, schema) =>
+      attempt(() => client.POST("/api/v1/vaults/{id}/entity-types/{name}/preview", { params: { path: { id: vault, name } }, body: { schema: schema as Record<string, never> } }), entityTypePreviewFromWire),
+    submitEntityType: (vault, input) =>
+      attempt(
+        () => client.POST("/api/v1/vaults/{id}/entity-types", { params: { path: { id: vault } }, body: { name: input.name, ...(input.baseVersion === null ? {} : { base_version: input.baseVersion }), schema: input.schema as Record<string, never>, rationale: input.rationale, idempotency_key: input.idempotencyKey } }),
+        wikiWriteFromWire,
+      ),
+    // The generated client would write repeated filters its own way, so this names the API's form exactly.
+    listEntities: (vault, { type, filters, cursor }) =>
+      attempt(
+        () => client.GET("/api/v1/vaults/{id}/entities", { params: { path: { id: vault }, query: { type, limit: 200, ...(cursor === null ? {} : { cursor }) } }, querySerializer: () => {
+          const query = new URLSearchParams({ type, limit: "200", ...(cursor === null ? {} : { cursor }) });
+          for (const f of filters) query.append("filter", f);
+          return query.toString();
+        } }),
+        entityPageFromWire,
+      ),
+    getEntity: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/entities/{eid}", { params: { path: { id: vault, eid: id } } }), entityDetailFromWire),
+    getEntityRedirect: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/entities/{eid}/redirect", { params: { path: { id: vault, eid: id } } }), entityRedirectFromWire),
+    createEntity: (vault, input) =>
+      attempt(
+        () => client.POST("/api/v1/vaults/{id}/entities", { params: { path: { id: vault } }, body: { type: input.type, aliases: [...input.aliases], fields: input.fields.map(fieldInputToWire), rationale: input.rationale, idempotency_key: input.idempotencyKey } }),
+        (r) => ({ entityId: r.entity_id, write: wikiWriteFromWire(r) }),
+      ),
+    editEntity: (vault, id, input) =>
+      attempt(
+        () => client.POST("/api/v1/vaults/{id}/entities/{eid}/edit", { params: { path: { id: vault, eid: id } }, body: { base_version: input.baseVersion, ...(input.aliases === null ? {} : { aliases: [...input.aliases] }), fields: input.fields.map(fieldInputToWire), rationale: input.rationale, idempotency_key: input.idempotencyKey } }),
+        wikiWriteFromWire,
+      ),
+    mergeEntity: (vault, id, input) =>
+      attempt(() => client.POST("/api/v1/vaults/{id}/entities/{eid}/merge", { params: { path: { id: vault, eid: id } }, body: { into: input.into, rationale: input.rationale, idempotency_key: input.idempotencyKey } }), wikiWriteFromWire),
+    splitEntity: (vault, id, input) =>
+      attempt(
+        () => client.POST("/api/v1/vaults/{id}/entities/{eid}/split", { params: { path: { id: vault, eid: id } }, body: { base_version: input.baseVersion, moved: [...input.moved], aliases: [...input.aliases], fields: input.fields.map(fieldInputToWire), rationale: input.rationale, idempotency_key: input.idempotencyKey } }),
+        (r) => ({ entityId: r.entity_id, write: wikiWriteFromWire(r) }),
+      ),
+    resolveEntities: (vault, mention, type) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/entities/resolve", { params: { path: { id: vault }, query: { mention, limit: 20, ...(type === null ? {} : { type }) } } }), entityResolutionFromWire),
+    listSameAs: (vault, type, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/entities/same-as", { params: { path: { id: vault }, query: { type, ...page(cursor) } } }), sameAsPageFromWire),
+    listNeighbors: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/objects/{oid}/neighborhood", { params: { path: { id: vault, oid: id }, query: { limit: 50 } } }), neighborPageFromWire),
+    readClaimVersion: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/assertions/{aid}/lineage", { params: { path: { id: vault, aid: id } } }), claimVersionFromWire),
     listActivityDocuments: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/activity/documents", { params: { path: { id: vault }, query: page(cursor) } }), activityPageFromWire),
     getUploadLimits: (vault) => attempt(() => client.GET("/api/v1/vaults/{id}/upload-limits", { params: { path: { id: vault } } }), uploadLimitsFromWire),
     listJobs: (vault, { state, kind }, cursor) =>
