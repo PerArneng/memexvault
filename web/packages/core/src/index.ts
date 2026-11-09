@@ -52,6 +52,14 @@ export type { DocumentRoute, DocumentTab, SourceFilter, SourceViewRoute } from "
 export { activePart, canChangeSource, evidenceState, filterSources, flagText, flaggedSources, formatClock, formatSize, mediaKind, pageAngle, pageWordsByPage, partsInRange, playability, sourceKinds, TRUST_TIERS, trustEffect, wordAt } from "./documents";
 export type { EvidenceState, MediaKind, Playability, TrustEffect, TrustTierName } from "./documents";
 export type { DocumentCases, SourceList, SourceTrustOutcome } from "./document-cases";
+export { activityReducer, boardRows, durationText, framesPerSecond, INITIAL_ACTIVITY, MAX_BOARD_DOCUMENTS, pipelineSteps, progressText, stageCounts, stageIndex, stageLabel, STAGES, statusExplanation, throughputPerMinute } from "./activity";
+export type { ActivityEvent, ActivityState, BoardDocument, BoardFilter, Connection, PipelineFacts, PipelineStep, StageCount, StageName, StageVisit } from "./activity";
+export { createActivityWatch, MAX_PENDING_FRAMES, MAX_WAITING_EVENTS, MIN_SNAPSHOT_GAP_MS } from "./activity-watch";
+export type { ActivityFeed, ActivityWatch, FeedEvent } from "./activity-watch";
+export { createUploadQueue, formatBytes, isRecordingFile, MAX_CONCURRENT_UPLOADS, uploadRefusal } from "./upload-queue";
+export type { RunningUpload, UploadFile, Uploader, UploadItem, UploadItemState, UploadOptions, UploadQueue, UploadQueueState } from "./upload-queue";
+export { ingestPath, parseIngestRoute } from "./ingest-cases";
+export type { BulkRetryOutcome, IngestApi, IngestCases, IngestRoute, JobList } from "./ingest-cases";
 export { changeSearch, citationPath, EMPTY_SEARCH, groupItems, itemPath, markQuote, markTerms, parseAsOf, parseInstant, parseSearchState, queryTerms, SEARCH_DEBOUNCE_MS, SEARCH_DEFAULT_LIMIT, SEARCH_EPISTEMIC, SEARCH_EXPANDS, SEARCH_KINDS, SEARCH_MODES, searchPath, searchProblem, searchRequestOf, toggled } from "./search";
 export type { AsOf, ItemGroup, MarkedPart, ParsedSearch, SearchExpand, SearchMode, SearchProblem, SearchRequest, SearchState } from "./search";
 export { segmentRegion } from "./segment-region";

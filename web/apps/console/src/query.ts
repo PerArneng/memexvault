@@ -60,6 +60,10 @@ export const QUERY_KEYS = {
   wikiDiff: (vault: string, id: string, from: number, to: number) => ["wiki", vault, "diff", id, from, to] as const,
   wikiSlug: (vault: string, slug: string) => ["wiki", vault, "slug", slug] as const,
   wikiClaim: (vault: string, id: string) => ["wiki", vault, "claim", id] as const,
+  uploadLimits: (vault: string) => ["ingest", vault, "limits"] as const,
+  jobs: (vault: string) => ["ingest", vault, "jobs"] as const,
+  jobsInState: (vault: string, state: string) => ["ingest", vault, "jobs", "state", state] as const,
+  documentJobs: (vault: string, source: string) => ["ingest", vault, "jobs", "document", source] as const,
   /** Everything about one vault's sources, so a change can refresh all of it. */
   documents: (vault: string) => ["documents", vault] as const,
   sources: (vault: string) => ["documents", vault, "sources"] as const,

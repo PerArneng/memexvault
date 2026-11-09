@@ -4,5 +4,5 @@
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@memex/core": "workspace:*", "@memex/types": "workspace:*" }
+  "dependencies": { "@memex/api": "workspace:*", "@memex/core": "workspace:*", "@memex/types": "workspace:*" }
 }
