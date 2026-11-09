@@ -105,6 +105,8 @@ Rows went straight into the tables with `generate_series`, the same shortcut as 
 
 **Not exercised end to end.** The `contradicts` and `wiki_link` kinds in the graph panel (only `claim_ref`, with the merge of links in unit tests), an approved split, and a recording's evidence link, which is spec 42's. No LLM or paid call was made.
 
+**Landing checks, by the coordinator, on the merge with `main` holding specs 043, 082 and 041.** The merges had 9 and then 6 conflicts, all screens adding to the same lists, kept both. One more by hand: two notes on URLs in `docs/frontend-architecture.md`, now one. On the release server with a throwaway Postgres, at load about 4 to 50: `pnpm` typecheck, lint, test (631), licenses, contrast, `e2e` and `budget` pass, and so do `e2e:entities` 15 of 15, `e2e:ingest` 6 of 6 with its load test not run, `e2e:search` 16 of 16, `e2e:wiki` 17 of 17, `e2e:shell` 17 of 17 and `e2e:documents` 11 of 11. Item 1: lag p95 448 ms against 1 s, n=40, at load about 32. Item 6: 200,001 entities loaded in 31 s, filter overhead p95 37.4 ms over the API's time against 100 ms, n=200, and scrolling all rows in 36 s with no long tasks, frame gap p99 24.7 ms and at most 44 row elements, at load about 11 to 28. The user accepted that sort covers only the loaded rows, and server-side sort is spec 087.
+
 **Follow-ups.**
 - A server-side `sort=<field>:<asc|desc>` on `GET /entities`, with a total if it's cheap. The sort narrowing above ends there.
 - An evidence picker instead of typing a segment id.
