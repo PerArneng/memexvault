@@ -59,3 +59,7 @@ export type { EntityRoute, EntityTableRoute } from "./entity-routes";
 export { approvalText, blankDraft, blankField, DRAFT_KIND_LABELS, DRAFT_KINDS, draftFromSchema, draftProblems, entityGraph, graphClaims, MAX_GRAPH_CLAIMS, MERGE_OUTCOME_TEXT, mergePreview, schemaFromDraft, splitPreview } from "./entity-draft";
 export type { ApprovalText, DraftField, DraftKind, EntityGraph, GraphLink, GraphNode, MergeOutcome, MergePreview, MergeRow, SplitPreview, TypeDraft } from "./entity-draft";
 export type { EntityCases, EntityGraphAnswer, EntityProposal, EntityTypeList } from "./entity-cases";
+export { changeSearch, citationPath, EMPTY_SEARCH, groupItems, itemPath, markQuote, markTerms, parseAsOf, parseInstant, parseSearchState, queryTerms, SEARCH_DEBOUNCE_MS, SEARCH_DEFAULT_LIMIT, SEARCH_EPISTEMIC, SEARCH_EXPANDS, SEARCH_KINDS, SEARCH_MODES, searchPath, searchProblem, searchRequestOf, toggled } from "./search";
+export type { AsOf, ItemGroup, MarkedPart, ParsedSearch, SearchExpand, SearchMode, SearchProblem, SearchRequest, SearchState } from "./search";
+export { segmentRegion } from "./segment-region";
+export type { CancelSignal } from "./api";

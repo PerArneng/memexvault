@@ -13,6 +13,7 @@ import {
   sameAsPageFromWire,
   claimLineageFromWire,
   derivationPageFromWire,
+  evidencePackageFromWire,
   failureFromWire,
   flaggedPagesFromWire,
   identityFromWire,
@@ -23,6 +24,7 @@ import {
   pageWordsFromWire,
   proposalOfTrust,
   renditionFromWire,
+  renditionReadingFromWire,
   segmentFromWire,
   segmentPageFromWire,
   sourceFromWire,
@@ -43,7 +45,7 @@ import {
 } from "@memex/api";
 import type { paths } from "@memex/api";
 import { failed, ok } from "@memex/core";
-import type { Api, ApiResult, EntityFieldInput } from "@memex/core";
+import type { Api, ApiResult, EntityFieldInput, SearchRequest } from "@memex/core";
 import createClient from "openapi-fetch";
 
 /** The server wants this on anything a cookie would authorize. Its presence is the defence, so the value doesn't matter. */
@@ -65,6 +67,28 @@ const fieldInputToWire = (f: EntityFieldInput) => ({
   evidence: f.evidence.map((e) => ({ segment_id: e.segmentId, quote: e.quote })),
   ...(f.replaces === null ? {} : { replaces: { assertion_id: f.replaces.assertionId, version: f.replaces.version } }),
 });
+const csv = (values: readonly string[]): string | undefined => (values.length === 0 ? undefined : values.join(","));
+
+/** The query the search route takes, with only what's set, as `as_of` refuses to sit beside some of these. */
+const searchQuery = (r: SearchRequest) => {
+  const optional = {
+    kind: csv(r.kinds),
+    type: csv(r.types),
+    source_id: csv(r.sources),
+    trust_tier: csv(r.tiers),
+    epistemic: csv(r.epistemic),
+    valid_at_ms: r.validAtMs ?? undefined,
+    as_of: r.asOfEvent ?? undefined,
+    as_of_ms: r.asOfMs ?? undefined,
+    mode: r.mode === "hybrid" ? undefined : r.mode,
+    expand: r.expand === "auto" ? undefined : r.expand,
+    rerank: r.rerank ? true : undefined,
+    debug: r.debug ? true : undefined,
+    min_seq: r.minSeq ?? undefined,
+    cursor: r.cursor ?? undefined,
+  };
+  return { q: r.q, limit: r.limit, budget_tokens: r.budgetTokens, facets: true, ...Object.fromEntries(Object.entries(optional).filter(([, value]) => value !== undefined)) };
+};
 
 /** No exception leaves this function. Everything becomes an `ApiResult`, so callers handle failures as data. */
 const attempt = async <D, T>(run: () => Promise<Answer<D>>, translate: (data: D) => T): Promise<ApiResult<T>> => {
@@ -222,6 +246,12 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
     listSameAs: (vault, type, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/entities/same-as", { params: { path: { id: vault }, query: { type, ...page(cursor) } } }), sameAsPageFromWire),
     listNeighbors: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/objects/{oid}/neighborhood", { params: { path: { id: vault, oid: id }, query: { limit: 50 } } }), neighborPageFromWire),
     readClaimVersion: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/assertions/{aid}/lineage", { params: { path: { id: vault, aid: id } } }), claimVersionFromWire),
+    getRenditionReading: (vault, rendition) => attempt(() => client.GET("/api/v1/vaults/{id}/renditions/{rid}", { params: { path: { id: vault, rid: rendition } } }), renditionReadingFromWire),
+    search: (vault, request, cancel) =>
+      attempt(
+        () => client.GET("/api/v1/vaults/{id}/search", { params: { path: { id: vault }, query: searchQuery(request) }, ...(cancel === null ? {} : { signal: cancel as AbortSignal }) }),
+        evidencePackageFromWire,
+      ),
     health: (timeoutMs) => attempt(() => client.GET("/api/v1/health", { signal: AbortSignal.timeout(timeoutMs) }), none),
   };
 };

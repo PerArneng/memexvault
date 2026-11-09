@@ -50,4 +50,5 @@ export {
   neighborPageFromWire,
   sameAsPageFromWire,
 } from "./translate-entities";
+export { evidencePackageFromWire, renditionReadingFromWire } from "./translate-search";
 export type { LineageStep, ObjectPages, WireHeaders } from "./translate";

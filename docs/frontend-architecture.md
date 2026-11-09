@@ -78,6 +78,7 @@ All vault content is untrusted, including document text, OCR output, entity fiel
 - No remote images or media in rendered content. This also stops data leaking out through image URLs.
 - CodeMirror runs in a shadow root, as its runtime styles are then a constructable stylesheet, which the CSP allows. In the document it adds a `<style>`, which the CSP blocks. See spec 044.
 - The server sends a strict CSP with `default-src 'self'`, so the build inlines nothing (`assetsInlineLimit: 0`). Radix's modal scroll lock adds a `<style>` element, which the CSP blocks, and `Select` adds a second one, so prefer `Menu` until that's decided. See specs 037 and 040.
+- A search citation names its passage with `segment=` in the viewer's URL. Offsets become rectangles in `segmentRegion`, from the word table, read only when someone opens one. See spec 043.
 - Page images, thumbnails and media are same-origin addresses in `src`, so the cookie and the policy apply, and nothing needs `blob:` or `data:`. Positions go through `element.style`, which the policy allows. See spec 042.
 - The console signs in through `POST /api/v1/session`, and sends `x-memex-csrf` on every state-changing request. Page script can't read the session cookie.
 - External links are visibly marked and open with `noopener`.
@@ -87,7 +88,7 @@ All vault content is untrusted, including document text, OCR output, entity fiel
 
 - Every screen has loading, empty, error and offline states.
 - Everything works by keyboard, with visible focus. Contrast meets WCAG AA.
-- URLs hold screen state, so any view can be linked to and reloaded. The router rewrites a repeated query parameter as a JSON array and reads a value that looks like a number as one, so a screen doesn't repeat parameters, and an id goes in the path. See spec 045.
+- URLs hold screen state, so any view can be linked to and reloaded. The router rewrites a repeated query parameter as a JSON array and reads a value that looks like a number as one, so a screen doesn't repeat parameters, and an id goes in the path. See spec 045. A value in a link that can't be read is left out and named on the screen, as search does. See spec 043.
 - A screen for types defined at runtime reads their schema through one pure function, `schemaView` in `core`, so a new type needs no frontend change. See spec 045.
 - An action on a page asks for confirmation in the page rather than in a modal while the modal's CSP error is undecided. See spec 040.
 - Screens can be built against `FakeApi`, but a spec isn't done until it passes against the real API.
