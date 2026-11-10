@@ -136,6 +136,8 @@ pub enum ServerError {
     },
     /// A backend is down or failed. Safe to retry.
     Unavailable(String),
+    /// A stored file that should be there isn't. Retrying won't help until someone restores it.
+    BlobMissing,
     /// An index hasn't yet seen the event a reader asked for. Safe to retry.
     NotCaughtUp {
         min_seq: u64,
@@ -163,6 +165,7 @@ impl fmt::Display for ServerError {
             Self::Busy => f.write_str("too much unfinished work, so try again later"),
             Self::RateLimited { retry_after_s } => write!(f, "too many failed sign-ins, so try again in {retry_after_s} seconds"),
             Self::Unavailable(m) => write!(f, "{m}"),
+            Self::BlobMissing => f.write_str("the stored file is missing from the server, so trying again won't help until it's restored"),
             Self::NotCaughtUp { min_seq, reached } => write!(f, "the search index hasn't reached event {min_seq} yet, and is at {reached:?}"),
             Self::AlreadyBootstrapped => f.write_str("this server already has principals"),
             Self::ChatDisabled => f.write_str("chat is off for this vault. A vault admin can turn it on, which sends its content to the configured LLM"),
@@ -209,7 +212,10 @@ impl From<LexicalError> for ServerError {
 
 impl From<BlobStoreError> for ServerError {
     fn from(e: BlobStoreError) -> Self {
-        Self::Unavailable(e.to_string())
+        match e {
+            BlobStoreError::NotFound { .. } => Self::BlobMissing,
+            other => Self::Unavailable(other.to_string()),
+        }
     }
 }
 
@@ -836,6 +842,11 @@ impl<E: ServerEdges> Server<E> {
 
     /// An embed job's work. It reads the objects' current text and keeps its results in the embedding store, so the job's completion only has to announce them.
     pub fn run_embed_job(&self, vault: &VaultId, job: &JobRow) -> Result<usize, EmbedJobError> {
+        self.run_embed_job_while(vault, job, &|| true)
+    }
+
+    /// As `run_embed_job`, and stores nothing once `keep_going` says the job has gone.
+    pub fn run_embed_job_while(&self, vault: &VaultId, job: &JobRow, keep_going: &dyn Fn() -> bool) -> Result<usize, EmbedJobError> {
         let input: EmbedInput = serde_json::from_value(job.input.clone()).map_err(EmbedJobError::permanent)?;
         let snap = self.engine.store().snapshot(vault).map_err(EmbedJobError::retry)?;
         let ids_of =
@@ -869,7 +880,7 @@ impl<E: ServerEdges> Server<E> {
         };
         let total = docs.len();
         report(0, total);
-        let embedded = embed_missing(&self.vector, &self.embedder, vault, &input.model, docs)?;
+        let embedded = embed_missing(&self.vector, &self.embedder, vault, &input.model, docs, keep_going)?;
         report(total, total);
         Ok(embedded)
     }

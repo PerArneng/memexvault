@@ -1,6 +1,6 @@
 import { epochMs } from "@memex/types";
 import { describe, expect, it } from "vitest";
-import { afterRemoving, AUDITOR, AUTO_COMMIT_RULES, automaticPath, autoCommitStateText, batchesOf, decisionAccess, decisionAccessText, decisionFailure, describeMutation, describeOp, frameTouchesQueue, INITIAL_QUEUE, markQuote, parseEditedOps, queueCommandFor, queueReconciled, queueStep, selectedIn, sourcePlace, summarizeBatch, validatorLine } from "./review";
+import { afterRemoving, AUDITOR, AUTO_COMMIT_RULES, automaticPath, autoCommitStateText, batchesOf, decisionAccess, decisionAccessText, decisionFailure, describeMutation, describeOp, frameTouchesQueue, INITIAL_QUEUE, markReviewQuote, parseEditedOps, queueCommandFor, queueReconciled, queueStep, selectedIn, sourcePlace, summarizeBatch, validatorLine } from "./review";
 import type { QueueState, QueueView } from "./review";
 import { changesetWith, combinationWith, detailWith, httpFailure, identityWith, UNREACHABLE } from "./testing";
 import { vaultId } from "@memex/types";
@@ -321,9 +321,9 @@ describe("the source pane", () => {
     expect(sourcePlace({ ...evidence, sourceId: null, pageFrom: 1 })).toEqual({ kind: "text", source: null });
   });
   it("marks a quote, and guesses nothing when it isn't there", () => {
-    expect(markQuote("one two three", "two")).toEqual({ before: "one ", mark: "two", after: " three" });
-    expect(markQuote("one two", "nine")).toEqual({ before: "one two", mark: "", after: "" });
-    expect(markQuote("one", "")).toEqual({ before: "one", mark: "", after: "" });
+    expect(markReviewQuote("one two three", "two")).toEqual({ before: "one ", mark: "two", after: " three" });
+    expect(markReviewQuote("one two", "nine")).toEqual({ before: "one two", mark: "", after: "" });
+    expect(markReviewQuote("one", "")).toEqual({ before: "one", mark: "", after: "" });
   });
 });
 

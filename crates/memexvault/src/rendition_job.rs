@@ -1,7 +1,7 @@
 //! The rendition job: reads a source, parses it in a child process when it's a PDF, and hands the rows back to be committed with the job.
 // This module spawns and waits on child processes, which needs wall time.
 #![allow(clippy::disallowed_methods)]
-use crate::workers::{JobFailure, JobHandler};
+use crate::workers::{JobFailure, JobHandler, JobHold};
 use memex_core::ocr::{self, OcrPage};
 use memex_core::{Progress, RenditionInput, Server, ServerEdges, ServerError};
 use memex_types::{JobRow, Mutation, ObjectId, PageOutcome, PageRoute, ParsedDocument, ProgressUpdate, Stage, VaultId, Word};
@@ -34,20 +34,20 @@ fn permanent(message: impl Into<String>) -> JobFailure {
 
 /// Runs the parser with the bytes on stdin. A crash, a hang or nonsense output fails this one job, and the server carries on.
 pub fn run_worker(command: &WorkerCommand, bytes: Vec<u8>) -> Result<ParsedDocument, JobFailure> {
-    run_child(command, bytes)
+    run_child(command, bytes, &JobHold::default())
 }
 
 /// Runs any worker whose stdout is JSON of type `T`.
 pub fn run_any_child<T: serde::de::DeserializeOwned>(command: &WorkerCommand, bytes: Vec<u8>) -> Result<T, JobFailure> {
-    run_child(command, bytes)
+    run_child(command, bytes, &JobHold::default())
 }
 
-fn run_child<T: serde::de::DeserializeOwned>(command: &WorkerCommand, bytes: Vec<u8>) -> Result<T, JobFailure> {
-    let stdout = run_child_raw(command, bytes)?;
+fn run_child<T: serde::de::DeserializeOwned>(command: &WorkerCommand, bytes: Vec<u8>, hold: &JobHold) -> Result<T, JobFailure> {
+    let stdout = run_child_raw(command, bytes, hold)?;
     serde_json::from_slice(&stdout).map_err(|e| permanent(format!("the parser's output isn't valid: {e}")))
 }
 
-fn run_child_raw(command: &WorkerCommand, bytes: Vec<u8>) -> Result<Vec<u8>, JobFailure> {
+fn run_child_raw(command: &WorkerCommand, bytes: Vec<u8>, hold: &JobHold) -> Result<Vec<u8>, JobFailure> {
     let mut child = Command::new(&command.program)
         .args(&command.args)
         .stdin(Stdio::piped())
@@ -85,6 +85,11 @@ fn run_child_raw(command: &WorkerCommand, bytes: Vec<u8>) -> Result<Vec<u8>, Job
                 let _ = child.wait();
                 return Err(permanent(format!("the parser ran past its limit of {} s", command.timeout.as_secs())));
             }
+            Ok(None) if hold.lost() => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(JobFailure::lost());
+            }
             Ok(None) => std::thread::sleep(Duration::from_millis(10)),
             Err(e) => {
                 return Err(JobFailure {
@@ -108,20 +113,26 @@ fn run_child_raw(command: &WorkerCommand, bytes: Vec<u8>) -> Result<Vec<u8>, Job
 }
 
 /// One OCR child: `args` plus the page number and resolution, with the PDF on stdin.
-fn run_ocr_worker(command: &WorkerCommand, pdf: &[u8], page: u32, dpi: u32) -> Result<OcrPage, JobFailure> {
+fn run_ocr_worker(command: &WorkerCommand, pdf: &[u8], page: u32, dpi: u32, hold: &JobHold) -> Result<OcrPage, JobFailure> {
     let mut c = command.clone();
     c.args.push(page.to_string());
     c.args.push(dpi.to_string());
-    run_child(&c, pdf.to_vec())
+    run_child(&c, pdf.to_vec(), hold)
 }
 
 /// Reads each page that needs it, one child per page, so a failure costs a page and not the document. Words go in page order.
 pub fn add_ocr(doc: &mut ParsedDocument, pdf: &[u8], ocr: Option<&WorkerCommand>) -> Vec<PageOutcome> {
-    add_ocr_reporting(doc, pdf, ocr, &mut |_, _| {})
+    add_ocr_reporting(doc, pdf, ocr, &JobHold::default(), &mut |_, _| {})
 }
 
-/// As `add_ocr`, and says how far it has got among the pages OCR reads: how many are done, of how many.
-pub fn add_ocr_reporting(doc: &mut ParsedDocument, pdf: &[u8], ocr: Option<&WorkerCommand>, on_page: &mut dyn FnMut(u64, u64)) -> Vec<PageOutcome> {
+/// As `add_ocr`, and says how far it has got among the pages OCR reads: how many are done, of how many. It stops early once `hold` says the job has gone, and its caller throws away what it has.
+pub fn add_ocr_reporting(
+    doc: &mut ParsedDocument,
+    pdf: &[u8],
+    ocr: Option<&WorkerCommand>,
+    hold: &JobHold,
+    on_page: &mut dyn FnMut(u64, u64),
+) -> Vec<PageOutcome> {
     let routes = ocr::route_pages(doc);
     let checks = ocr::hidden_check_pages(doc, &routes);
     let mut outcomes = vec![];
@@ -137,11 +148,16 @@ pub fn add_ocr_reporting(doc: &mut ParsedDocument, pdf: &[u8], ocr: Option<&Work
         on_page(0, total);
     }
     for (facts, route) in doc.pages.clone().iter().zip(&routes) {
+        if hold.lost() {
+            break;
+        }
         let layer: Vec<Word> = doc.words.iter().filter(|w| w.page == facts.index).cloned().collect();
         let refs: Vec<&Word> = layer.iter().collect();
         let wanted = *route == PageRoute::Ocr || checks.contains(&facts.index);
         let result = match (wanted, ocr) {
-            (true, Some(c)) => Some(run_ocr_worker(c, pdf, facts.index, ocr::dpi_for(facts.width, facts.height)).map(|p| ocr::words_from_ocr(facts.index, &p))),
+            (true, Some(c)) => {
+                Some(run_ocr_worker(c, pdf, facts.index, ocr::dpi_for(facts.width, facts.height), hold).map(|p| ocr::words_from_ocr(facts.index, &p)))
+            }
             (true, None) if *route == PageRoute::Ocr => Some(Err(JobFailure {
                 message: "OCR isn't set up, so run: memexvault models fetch".into(),
                 retryable: false,
@@ -201,7 +217,7 @@ impl memex_core::Rasterizer for ChildRasterizer {
             args: vec!["render-worker".into(), page.to_string(), dpi.to_string(), rects],
             timeout: self.timeout,
         };
-        let png = run_child_raw(&command, pdf.to_vec()).map_err(|f| memex_core::RasterError(f.message))?;
+        let png = run_child_raw(&command, pdf.to_vec(), &JobHold::default()).map_err(|f| memex_core::RasterError(f.message))?;
         // The PNG header holds the size, at fixed offsets.
         if png.len() < 24 || &png[..8] != b"\x89PNG\r\n\x1a\n" {
             return Err(memex_core::RasterError("the renderer's output isn't a PNG".into()));
@@ -233,7 +249,7 @@ where
     E: ServerEdges + Send + Sync + 'static,
     Server<E>: Send + Sync,
 {
-    fn run(&self, vault: &VaultId, job: &JobRow) -> Result<Vec<Mutation>, JobFailure> {
+    fn run(&self, vault: &VaultId, job: &JobRow, hold: &JobHold) -> Result<Vec<Mutation>, JobFailure> {
         let source_id = job
             .input
             .get("source_id")
@@ -258,8 +274,10 @@ where
         };
         report(Stage::Parsing, 0, None);
         let input = if source.media_type == "application/pdf" {
-            let mut doc = run_worker(&self.worker, bytes.clone())?;
-            let outcomes = add_ocr_reporting(&mut doc, &bytes, self.ocr.as_ref(), &mut |done, total| report(Stage::Ocr, done, Some(total)));
+            let mut doc = run_child(&self.worker, bytes.clone(), hold)?;
+            let outcomes = add_ocr_reporting(&mut doc, &bytes, self.ocr.as_ref(), hold, &mut |done, total| {
+                report(Stage::Ocr, done, Some(total))
+            });
             RenditionInput::Pdf(doc, outcomes)
         } else {
             let text = String::from_utf8(bytes).map_err(|_| permanent("the text isn't valid UTF-8"))?;
@@ -268,6 +286,10 @@ where
                 parser: "plain-1".into(),
             }
         };
+        // Building writes blobs, so a job that has gone doesn't start it.
+        if hold.lost() {
+            return Err(JobFailure::lost());
+        }
         report(Stage::Segmenting, 0, None);
         self.server.build_rendition(vault, &source_id, input).map_err(from_server)
     }
@@ -341,9 +363,44 @@ mod tests {
             words: vec![],
         };
         let mut seen = vec![];
-        let outcomes = add_ocr_reporting(&mut doc, b"pdf", Some(&sh("exit 3", 5000)), &mut |done, total| seen.push((done, total)));
+        let outcomes = add_ocr_reporting(&mut doc, b"pdf", Some(&sh("exit 3", 5000)), &JobHold::default(), &mut |done, total| {
+            seen.push((done, total))
+        });
         assert_eq!(outcomes.len(), 3);
         assert_eq!(seen, [(0, 3), (1, 3), (2, 3), (3, 3)]);
+    }
+
+    #[test]
+    fn a_lost_job_kills_the_parser() {
+        let hold = JobHold::default();
+        crate::workers::lose_for_tests(&hold);
+        let t = Instant::now();
+        let e = run_child::<ParsedDocument>(&sh("sleep 30", 60_000), vec![], &hold).unwrap_err();
+        assert_eq!(e, JobFailure::lost());
+        assert!(t.elapsed() < Duration::from_secs(5), "{:?}", t.elapsed());
+    }
+
+    #[test]
+    fn a_lost_job_reads_no_more_pages() {
+        let mut doc = ParsedDocument {
+            parser: "p".into(),
+            pages: (0..3)
+                .map(|index| memex_types::PageFacts {
+                    index,
+                    width: 100,
+                    height: 100,
+                    rotation: 0,
+                    class: memex_types::PageClass::ImageOnly,
+                    hidden_text_objects: 0,
+                })
+                .collect(),
+            words: vec![],
+        };
+        let hold = JobHold::default();
+        crate::workers::lose_for_tests(&hold);
+        let mut seen = vec![];
+        add_ocr_reporting(&mut doc, b"pdf", Some(&sh("exit 3", 5000)), &hold, &mut |done, total| seen.push((done, total)));
+        assert_eq!(seen, [(0, 3)], "no page was read");
     }
 
     #[test]

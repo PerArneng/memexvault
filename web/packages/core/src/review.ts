@@ -481,7 +481,7 @@ export const sourcePlace = (evidence: ReviewEvidence): SourcePlace => {
 };
 
 /** A segment's words split around the quote, to mark it without any markup in the text. A quote that isn't there marks nothing rather than guessing. */
-export const markQuote = (segment: string, quote: string): { readonly before: string; readonly mark: string; readonly after: string } => {
+export const markReviewQuote = (segment: string, quote: string): { readonly before: string; readonly mark: string; readonly after: string } => {
   const at = quote === "" ? -1 : segment.indexOf(quote);
   if (at === -1) return { before: segment, mark: "", after: "" };
   return { before: segment.slice(0, at), mark: quote, after: segment.slice(at + quote.length) };

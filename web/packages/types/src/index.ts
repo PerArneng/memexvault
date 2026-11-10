@@ -64,9 +64,12 @@ export type ApiFailure =
   /** An answer that isn't our API, such as a proxy's error page. */
   | { readonly kind: "protocol"; readonly status: number; readonly message: string };
 
+export * from "./activity";
 export * from "./documents";
 export * from "./review";
+export * from "./search";
 export * from "./wiki";
+export * from "./entities";
 
 /**
  * Marks a piece of rendered Markdown that isn't Markdown, such as a wiki link. `core` puts `OPEN<n>CLOSE` in the source and `ui` renders

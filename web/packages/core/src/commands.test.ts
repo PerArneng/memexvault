@@ -27,13 +27,13 @@ describe("paletteEntries", () => {
     const to = (label: string) => entries.find((e) => e.label === label)?.action;
     expect(to("report.pdf")).toEqual({ kind: "go", to: "/vaults/a/documents/s1" });
     expect(to("Overview")).toEqual({ kind: "go", to: "/vaults/a/pages/s1" });
-    expect(to("person")).toEqual({ kind: "go", to: "/vaults/a/entities/person" });
+    expect(to("person")).toEqual({ kind: "go", to: "/vaults/a/entities/-/types/person" });
     expect(to("Switch to Beta")).toEqual({ kind: "go", to: "/vaults/b/search" });
   });
   it("a read token is offered no admin screen", () => {
     const entries = paletteEntries({ ...input, identity: identityWith([{ vault: a, scope: "read" }]) });
     expect(entries.map((e) => e.label)).not.toContain("Go to Admin");
-    expect(entries.map((e) => e.label)).not.toContain("Go to Ingest");
+    expect(entries.map((e) => e.label)).toContain("Go to Ingest");
   });
   it("ids stay unique when two kinds share an id", () => {
     const entries = paletteEntries({ ...input, identity: identityWith([], true) });

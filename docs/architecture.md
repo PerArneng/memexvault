@@ -276,7 +276,7 @@ Spec 024. A job per Rendition sends batches of segments to the LLM, and what's v
 - **The budget** is per document, per run, counting input, output and thinking. A call that wouldn't fit by estimate isn't made, and its output limit shrinks to what's left. A document that stops there is `partial`, and a re-run is the decision to spend more.
 - **An LLM outage** sends the job back to wait, taking its attempt back, so no outage can use up its attempts, with a delay of at most 5 minutes. Waiting extractions don't count as upload backlog. A refusal by the provider is an ordinary failure with attempts.
 - **Identity resolution** names existing entities sharing an identity value as candidates, in the Derivation and the proposal's rationale. It never merges.
-- **Long calls.** The holder extends its job lease before each call, by twice the call's time limit plus 30 s, as a call can outlast the usual 60 s lease.
+- **Long calls.** A call can outlast the usual 60 s lease, and the worker loop keeps the lease alive while the handler runs, as it does for every job kind (spec 082). A renewal is only ever for one lease, so a dead server frees its job within 60 s.
 
 ### Review gate
 

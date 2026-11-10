@@ -1,4 +1,4 @@
-import { DEFAULT_ZOOM, documentPath, flagText, markQuote, sourcePlace } from "@memex/core";
+import { DEFAULT_ZOOM, documentPath, flagText, markReviewQuote, sourcePlace } from "@memex/core";
 import type { ReviewEvidence, VaultId } from "@memex/types";
 import { EmptyState } from "@memex/ui";
 import { useQuery } from "@tanstack/react-query";
@@ -49,7 +49,7 @@ const SegmentText = ({ vault, evidence }: { readonly vault: VaultId; readonly ev
   return (
     <QueryView query={query} label="the words this quote comes from">
       {(segment) => {
-        const { before, mark, after } = markQuote(segment.text, evidence.quote);
+        const { before, mark, after } = markReviewQuote(segment.text, evidence.quote);
         return (
           <div className="flex flex-col gap-2">
             {segment.speaker !== null && <p className="text-xs text-text-muted">Speaker: {segment.speaker}</p>}

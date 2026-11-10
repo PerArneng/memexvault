@@ -25,7 +25,7 @@ const ClaimCard = ({ vault, id }: { readonly vault: VaultId; readonly id: string
                   <blockquote className="border-l-2 border-border-strong pl-2 break-words whitespace-pre-wrap">{e.quote}</blockquote>
                   <span className="flex flex-wrap items-center gap-2 text-xs">
                     <TrustOf tier={e.trustTier} />
-                    <AppLink to={documentPath(vault, { kind: "source", id: e.sourceId, tab: "view", page: null, zoom: null, claim: id, evidence: e.evidenceId, fromMs: null, toMs: null, rendition: null })}>{e.sourceName}</AppLink>
+                    <AppLink to={documentPath(vault, { kind: "source", id: e.sourceId, tab: "view", page: null, zoom: null, claim: id, evidence: e.evidenceId, fromMs: null, toMs: null, rendition: null, segment: null })}>{e.sourceName}</AppLink>
                   </span>
                 </li>
               ))}

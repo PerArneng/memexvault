@@ -1,7 +1,7 @@
 //! The transcription job: copies a recording to a folder, runs the worker in a child process, starts it again after a crash, and hands the rows back to be committed with the job. Saved progress lives in that folder until the job ends.
 // This module spawns and waits on child processes and works in a folder on disk, which needs wall time and files.
 #![allow(clippy::disallowed_methods)]
-use crate::workers::{JobFailure, JobHandler};
+use crate::workers::{JobFailure, JobHandler, JobHold};
 use memex_asr::worker::{EXIT_REFUSED, EXIT_WAITING, RESULT_FILE, SOURCE_FILE};
 use memex_core::{Progress, RenditionInput, Server, ServerEdges, ServerError};
 use memex_types::{JobRow, JobState, Mutation, ObjectId, ProgressUpdate, Stage, TimedDocument, VaultId};
@@ -17,9 +17,6 @@ use std::time::{Duration, Instant};
 pub const MAX_CRASHES: u32 = 8;
 /// Crashes in a row with nothing saved between them: it's the file or the setup, and it won't change.
 const MAX_CRASHES_WITHOUT_PROGRESS: u32 = 2;
-/// The lease a running job keeps, renewed well before it runs out. A server that dies holds up its job for at most this long, and saved progress means the next run loses little.
-const HOLD_MS: i64 = 300_000;
-const HOLD_EVERY: Duration = Duration::from_secs(60);
 const CHECK_EVERY: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_millis(100);
 /// How much of a worker's stderr a job keeps, as whisper.cpp can write a lot.
@@ -175,14 +172,14 @@ where
     }
 
     /// One run of the worker, watched until it ends.
-    fn watch(&self, vault: &VaultId, job: &JobRow, dir: &Path, language: Option<&str>) -> Result<Run, JobFailure> {
+    fn watch(&self, vault: &VaultId, job: &JobRow, dir: &Path, language: Option<&str>, hold: &JobHold) -> Result<Run, JobFailure> {
         let (mut child, stderr) = self.spawn(dir, language)?;
         let pid = child.id();
         let kill = |child: &mut Child| {
             let _ = child.kill();
             let _ = child.wait();
         };
-        let (mut last_hold, mut last_check) = (Instant::now(), Instant::now());
+        let mut last_check = Instant::now();
         let (mut seen, mut seen_at) = (progress_size(dir), Instant::now());
         let status = loop {
             match child.try_wait() {
@@ -201,17 +198,9 @@ where
                     waiting: true,
                 }));
             }
-            if last_hold.elapsed() >= HOLD_EVERY {
-                last_hold = Instant::now();
-                match self.server.hold_job(vault, job, HOLD_MS, false, vec![]) {
-                    Ok(true) => {}
-                    Ok(false) => {
-                        kill(&mut child);
-                        return Ok(Run::Killed(retry("this worker no longer holds the job")));
-                    }
-                    // The store being away isn't the worker's fault, and the fence at the end decides whether its result counts.
-                    Err(e) => tracing::warn!(error = %e, "can't renew a transcription's lease"),
-                }
+            if hold.lost() {
+                kill(&mut child);
+                return Ok(Run::Killed(JobFailure::lost()));
             }
             if last_check.elapsed() >= CHECK_EVERY {
                 last_check = Instant::now();
@@ -265,12 +254,20 @@ where
         })
     }
 
-    fn transcribe(&self, vault: &VaultId, job: &JobRow, source: &ObjectId, dir: &Path, language: Option<&str>) -> Result<TimedDocument, JobFailure> {
+    fn transcribe(
+        &self,
+        vault: &VaultId,
+        job: &JobRow,
+        source: &ObjectId,
+        dir: &Path,
+        language: Option<&str>,
+        hold: &JobHold,
+    ) -> Result<TimedDocument, JobFailure> {
         self.copy_source(vault, source, dir)?;
         let (mut crashes, mut without_progress) = (0u32, 0u32);
         loop {
             let before = progress_size(dir);
-            match self.watch(vault, job, dir, language)? {
+            match self.watch(vault, job, dir, language, hold)? {
                 Run::Done => {
                     let bytes = fs::read(dir.join(RESULT_FILE)).map_err(|e| retry(format!("the transcriber's result is missing: {e}")))?;
                     return serde_json::from_slice(&bytes).map_err(|e| permanent(format!("the transcriber's result isn't valid: {e}")));
@@ -302,7 +299,7 @@ where
     E: ServerEdges + Send + Sync + 'static,
     Server<E>: Send + Sync,
 {
-    fn run(&self, vault: &VaultId, job: &JobRow) -> Result<Vec<Mutation>, JobFailure> {
+    fn run(&self, vault: &VaultId, job: &JobRow, hold: &JobHold) -> Result<Vec<Mutation>, JobFailure> {
         let source_id = job
             .input
             .get("source_id")
@@ -310,15 +307,13 @@ where
             .map(|s| ObjectId(s.into()))
             .ok_or_else(|| permanent("the job has no source"))?;
         self.sweep(vault, &job.header.id);
-        // Holding from the start, as copying a large file can pass the usual lease.
-        if !self.server.hold_job(vault, job, HOLD_MS, false, vec![]).map_err(from_server)? {
-            return Err(retry("this worker no longer holds the job"));
-        }
         let language = self.server.source_language(vault, &source_id).map_err(from_server)?;
         let dir = self.folder_root(vault).join(&job.header.id.0);
         fs::create_dir_all(&dir).map_err(|e| retry(e.to_string()))?;
-        let result = self.transcribe(vault, job, &source_id, &dir, language.as_deref());
+        let result = self.transcribe(vault, job, &source_id, &dir, language.as_deref(), hold);
         match result {
+            // Building writes blobs, so a job that has gone doesn't start it.
+            Ok(_) if hold.lost() => Err(JobFailure::lost()),
             Ok(doc) => {
                 let rows = self
                     .server
@@ -421,7 +416,7 @@ mod tests {
 
         fn run(&self, script: &str) -> (Result<Vec<Mutation>, JobFailure>, JobRow) {
             let job = self.s.claim_job(&self.v, TRANSCRIBE_JOB, "w").unwrap().expect("a job");
-            (self.handler(script).run(&self.v, &job), job)
+            (self.handler(script).run(&self.v, &job, &JobHold::default()), job)
         }
 
         fn folder(&self, job: &JobRow) -> PathBuf {
@@ -512,7 +507,7 @@ mod tests {
         let mut h = r.handler("sleep 60");
         h.command.stall = Duration::from_millis(1);
         let started = Instant::now();
-        let e = h.run(&r.v, &job).unwrap_err();
+        let e = h.run(&r.v, &job, &JobHold::default()).unwrap_err();
         assert!(e.message.contains("no progress"), "{}", e.message);
         assert!(started.elapsed() < Duration::from_secs(40), "{:?}", started.elapsed());
     }
@@ -523,7 +518,7 @@ mod tests {
         let job = r.s.claim_job(&r.v, TRANSCRIBE_JOB, "w").unwrap().unwrap();
         let mut h = r.handler("sleep 60");
         h.command.max_rss_mb = 0;
-        let e = h.run(&r.v, &job).unwrap_err();
+        let e = h.run(&r.v, &job, &JobHold::default()).unwrap_err();
         assert!(e.message.contains("reaching its limit"), "{}", e.message);
         assert!(!e.retryable);
     }
@@ -535,9 +530,31 @@ mod tests {
         let h = r.handler("sleep 60");
         h.stop.store(true, Ordering::Relaxed);
         let started = Instant::now();
-        let e = h.run(&r.v, &job).unwrap_err();
+        let e = h.run(&r.v, &job, &JobHold::default()).unwrap_err();
         assert!(e.waiting, "{e:?}");
         assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn a_cancelled_job_kills_the_child_and_builds_nothing() {
+        let r = rig("cancelled");
+        let job = r.s.claim_job(&r.v, TRANSCRIBE_JOB, "w").unwrap().unwrap();
+        let hold = JobHold::default();
+        crate::workers::lose_for_tests(&hold);
+        let started = Instant::now();
+        let e = r.handler("sleep 60").run(&r.v, &job, &hold).unwrap_err();
+        assert_eq!(e.message, "this worker no longer holds the job");
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn a_job_lost_as_the_child_finishes_builds_nothing() {
+        let r = rig("lostlate");
+        let job = r.s.claim_job(&r.v, TRANSCRIBE_JOB, "w").unwrap().unwrap();
+        let hold = JobHold::default();
+        crate::workers::lose_for_tests(&hold);
+        // It only finishes if it's quicker than the first look at the hold, so either way there are no rows.
+        assert!(r.handler(&write_result("")).run(&r.v, &job, &hold).is_err());
     }
 
     #[test]
@@ -547,7 +564,7 @@ mod tests {
         let stale = r.root.join(&r.v.0).join("transcribe").join("no-such-job");
         fs::create_dir_all(&stale).unwrap();
         fs::write(stale.join("progress.jsonl"), "words").unwrap();
-        r.handler(&write_result("")).run(&r.v, &job).unwrap();
+        r.handler(&write_result("")).run(&r.v, &job, &JobHold::default()).unwrap();
         assert!(!stale.exists());
     }
 

@@ -12,7 +12,10 @@
     "e2e:shell": "playwright test --config playwright.shell.config.ts",
     "e2e:wiki": "playwright test --config playwright.wiki.config.ts",
     "e2e:documents": "playwright test --config playwright.documents.config.ts",
-    "e2e:review": "playwright test --config playwright.review.config.ts"
+    "e2e:review": "playwright test --config playwright.review.config.ts",
+    "e2e:entities": "playwright test --config playwright.entities.config.ts",
+    "e2e:ingest": "playwright test --config playwright.ingest.config.ts",
+    "e2e:search": "playwright test --config playwright.search.config.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.4",

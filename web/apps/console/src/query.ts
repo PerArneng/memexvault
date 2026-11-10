@@ -20,9 +20,10 @@ const failureOf = (error: unknown): ApiFailure | null => (error instanceof Failu
 export const createQueryClient = (engine: Engine): QueryClient =>
   new QueryClient({
     queryCache: new QueryCache({
-      onError: (error) => {
+      onError: (error, query) => {
         const failure = failureOf(error);
-        if (failure !== null) engine.reportFailure(failure, "read");
+        // A screen that explains its own failures in place needs no toast saying the same.
+        if (failure !== null && query.meta?.ownsErrors !== true) engine.reportFailure(failure, "read");
       },
     }),
     mutationCache: new MutationCache({
@@ -59,6 +60,10 @@ export const QUERY_KEYS = {
   wikiDiff: (vault: string, id: string, from: number, to: number) => ["wiki", vault, "diff", id, from, to] as const,
   wikiSlug: (vault: string, slug: string) => ["wiki", vault, "slug", slug] as const,
   wikiClaim: (vault: string, id: string) => ["wiki", vault, "claim", id] as const,
+  uploadLimits: (vault: string) => ["ingest", vault, "limits"] as const,
+  jobs: (vault: string) => ["ingest", vault, "jobs"] as const,
+  jobsInState: (vault: string, state: string) => ["ingest", vault, "jobs", "state", state] as const,
+  documentJobs: (vault: string, source: string) => ["ingest", vault, "jobs", "document", source] as const,
   /** Everything about one vault's sources, so a change can refresh all of it. */
   documents: (vault: string) => ["documents", vault] as const,
   sources: (vault: string) => ["documents", vault, "sources"] as const,
@@ -86,6 +91,8 @@ export const QUERY_KEYS = {
   inverse: (vault: string, id: string) => ["review", vault, "inverse", id] as const,
   contradictions: (vault: string) => ["review", vault, "contradictions"] as const,
   autoCommit: (vault: string) => ["review", vault, "auto-commit"] as const,
+  search: (vault: string, request: unknown) => ["search", vault, request] as const,
+  reading: (vault: string, rendition: string) => ["documents", vault, "reading", rendition] as const,
   // A changeset's author never changes, so this one can stay cached across writes.
   wikiAttribution: (vault: string, changeset: string) => ["attribution", vault, changeset] as const,
 };

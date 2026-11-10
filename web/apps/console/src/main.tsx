@@ -1,8 +1,9 @@
 // The one composition root: it builds the edges and the engine, and nothing else may.
 import { createEngine, settingsFrom } from "@memex/core";
-import { browserDraftStorage, browserIds, browserPreferences, systemClock } from "@memex/edge-browser";
+import { browserDraftStorage, browserIds, browserPreferences, createXhrUploader, systemClock } from "@memex/edge-browser";
 import { createFetchApi } from "@memex/edge-http";
 import { createSseQueueFeed } from "@memex/edge-sse";
+import { createSseActivityFeed } from "@memex/edge-sse";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./app.css";
@@ -19,6 +20,8 @@ const engine = createEngine({
   drafts: browserDraftStorage,
   ids: browserIds,
   queueFeed: createSseQueueFeed({ apiBaseUrl: settings.settings.apiBaseUrl }),
+  activity: createSseActivityFeed({ apiBaseUrl: settings.settings.apiBaseUrl }),
+  uploader: createXhrUploader({ apiBaseUrl: settings.settings.apiBaseUrl }),
 });
 void engine.restoreSession();
 

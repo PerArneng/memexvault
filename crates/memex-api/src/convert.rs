@@ -207,6 +207,7 @@ pub fn error_code(e: &ServerError) -> &'static str {
         ServerError::AgentSession => "agent_session",
         ServerError::RateLimited { .. } => "rate_limited",
         ServerError::Unavailable(_) => "unavailable",
+        ServerError::BlobMissing => "blob_missing",
         ServerError::NotCaughtUp { .. } => "not_caught_up",
     }
 }

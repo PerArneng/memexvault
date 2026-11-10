@@ -1658,6 +1658,57 @@ async fn provenance_from_a_claim_to_the_region_and_back() {
 }
 
 #[tokio::test]
+async fn a_missing_blob_says_so_and_is_not_a_backend_to_retry() {
+    use memex_core::BlobStore;
+    let w = world();
+    let base = format!("/api/v1/vaults/{}", w.a.0);
+    let (_, body) = upload_raw(&w.s, &w.a.0, Some(&w.admin), "name=a.pdf", b"%PDF-1.7 a document".to_vec()).await;
+    let (tid, sha) = (
+        body["source"]["id"].as_str().unwrap().to_string(),
+        body["source"]["sha256"].as_str().unwrap().to_string(),
+    );
+    assert_eq!(
+        call(&w.s, "GET", &format!("{base}/sources/{tid}/file"), Some(&w.admin), None).await.0,
+        StatusCode::OK
+    );
+    w.s.blobs().delete(&w.a, &memex_types::BlobHash::parse(&sha).unwrap()).unwrap();
+    let (status, body, _) = call(&w.s, "GET", &format!("{base}/sources/{tid}/file"), Some(&w.admin), None).await;
+    assert_eq!(status, StatusCode::GONE, "{body}");
+    assert_eq!(body["error"]["code"], "blob_missing");
+    assert!(body["error"]["message"].as_str().unwrap().contains("missing"), "{body}");
+    assert!(body["error"]["request_id"].is_string());
+    // The row is still there, which is what tells this from a source that's gone.
+    assert_eq!(
+        call(&w.s, "GET", &format!("{base}/sources/{tid}"), Some(&w.admin), None).await.0,
+        StatusCode::OK
+    );
+}
+
+#[test]
+fn the_openapi_document_has_the_missing_blob_on_each_route_that_reads_a_file() {
+    let doc = serde_json::to_value(openapi()).unwrap();
+    for path in [
+        "sources/{sid}/file",
+        "sources/{sid}/pages",
+        "sources/{sid}/pages/{page}/image",
+        "sources/{sid}/pages/{page}/thumbnail",
+        "sources/{sid}/transcript",
+        "sources/{sid}/stream",
+        "renditions/{rid}",
+        "assertions/{aid}/lineage",
+        "assertions/{aid}/evidence/{eid}/highlight",
+        "assertions/{aid}/evidence/{eid}/highlight.png",
+    ] {
+        let route = &doc["paths"][format!("/api/v1/vaults/{{id}}/{path}")]["get"];
+        assert!(route["responses"]["410"].is_object(), "{path}");
+    }
+    let code = doc["components"]["schemas"]["ErrorDetail"]["properties"]["code"]["description"]
+        .as_str()
+        .unwrap();
+    assert!(code.contains("blob_missing") && code.contains("410"), "{code}");
+}
+
+#[tokio::test]
 async fn keyword_search_answers_refuses_and_stays_in_its_vault() {
     use memex_core::{Snapshot as _, StepOutcome};
     let w = world();

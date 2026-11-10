@@ -156,6 +156,9 @@ importers:
 
   packages/edge-browser:
     dependencies:
+      '@memex/api':
+        specifier: workspace:*
+        version: link:../api
       '@memex/core':
         specifier: workspace:*
         version: link:../core
@@ -180,6 +183,9 @@ importers:
 
   packages/edge-sse:
     dependencies:
+      '@memex/api':
+        specifier: workspace:*
+        version: link:../api
       '@memex/core':
         specifier: workspace:*
         version: link:../core

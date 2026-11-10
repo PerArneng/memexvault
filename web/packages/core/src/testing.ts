@@ -1,17 +1,21 @@
 import { epochMs, vaultId } from "@memex/types";
-import type { ChangeOrigin, ClaimLineage, Derivation, DocumentSource, EpochMs, FlaggedPage, Grant, Identity, MediaFacts, ObjectSummary, Page, PageList, PageWord, Rendition, Segment, Transcript, Vault, VaultId, WikiClaim, WikiPage, WikiPageSummary, WikiRevision, WikiWrite } from "@memex/types";
+import type { ChangeOrigin, EvidencePackage, RenditionReading, ClaimLineage, Derivation, DocumentSource, EpochMs, FlaggedPage, Grant, Identity, MediaFacts, ObjectSummary, Page, PageList, PageWord, Rendition, Segment, Transcript, Vault, VaultId, WikiClaim, WikiPage, WikiPageSummary, WikiRevision, WikiWrite } from "@memex/types";
 import { failed, ok } from "./api";
 import type { Api, ApiFailure, ApiResult } from "./api";
 import type { Clock } from "./clock";
 import type { DraftStorage } from "./draft";
 import type { Preferences } from "./preferences";
 import { slugify } from "./wikitext";
+import { fakeEntityApi } from "./testing-entities";
+import type { EntitiesSeed } from "./testing-entities";
 import type { IdSource } from "./wiki-cases";
 import { createReviewFake } from "./testing-review";
 import type { ReviewSeed } from "./testing-review";
 
 export { changesetWith, combinationWith, createReviewFake, detailWith } from "./testing-review";
 export type { ReviewSeed } from "./testing-review";
+import { fakeIngestApi } from "./ingest-testing";
+import type { IngestSeed } from "./ingest-testing";
 
 /** A clock tests move by hand, so nothing sleeps. */
 export interface ManualClock extends Clock {
@@ -80,6 +84,7 @@ export const httpFailure = (status: number, code: string, message = code): ApiFa
 export const UNREACHABLE: ApiFailure = { kind: "unreachable", message: "no answer" };
 
 export interface FakeApiSeed {
+  readonly ingest?: IngestSeed;
   /** Which token signs in as whom. */
   readonly tokens?: Readonly<Record<string, Identity>>;
   readonly vaults?: readonly Vault[];
@@ -100,6 +105,12 @@ export interface FakeApiSeed {
   readonly documents?: DocumentsSeed;
   /** What the review screens read. */
   readonly review?: ReviewSeed;
+  /** Everything the entity screens read. Anything left out is not found. */
+  readonly entities?: EntitiesSeed;
+  /** What each search query answers. A query left out finds nothing. */
+  readonly searches?: Readonly<Record<string, EvidencePackage>>;
+  /** Each rendition's text and words. */
+  readonly readings?: Readonly<Record<string, RenditionReading>>;
 }
 
 export interface DocumentsSeed {
@@ -195,6 +206,7 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
   const notFound = httpFailure(404, "not_found");
 
   const api: FakeApi = {
+    ...fakeIngestApi(seed.ingest ?? {}),
     down: false,
     calls,
     failNext: (failure) => {
@@ -232,6 +244,7 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
     listObjects: (id: VaultId) =>
       answer("listObjects", () => (session === null ? failed<readonly ObjectSummary[]>(unauthenticated) : ok(seed.objects?.[id] ?? []))),
     health: () => answer("health", () => ok(null)),
+    ...fakeEntityApi(seed.entities ?? {}, answer),
 
     writeKeys,
     otherSessionEdits: (id, body) => {
@@ -380,6 +393,9 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
         return ok({ changesetId: "cs-trust", state: docs.trustState ?? "committed", replayed: false, refusals: docs.trustState === "rejected" ? ["refused by a validator"] : [] });
       }),
     ...createReviewFake(answer, seed.review),
+    getRenditionReading: (_vault, rendition) => answer("getRenditionReading", () => found(seed.readings?.[rendition])),
+    search: (_vault, request) =>
+      answer("search", () => ok(seed.searches?.[request.q] ?? { path: "natural", items: [], lowRelevance: true, notices: [], budget: { limit: request.budgetTokens, used: 0, truncated: false }, degraded: [], facets: null, debug: null, nextCursor: null, asOf: null })),
     searchClaimIds: () => answer("searchClaimIds", () => ok(seed.claimHits ?? [])),
     readClaim: (_vault, id) =>
       answer("readClaim", () => {
