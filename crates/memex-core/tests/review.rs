@@ -1675,3 +1675,51 @@ fn the_log_replays_verdicts_samples_and_decisions_with_no_llm() {
     memex_core::replay(events, &target, &lease).unwrap();
     assert_eq!(dump_store(&target.snapshot(&w.v).unwrap()).unwrap().sha256, source);
 }
+
+#[test]
+fn a_pending_quote_gets_the_same_rects_it_is_anchored_to_at_commit() {
+    let w = world();
+    let text = "Fartyget nummer 0 byggdes i Stockholm år 1600 och seglade sedan mot Göteborg.";
+    let source = w.upload("a.pdf", "trusted", json!({}), text);
+    w.parse(&source, pdf_of(text));
+    let segment = w
+        .table(Table::Segment)
+        .into_iter()
+        .find_map(|r| if let Row::Segment(s) = r { Some(s.header.id) } else { None })
+        .unwrap();
+    let cs =
+        w.s.propose(&w.agent, &w.v, agent_claim("c1", &[&segment], "byggdes i Stockholm"), false)
+            .unwrap()
+            .changeset
+            .unwrap();
+    assert_eq!(cs.state, ChangeSetState::Pending);
+    let pending = w.s.review_item(&w.admin, &w.v, &cs.header.id).unwrap().evidence;
+    assert_eq!(pending.len(), 1);
+    assert!(!pending[0].rects.is_empty(), "a quote on a page has a place on it");
+    w.s.approve(&w.admin, &w.v, &cs.header.id, None).unwrap();
+    let stored = w
+        .table(Table::Evidence)
+        .into_iter()
+        .find_map(|r| if let Row::Evidence(e) = r { Some(e) } else { None })
+        .unwrap();
+    assert_eq!(stored.anchor.unwrap().rects, pending[0].rects);
+}
+
+#[test]
+fn a_quote_with_no_page_has_no_rects_and_the_item_still_opens() {
+    let w = world();
+    let source = w.ingest("a.txt", "trusted", SENTENCE);
+    let segment = w
+        .table(Table::Segment)
+        .into_iter()
+        .find_map(|r| if let Row::Segment(s) = r { Some(s.header.id) } else { None })
+        .unwrap();
+    let cs =
+        w.s.propose(&w.agent, &w.v, agent_claim("c1", &[&segment], "byggdes i Stockholm"), false)
+            .unwrap()
+            .changeset
+            .unwrap();
+    let detail = w.s.review_item(&w.admin, &w.v, &cs.header.id).unwrap();
+    assert_eq!(detail.evidence[0].source_id.as_ref(), Some(&source));
+    assert!(detail.evidence[0].rects.is_empty());
+}

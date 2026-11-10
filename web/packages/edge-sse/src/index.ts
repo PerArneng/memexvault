@@ -1,3 +1,5 @@
+// See docs/frontend-architecture.md.
+export { createSseQueueFeed, eventOfFrame } from "./queue-feed";
 import { activityFrameFromWire, failureFromWire } from "@memex/api";
 import type { ActivityFeed, FeedEvent } from "@memex/core";
 import type { ApiFailure, VaultId } from "@memex/types";

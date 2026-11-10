@@ -27,6 +27,16 @@ import type {
   Transcript,
   Vault,
   VaultId,
+  AutoCommitEntry,
+  BatchOutcome,
+  ChangeSet,
+  Contradiction,
+  InversePreview,
+  QueueCounts,
+  ReviewDecision,
+  ReviewDetail,
+  ReviewFilter,
+  ReviewItem,
   WikiAttribution,
   WikiBacklink,
   WikiClaim,
@@ -210,6 +220,18 @@ export interface Api extends IngestApi {
   reprocessSource(vault: VaultId, source: string): Promise<ApiResult<null>>;
   setSourceTrust(vault: VaultId, source: string, change: TrustChange): Promise<ApiResult<WikiWrite>>;
 
+  listReviewQueue(vault: VaultId, filter: ReviewFilter, cursor: string | null): Promise<ApiResult<Page<ReviewItem>>>;
+  getQueueCounts(vault: VaultId): Promise<ApiResult<QueueCounts>>;
+  getReviewItem(vault: VaultId, id: string): Promise<ApiResult<ReviewDetail>>;
+  decide(vault: VaultId, decision: ReviewDecision): Promise<ApiResult<ChangeSet>>;
+  decideBatch(vault: VaultId, decisions: readonly ReviewDecision[]): Promise<ApiResult<readonly BatchOutcome[]>>;
+  listChangesets(vault: VaultId, state: string, cursor: string | null): Promise<ApiResult<Page<ChangeSet>>>;
+  getChangeset(vault: VaultId, id: string): Promise<ApiResult<ChangeSet>>;
+  getInverse(vault: VaultId, id: string): Promise<ApiResult<InversePreview>>;
+  revertChangeset(vault: VaultId, id: string, reason: string): Promise<ApiResult<ChangeSet>>;
+  listContradictions(vault: VaultId, cursor: string | null): Promise<ApiResult<Page<Contradiction>>>;
+  listAutoCommit(vault: VaultId, cursor: string | null): Promise<ApiResult<{ readonly threshold: number; readonly entries: readonly AutoCommitEntry[]; readonly nextCursor: string | null }>>;
+  disableAutoCommit(vault: VaultId, combination: string, reason: string): Promise<ApiResult<AutoCommitEntry>>;
   listEntityTypes(vault: VaultId, cursor: string | null): Promise<ApiResult<Page<EntityType>>>;
   listEntityTypeVersions(vault: VaultId, name: string): Promise<ApiResult<readonly EntityType[]>>;
   previewEntityType(vault: VaultId, name: string, schema: unknown): Promise<ApiResult<EntityTypePreview>>;

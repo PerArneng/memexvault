@@ -17,6 +17,8 @@ import type { DocumentCases } from "./document-cases";
 import { createWikiCases } from "./wiki-cases";
 import type { IdSource, WikiCases } from "./wiki-cases";
 import type { DraftStorage } from "./draft";
+import { createReviewCases } from "./review-cases";
+import type { QueueFeed, ReviewCases } from "./review-cases";
 import { createEntityCases } from "./entity-cases";
 import type { EntityCases } from "./entity-cases";
 import type { ActivityFeed } from "./activity-watch";
@@ -33,6 +35,8 @@ export interface Edges {
   readonly preferences: Preferences;
   readonly drafts: DraftStorage;
   readonly ids: IdSource;
+  /** Left out, the review screen reads by itself instead of following. */
+  readonly queueFeed?: QueueFeed;
   /** Left out by tests of other screens, which never open a live view or upload. */
   readonly activity?: ActivityFeed;
   readonly uploader?: Uploader;
@@ -42,7 +46,7 @@ export interface Edges {
 const MAX_VAULT_PAGES = 50;
 
 /** The single entry point for views. Later specs add a method per use case. */
-export interface Engine extends WikiCases, DocumentCases, EntityCases, SearchCases, IngestCases {
+export interface Engine extends WikiCases, DocumentCases, ReviewCases, EntityCases, SearchCases, IngestCases {
   startedAt(): EpochMs;
   uptimeMs(): number;
   settings(): Settings;
@@ -132,6 +136,7 @@ export const createEngine = (edges: Edges): Engine => {
   return {
     ...createWikiCases({ edges, watched, principal: () => (session.status === "signed_in" ? session.identity.principal.id : "unknown") }),
     ...createDocumentCases({ edges, watched }),
+    ...createReviewCases({ edges, watched }),
     ...createEntityCases({ edges, watched }),
     ...ingest,
     ...createSearchCases({ edges, watched }),

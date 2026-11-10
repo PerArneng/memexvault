@@ -6,6 +6,8 @@ pub struct Caller {
     pub principal: Principal,
     pub token_id: String,
     pub grants: Vec<Grant>,
+    /// It signed in through the console, rather than sending its token. An agent can't decide review items this way.
+    pub via_session: bool,
 }
 
 /// Every operation that needs a decision. Health, version and whoami need only a caller or nothing, so they aren't here.
@@ -140,6 +142,7 @@ mod tests {
             },
             token_id: "t".into(),
             grants: grants.iter().map(|(v, s)| Grant { vault: vault(v), scope: *s }).collect(),
+            via_session: false,
         }
     }
 

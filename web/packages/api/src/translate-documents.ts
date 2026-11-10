@@ -24,7 +24,7 @@ export const sourceFromWire = (s: Schemas["SourceDto"]): DocumentSource => ({
 
 export const sourcePageFromWire = (p: Schemas["SourcePage"]): Page<DocumentSource> => pageOf(p.items, p.next_cursor, sourceFromWire);
 
-const flagFromWire = (raw: unknown): PageFlag => {
+export const flagFromWire = (raw: unknown): PageFlag => {
   const flag = isRecord(raw) ? raw : {};
   switch (flag.flag) {
     case "low_confidence":

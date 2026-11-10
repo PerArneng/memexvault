@@ -2,6 +2,7 @@
 import { createEngine, settingsFrom } from "@memex/core";
 import { browserDraftStorage, browserIds, browserPreferences, createXhrUploader, systemClock } from "@memex/edge-browser";
 import { createFetchApi } from "@memex/edge-http";
+import { createSseQueueFeed } from "@memex/edge-sse";
 import { createSseActivityFeed } from "@memex/edge-sse";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -18,6 +19,7 @@ const engine = createEngine({
   preferences: browserPreferences,
   drafts: browserDraftStorage,
   ids: browserIds,
+  queueFeed: createSseQueueFeed({ apiBaseUrl: settings.settings.apiBaseUrl }),
   activity: createSseActivityFeed({ apiBaseUrl: settings.settings.apiBaseUrl }),
   uploader: createXhrUploader({ apiBaseUrl: settings.settings.apiBaseUrl }),
 });

@@ -37,7 +37,7 @@ impl ApiError {
     pub fn from_server(e: ServerError, request_id: &str) -> Self {
         let status = match &e {
             ServerError::Unauthenticated => StatusCode::UNAUTHORIZED,
-            ServerError::Forbidden | ServerError::ChatDisabled => StatusCode::FORBIDDEN,
+            ServerError::Forbidden | ServerError::ChatDisabled | ServerError::AgentSession => StatusCode::FORBIDDEN,
             ServerError::NotFound => StatusCode::NOT_FOUND,
             ServerError::BlobMissing => StatusCode::GONE,
             ServerError::Invalid(_) => StatusCode::BAD_REQUEST,

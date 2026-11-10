@@ -574,3 +574,103 @@ async fn a_build_without_a_console_says_so_and_the_api_still_works() {
     }
     assert_eq!(send(app, get("/api/v1/health")).await.0, StatusCode::OK);
 }
+
+/// Spec 046: an agent signed in to a console session decides nothing, whatever its scope. Its token, used as a token, keeps what spec 025 recorded.
+#[tokio::test]
+async fn an_admin_agent_decides_nothing_through_a_session_and_keeps_what_its_bearer_token_may_do() {
+    let w = world();
+    let root = w.s.authenticate(&w.admin).unwrap();
+    let p = w.s.create_principal(&root, "agent", PrincipalKind::Agent, false).unwrap();
+    let token =
+        w.s.create_token(
+            &root,
+            NewToken {
+                principal_id: Some(p.id),
+                name: "t".into(),
+                grants: vec![memex_types::Grant {
+                    vault: w.vault.clone(),
+                    scope: memex_types::Scope::Admin,
+                }],
+                expires_at_ms: None,
+            },
+        )
+        .unwrap()
+        .token;
+    let base = format!("/api/v1/vaults/{}", w.vault.0);
+    let bearer = |path: String, token: &str, body: Value| {
+        Request::builder()
+            .method("POST")
+            .uri(path)
+            .header("authorization", format!("Bearer {token}"))
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    };
+    let propose = async |key: &str| -> String {
+        let body = json!({"ops": [{"op": "create_page", "id": format!("page-{key}"), "title": format!("Page {key}"), "body": "text"}], "rationale": "why", "idempotency_key": key});
+        let (status, out, _) = w.send(bearer(format!("{base}/proposals"), &token, body)).await;
+        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&out));
+        let out: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(out["changeset"]["state"], "pending", "an agent's page waits for review");
+        out["changeset"]["id"].as_str().unwrap().to_string()
+    };
+    let cookie = w.cookie(&token).await;
+    let session = |path: String, body: Value| {
+        Request::builder()
+            .method("POST")
+            .uri(path)
+            .header("cookie", cookie.clone())
+            .header(CSRF_HEADER, "1")
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    };
+    let cs = propose("one").await;
+    let edit = json!({"ops": [{"op": "create_page", "id": "page-one", "title": "Edited", "body": "text"}], "reason": "r"});
+    let attempts = [
+        (format!("{base}/changesets/{cs}/approve"), json!({"reason": "r"})),
+        (format!("{base}/changesets/{cs}/reject"), json!({"reason": "r"})),
+        (format!("{base}/review/items/{cs}/edit-approve"), edit),
+        (format!("{base}/review/batch"), json!({"decisions": [{"id": cs, "decision": "approve"}]})),
+        (format!("{base}/changesets/{cs}/revert"), json!({"reason": "r"})),
+    ];
+    for (path, body) in attempts {
+        let (status, out, _) = w.send(session(path.clone(), body)).await;
+        assert_eq!((status, code(&out).as_str()), (StatusCode::FORBIDDEN, "agent_session"), "{path}");
+    }
+    let (status, out, _) = w.send(get_with_cookie(&format!("{base}/changesets/{cs}"), &cookie)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&out).unwrap()["state"],
+        "pending",
+        "none of that decided anything"
+    );
+
+    // The same agent with its token: an ordinary item can be approved and reverted, as spec 025 recorded. This is the gap the session rule leaves.
+    let (status, out, _) = w.send(bearer(format!("{base}/changesets/{cs}/approve"), &token, json!({"reason": "r"}))).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&out));
+    assert_eq!(serde_json::from_slice::<Value>(&out).unwrap()["state"], "committed");
+    let (status, _, _) = w.send(bearer(format!("{base}/changesets/{cs}/revert"), &token, json!({"reason": "r"}))).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // A person's session is untouched.
+    let second = propose("two").await;
+    let person = w.cookie(&w.admin).await;
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("{base}/changesets/{second}/approve"))
+        .header("cookie", person)
+        .header(CSRF_HEADER, "1")
+        .header("content-type", "application/json")
+        .body(Body::from(json!({"reason": "r"}).to_string()))
+        .unwrap();
+    let (status, _, _) = w.send(req).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let doc = serde_json::to_string(&openapi()).unwrap();
+    assert!(doc.contains("agent_session"), "the contract names the code");
+}
+
+fn get_with_cookie(path: &str, cookie: &str) -> Request<Body> {
+    Request::builder().uri(path).header("cookie", cookie).body(Body::empty()).unwrap()
+}

@@ -8,7 +8,7 @@ const errorBody = { error: { code: "forbidden", message: "no", request_id: "r1" 
 describe("wire to domain", () => {
   it("translates who am I", () => {
     expect(identityFromWire({ principal, token_id: "t", grants: [{ vault_id: "v", scope: "read" }] })).toEqual({
-      principal: { id: "p", name: "pat", serverAdmin: true },
+      principal: { id: "p", name: "pat", serverAdmin: true, machine: false },
       tokenId: "t",
       grants: [{ vault: "v", scope: "read" }],
     });

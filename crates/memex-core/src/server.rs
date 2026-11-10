@@ -146,6 +146,8 @@ pub enum ServerError {
     AlreadyBootstrapped,
     /// An admin hasn't turned chat on for this vault. Nothing has reached the LLM.
     ChatDisabled,
+    /// An agent signed in through the console tried to decide a review item.
+    AgentSession,
 }
 
 impl fmt::Display for ServerError {
@@ -167,6 +169,7 @@ impl fmt::Display for ServerError {
             Self::NotCaughtUp { min_seq, reached } => write!(f, "the search index hasn't reached event {min_seq} yet, and is at {reached:?}"),
             Self::AlreadyBootstrapped => f.write_str("this server already has principals"),
             Self::ChatDisabled => f.write_str("chat is off for this vault. A vault admin can turn it on, which sends its content to the configured LLM"),
+            Self::AgentSession => f.write_str("an agent can't approve, reject or revert through a console session, so a person has to sign in to decide this"),
         }
     }
 }
@@ -607,6 +610,7 @@ impl<E: ServerEdges> Server<E> {
             principal,
             token_id: row.id,
             grants: row.grants,
+            via_session: false,
         })
     }
 
@@ -654,7 +658,9 @@ impl<E: ServerEdges> Server<E> {
             return Err(ServerError::Unauthenticated);
         }
         let token = self.registry.token(&session.token_id)?.ok_or(ServerError::Unauthenticated)?;
-        self.caller_from_token(token)
+        let mut caller = self.caller_from_token(token)?;
+        caller.via_session = true;
+        Ok(caller)
     }
 
     /// Ends a session. One that is unknown or already gone is fine, since the result is the same.
@@ -1277,6 +1283,7 @@ impl<E: ServerEdges> Server<E> {
         edited: Option<Vec<memex_types::Op>>,
     ) -> Result<ChangeSetRow, ServerError> {
         self.allow(caller, Operation::VaultContentReview(vault))?;
+        Self::no_agent_session(caller)?;
         self.vault_exists(vault)?;
         let lease = self.lease(vault)?;
         let vault_lock = self.vault_lock(vault);
@@ -1347,6 +1354,7 @@ impl<E: ServerEdges> Server<E> {
         ops: Vec<memex_types::Op>,
         reason: Option<String>,
     ) -> Result<ChangeSetRow, ServerError> {
+        Self::no_agent_session(caller)?;
         if caller.principal.kind != PrincipalKind::Human {
             return Err(ServerError::Forbidden);
         }
@@ -1355,6 +1363,7 @@ impl<E: ServerEdges> Server<E> {
 
     pub fn reject(&self, caller: &Caller, vault: &VaultId, id: &ObjectId, reason: String) -> Result<ChangeSetRow, ServerError> {
         self.allow(caller, Operation::VaultContentReview(vault))?;
+        Self::no_agent_session(caller)?;
         self.vault_exists(vault)?;
         if reason.trim().is_empty() {
             return Err(ServerError::Invalid("a rejection needs a reason".into()));
@@ -1406,9 +1415,18 @@ impl<E: ServerEdges> Server<E> {
         }
     }
 
+    /// A person decides at the console. An agent's token works only as a token, under the rules of `only_a_person`, so a session an agent signed in to can read the queue but decides nothing, whatever its scope.
+    pub(crate) fn no_agent_session(caller: &Caller) -> Result<(), ServerError> {
+        if caller.via_session && caller.principal.kind != memex_types::PrincipalKind::Human {
+            return Err(ServerError::AgentSession);
+        }
+        Ok(())
+    }
+
     /// A revert is itself a committed ChangeSet, so it shows in history and can't be lost. Refused up front if it would overwrite later work.
     pub fn revert(&self, caller: &Caller, vault: &VaultId, id: &ObjectId, reason: String) -> Result<ChangeSetRow, ServerError> {
         self.allow(caller, Operation::VaultContentReview(vault))?;
+        Self::no_agent_session(caller)?;
         self.vault_exists(vault)?;
         let lease = self.lease(vault)?;
         let vault_lock = self.vault_lock(vault);

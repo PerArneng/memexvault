@@ -20,6 +20,8 @@ export interface Principal {
   readonly id: string;
   readonly name: string;
   readonly serverAdmin: boolean;
+  /** An agent rather than a person. */
+  readonly machine: boolean;
 }
 
 /** Who the current credential is, from `whoami`. */
@@ -64,6 +66,7 @@ export type ApiFailure =
 
 export * from "./activity";
 export * from "./documents";
+export * from "./review";
 export * from "./search";
 export * from "./wiki";
 export * from "./entities";

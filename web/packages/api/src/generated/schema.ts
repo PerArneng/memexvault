@@ -1714,6 +1714,7 @@ export interface paths {
                         "application/json": components["schemas"]["ChangeSetDto"];
                     };
                 };
+                /** @description Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it. */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -1832,6 +1833,7 @@ export interface paths {
                         "application/json": components["schemas"]["ErrorBody"];
                     };
                 };
+                /** @description Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it. */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -1897,6 +1899,7 @@ export interface paths {
                         "application/json": components["schemas"]["ChangeSetDto"];
                     };
                 };
+                /** @description Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it. */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -4729,6 +4732,7 @@ export interface paths {
                         "application/json": components["schemas"]["ErrorBody"];
                     };
                 };
+                /** @description Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it. */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -4885,6 +4889,7 @@ export interface paths {
                         "application/json": components["schemas"]["ErrorBody"];
                     };
                 };
+                /** @description Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it. */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -8187,6 +8192,8 @@ export interface components {
             /** Format: int32 */
             page_to?: number | null;
             quote: string;
+            /** @description Where the quote is on its pages, in 1/100 pt, as it will be anchored when it commits. Empty when it has no place on a page or can't be found. */
+            rects?: components["schemas"]["RectDto"][];
             rendition_id?: string | null;
             segment_id: string;
             source_id?: string | null;

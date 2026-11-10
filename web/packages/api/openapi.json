@@ -5700,6 +5700,13 @@
           "quote": {
             "type": "string"
           },
+          "rects": {
+            "description": "Where the quote is on its pages, in 1/100 pt, as it will be anchored when it commits. Empty when it has no place on a page or can't be found.",
+            "items": {
+              "$ref": "#/components/schemas/RectDto"
+            },
+            "type": "array"
+          },
           "rendition_id": {
             "type": [
               "string",
@@ -8804,7 +8811,8 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
-            }
+            },
+            "description": "Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it."
           },
           "404": {
             "content": {
@@ -8933,7 +8941,8 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
-            }
+            },
+            "description": "Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it."
           },
           "404": {
             "content": {
@@ -9007,7 +9016,8 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
-            }
+            },
+            "description": "Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it."
           },
           "404": {
             "content": {
@@ -12497,7 +12507,8 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
-            }
+            },
+            "description": "Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it."
           },
           "404": {
             "content": {
@@ -12657,7 +12668,8 @@
                   "$ref": "#/components/schemas/ErrorBody"
                 }
               }
-            }
+            },
+            "description": "Not allowed. The code `agent_session` means an agent signed in to a console session tried this, and a person has to decide it."
           },
           "404": {
             "content": {

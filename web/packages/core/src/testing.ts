@@ -9,6 +9,11 @@ import { slugify } from "./wikitext";
 import { fakeEntityApi } from "./testing-entities";
 import type { EntitiesSeed } from "./testing-entities";
 import type { IdSource } from "./wiki-cases";
+import { createReviewFake } from "./testing-review";
+import type { ReviewSeed } from "./testing-review";
+
+export { changesetWith, combinationWith, createReviewFake, detailWith } from "./testing-review";
+export type { ReviewSeed } from "./testing-review";
 import { fakeIngestApi } from "./ingest-testing";
 import type { IngestSeed } from "./ingest-testing";
 
@@ -67,7 +72,7 @@ export const countingIds = (): IdSource => {
 };
 
 export const identityWith = (grants: readonly Grant[], serverAdmin = false): Identity => ({
-  principal: { id: "p1", name: "pat", serverAdmin },
+  principal: { id: "p1", name: "pat", serverAdmin, machine: false },
   tokenId: "t1",
   grants,
 });
@@ -98,6 +103,8 @@ export interface FakeApiSeed {
   readonly wikiWritesPending?: boolean;
   /** Everything the document screens read. Anything left out is not found. */
   readonly documents?: DocumentsSeed;
+  /** What the review screens read. */
+  readonly review?: ReviewSeed;
   /** Everything the entity screens read. Anything left out is not found. */
   readonly entities?: EntitiesSeed;
   /** What each search query answers. A query left out finds nothing. */
@@ -385,6 +392,7 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
         if (known.version !== change.baseVersion) return failed(httpFailure(409, "stale_version"));
         return ok({ changesetId: "cs-trust", state: docs.trustState ?? "committed", replayed: false, refusals: docs.trustState === "rejected" ? ["refused by a validator"] : [] });
       }),
+    ...createReviewFake(answer, seed.review),
     getRenditionReading: (_vault, rendition) => answer("getRenditionReading", () => found(seed.readings?.[rendition])),
     search: (_vault, request) =>
       answer("search", () => ok(seed.searches?.[request.q] ?? { path: "natural", items: [], lowRelevance: true, notices: [], budget: { limit: request.budgetTokens, used: 0, truncated: false }, degraded: [], facets: null, debug: null, nextCursor: null, asOf: null })),
