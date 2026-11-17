@@ -652,7 +652,9 @@ fn entity_sort_bench() {
     sorted_lane("sorted first page, name asc", "name:asc", &none, false);
     sorted_lane("sorted first page, released desc", "released:desc", &none, false);
     sorted_lane("sorted, fourth page, price asc", "price:asc", &none, true);
+    let unique = |i: usize| vec![("name".to_string(), "eq".to_string(), format!("gadget {i}"))];
     sorted_lane("sorted with exact filter ~0.1%, price desc", "price:desc", &category, false);
+    sorted_lane("sorted with exact filter, 1 row, price desc", "price:desc", &unique, false);
     sorted_lane("sorted with range filter ~50%, name asc", "name:asc", &half, false);
     sorted_lane("sorted with range filter ~50%, price desc", "price:desc", &half, false);
     let mut unsorted_lane = |what: &str, filters: &dyn Fn(usize) -> Vec<(String, String, String)>| {

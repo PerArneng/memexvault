@@ -2371,8 +2371,11 @@ export interface paths {
                     type: string;
                     /** @description `<field>:<op>:<value>`, where op is `eq`, `lt`, `lte`, `gt` or `gte`. Repeat it to require several. The field must be filterable. */
                     filter?: string;
+                    /** @description From `next_cursor` of the previous page, in the same order. */
                     cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
                     limit?: number;
+                    /** @description `<field>:asc` or `<field>:desc`, across every row that passes the filters. The field must be filterable and hold one text, number, boolean or date, not a list. Text sorts folded, in byte order, and `false` before `true`. Ties go by id, in the same direction. Rows with no value in the field, or text over 512 bytes, come last in both directions. Without it, or with `created`, rows are in id order. */
                     sort?: string;
                 };
                 header?: never;

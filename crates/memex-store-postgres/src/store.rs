@@ -1719,7 +1719,7 @@ impl PgSnapshot<'_> {
             .collect())
     }
 
-    /// Two queries in this snapshot: rows with a value, walking the sorted column's B-tree from the cursor, then, if the page isn't full, rows with none, in id order. Filters are semi-joins, so a list field's several values can't repeat a row.
+    /// Two queries in this snapshot: rows with a value, walking the sorted column's B-tree from the cursor, then, if the page isn't full, rows with none, in id order. Filters on other fields are semi-joins, so a list field's several values can't repeat a row.
     pub fn entities_sorted(
         &self,
         type_name: &str,
@@ -1735,9 +1735,16 @@ impl PgSnapshot<'_> {
             SortColumn::Time => "time_value",
         };
         let (dir, past) = if sort.descending { ("DESC", "<") } else { ("ASC", ">") };
-        let filter_sql = |params: &mut Vec<Box<dyn ToSql + Sync>>, entity: &str| {
+        let on_sorted = |f: &FieldFilter| f.field == sort.field && filter_param(&f.value).0 == column;
+        // A filter on the sorted field bounds the scan of its own B-tree, rather than testing each row the scan reaches.
+        let filter_sql = |params: &mut Vec<Box<dyn ToSql + Sync>>, entity: &str, sorted: bool| {
             let mut out = String::new();
             for (i, f) in filters.iter().enumerate() {
+                if sorted && on_sorted(f) {
+                    params.push(filter_param(&f.value).1);
+                    out.push_str(&format!(" AND v.{column} {} ${}", f.op.as_sql(), params.len()));
+                    continue;
+                }
                 params.push(Box::new(f.field.clone()));
                 let field_param = params.len();
                 let (col, value) = filter_param(&f.value);
@@ -1759,13 +1766,14 @@ impl PgSnapshot<'_> {
                 params.push(Box::new(id.0.clone()));
                 conditions.push_str(&format!(" AND (v.{column}, v.entity_id) {past} (${}, ${})", params.len() - 1, params.len()));
             }
-            conditions.push_str(&filter_sql(&mut params, "v.entity_id"));
+            conditions.push_str(&filter_sql(&mut params, "v.entity_id", true));
             let sql = format!(
                 "SELECT e.row FROM {s}.entity_fields v JOIN {s}.entities e ON e.id = v.entity_id WHERE v.type_name = $1 AND v.field = $2 AND v.{column} IS NOT NULL{conditions} ORDER BY v.{column} {dir}, v.entity_id {dir} LIMIT $3"
             );
             out = self.entity_rows(&sql, &params)?;
         }
-        if out.len() < limit {
+        // A row with no value can't pass a filter on the sorted field.
+        if out.len() < limit && !filters.iter().any(on_sorted) {
             let after_id = after.filter(|a| a.value.is_none()).map(|a| a.id.0.clone());
             let mut params: Vec<Box<dyn ToSql + Sync>> = vec![
                 Box::new(type_name.to_string()),
@@ -1773,7 +1781,7 @@ impl PgSnapshot<'_> {
                 Box::new((limit - out.len()) as i64),
                 Box::new(after_id),
             ];
-            let conditions = filter_sql(&mut params, "e.id");
+            let conditions = filter_sql(&mut params, "e.id", false);
             let sql = format!(
                 "SELECT e.row FROM {s}.entities e WHERE e.current AND e.type_name = $1 AND ($4::text IS NULL OR e.id {past} $4)
                  AND NOT EXISTS (SELECT 1 FROM {s}.entity_fields v WHERE v.entity_id = e.id AND v.type_name = $1 AND v.field = $2 AND v.{column} IS NOT NULL){conditions}

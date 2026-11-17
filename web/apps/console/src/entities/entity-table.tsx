@@ -146,6 +146,7 @@ const FindResults = ({ vault, type, mention, fields }: { readonly vault: VaultId
 };
 
 const SORT_MARK: Readonly<Record<"asc" | "desc", string>> = { asc: "↑", desc: "↓" };
+const ARIA_SORT: Readonly<Record<"asc" | "desc" | "none", "ascending" | "descending" | "none">> = { asc: "ascending", desc: "descending", none: "none" };
 
 const nextSort = (field: string, sort: EntitySort | null): EntitySort | null => {
   if (sort?.field !== field) return { field, direction: "asc" };
@@ -185,7 +186,7 @@ const Rows = ({ vault, route, view }: { readonly vault: VaultId; readonly route:
           header: c.label,
           width: c.width,
           numeric: c.numeric,
-          ...(c.sortable ? { ariaSort: sortedHere === null ? "none" : sortedHere === "asc" ? "ascending" : "descending" } : {}),
+          ...(c.sortable ? { ariaSort: ARIA_SORT[sortedHere ?? "none"] } : {}),
           // The server sorts every row. A field it can't sort by says so, here and in the note under the table.
           headerCell: c.sortable ? (
             <button type="button" className="inline-flex items-center gap-1 hover:text-text" title={`Sort every row by ${c.label}`} onClick={() => to({ sort: nextSort(c.id, sort) })}>
@@ -215,7 +216,7 @@ const Rows = ({ vault, route, view }: { readonly vault: VaultId; readonly route:
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-start gap-2">
         <ColumnChooser columns={view.columns} visible={visibleIds} onChange={(next) => to({ columns: next })} />
-        <p role="status" className="py-1.5 text-sm text-text-muted" data-entity-count={rows.length} data-filter-key={filterKey} data-settled={!isPlaceholderData && !query.isPending}>
+        <p role="status" className="py-1.5 text-sm text-text-muted" data-entity-count={rows.length} data-filter-key={filterKey} data-sort-key={sortKey} data-settled={!isPlaceholderData && !query.isPending}>
           {isPlaceholderData ? "Filtering…" : `${rows.length.toLocaleString("en")} ${rows.length === 1 ? "row" : "rows"} loaded${hasNextPage ? ", more as you scroll" : ", which is all of them"}`}
         </p>
       </div>
@@ -228,7 +229,7 @@ const Rows = ({ vault, route, view }: { readonly vault: VaultId; readonly route:
       )}
       {sort !== null && (
         <p className="flex flex-wrap items-center gap-2 text-sm text-text-muted" data-sort={sortKey}>
-          Every row sorted by {sort.field}, {sort.direction === "asc" ? "lowest first" : "highest first"}. Rows with no value come last.
+          Every row sorted by {sort.field}, {sort.direction === "asc" ? "ascending" : "descending"}. Rows with no value come last.
           <Button variant="ghost" onClick={() => to({ sort: null })}>Clear the sort</Button>
         </p>
       )}

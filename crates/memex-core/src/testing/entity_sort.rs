@@ -51,7 +51,7 @@ pub fn values(i: usize) -> Vec<(&'static str, Value)> {
         out.push(("released", json!(TIMES[i % TIMES.len()])));
     }
     if i % 3 != 2 {
-        out.push(("live", json!(i % 2 == 0)));
+        out.push(("live", json!(i.is_multiple_of(2))));
     }
     out.push(("category", json!(format!("c{}", i % 3))));
     out.push(("tags", json!([format!("t{}", i % 2), "all", format!("t{}", i % 2)])));
@@ -226,9 +226,20 @@ pub fn sort_matches_an_independent_sort<E: ServerEdges>(s: &Server<E>, admin: &C
             }
             for (filters, keep) in [
                 (vec![filter("category", "eq", "c1")], &(|i: usize| i % 3 == 1) as &dyn Fn(usize) -> bool),
-                (vec![filter("tags", "eq", "t0")], &|i: usize| i % 2 == 0),
+                (vec![filter("tags", "eq", "t0")], &|i: usize| i.is_multiple_of(2)),
                 (vec![filter("tags", "eq", "all"), filter("price", "gte", "0")], &|i: usize| {
                     i % 5 != 4 && PRICES[i % PRICES.len()] >= 0.0
+                }),
+                // Filters on each sorted field itself, which Postgres folds into the scan of that field's index.
+                (vec![filter("price", "lt", "50")], &|i: usize| i % 5 != 4 && PRICES[i % PRICES.len()] < 50.0),
+                (vec![filter("name", "eq", "ALPHA")], &|i: usize| {
+                    i % 6 != 5 && i % 17 != 3 && fold_key(NAMES[i % NAMES.len()]) == "alpha"
+                }),
+                (vec![filter("released", "gte", "2026-01-01")], &|i: usize| {
+                    i % 4 != 3 && parse_time(TIMES[i % TIMES.len()]).unwrap() >= parse_time("2026-01-01").unwrap()
+                }),
+                (vec![filter("live", "eq", "true"), filter("category", "eq", "c0")], &|i: usize| {
+                    i.is_multiple_of(3) && i.is_multiple_of(2)
                 }),
             ] {
                 let kept: Vec<EntityRow> = rows.iter().enumerate().filter(|(i, _)| keep(*i)).map(|(_, r)| r.clone()).collect();

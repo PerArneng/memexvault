@@ -9602,6 +9602,7 @@
             }
           },
           {
+            "description": "From `next_cursor` of the previous page, in the same order.",
             "in": "query",
             "name": "cursor",
             "required": false,
@@ -9610,6 +9611,7 @@
             }
           },
           {
+            "description": "1 to 200. The default is 50.",
             "in": "query",
             "name": "limit",
             "required": false,
@@ -9620,6 +9622,7 @@
             }
           },
           {
+            "description": "`<field>:asc` or `<field>:desc`, across every row that passes the filters. The field must be filterable and hold one text, number, boolean or date, not a list. Text sorts folded, in byte order, and `false` before `true`. Ties go by id, in the same direction. Rows with no value in the field, or text over 512 bytes, come last in both directions. Without it, or with `created`, rows are in id order.",
             "in": "query",
             "name": "sort",
             "required": false,
