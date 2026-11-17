@@ -296,6 +296,11 @@ impl PgStore {
         Ok(writer)
     }
 
+    /// Whether the lease is still this vault's writer and its connection is open, with no round trip. A connection that died shows as closed once a call on it has failed.
+    pub fn lease_held(&self, lease: &PgLease) -> bool {
+        self.writer(lease).is_ok()
+    }
+
     /// Ends the writer connection, which releases the advisory lock.
     pub fn close_vault(&self, lease: &PgLease) -> Result<(), PgError> {
         self.writer(lease)?;

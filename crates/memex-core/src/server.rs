@@ -72,6 +72,23 @@ impl Drop for AsOfSlot<'_> {
 const TOKEN_PREFIX: &str = "mvx_";
 const SESSION_PREFIX: &str = "mxs_";
 const TOUCH_EVERY_MS: i64 = 60_000;
+/// How long after a failed try for a lost writer lease the next one waits, doubling from the first up to the most.
+pub const REGAIN_FIRST_MS: i64 = 250;
+pub const REGAIN_MAX_MS: i64 = 5_000;
+/// What a write to a vault gets while its lease is being regained. It maps to 503, so a client tries again.
+pub const LEASE_REGAINING: &str = "the vault's writer lease was lost and is being regained";
+
+/// The wait before the next try, after `tries` failed ones.
+pub fn regain_delay_ms(tries: u32) -> i64 {
+    (REGAIN_FIRST_MS << tries.saturating_sub(1).min(16)).min(REGAIN_MAX_MS)
+}
+
+/// A vault's writer lease, held or lost. A lost one is tried for again, with backoff, by whichever call needs it next.
+#[derive(Debug, Clone)]
+enum LeaseSlot {
+    Held(WriterLease),
+    Lost { lost_at_ms: i64, tries: u32, next_try_ms: i64 },
+}
 
 /// A new browser session. `session_id` is shown once, in the cookie, and only its hash is stored.
 #[derive(Debug)]
@@ -347,7 +364,7 @@ pub struct Server<E: ServerEdges> {
     /// Lives in memory: a restart forgets it, and one server serves each database.
     login_limiter: Mutex<LoginLimiter>,
     vector_projector: Mutex<VectorProjector>,
-    leases: Mutex<HashMap<VaultId, WriterLease>>,
+    leases: Mutex<HashMap<VaultId, LeaseSlot>>,
     /// Decisions read state and then commit, so they run one at a time per vault. The writer lease stops other processes.
     write_locks: Mutex<HashMap<VaultId, Arc<Mutex<()>>>>,
     /// What a combination's Wilson bound has to reach. Set once at startup, from settings.
@@ -525,15 +542,66 @@ impl<E: ServerEdges> Server<E> {
         }
     }
 
+    /// The vault's writer lease, taken the first time it's needed. A lease whose connection has gone is dropped and taken again through `open_vault`, which refuses while another writer holds it, and then cleans up as at startup. Tries back off, so an outage costs a few connections a minute and two log lines: lost and regained.
     fn lease(&self, vault: &VaultId) -> Result<WriterLease, ServerError> {
+        let store = self.engine.store();
         let mut leases = self.leases.lock().expect("lock");
-        if let Some(l) = leases.get(vault) {
-            return Ok(l.clone());
+        let now = self.now();
+        let (lost_at_ms, tries) = match leases.get(vault) {
+            None => {
+                let lease = store.open_vault(vault)?;
+                self.blobs.purge_incomplete(vault)?;
+                leases.insert(vault.clone(), LeaseSlot::Held(lease.clone()));
+                return Ok(lease);
+            }
+            Some(LeaseSlot::Held(l)) if store.lease_held(l) => return Ok(l.clone()),
+            Some(LeaseSlot::Held(_)) => {
+                tracing::warn!(vault = %vault, "lost the vault's writer lease, so its writes fail until it's regained");
+                (now, 0)
+            }
+            Some(LeaseSlot::Lost { next_try_ms, .. }) if now < *next_try_ms => return Err(ServerError::Unavailable(LEASE_REGAINING.into())),
+            Some(LeaseSlot::Lost { lost_at_ms, tries, .. }) => (*lost_at_ms, *tries),
+        };
+        let taken = store
+            .open_vault(vault)
+            .map_err(ServerError::from)
+            .and_then(|lease| match self.blobs.purge_incomplete(vault) {
+                Ok(_) => Ok(lease),
+                // Let it go again, or this process would hold the lock with nothing using it.
+                Err(e) => {
+                    let _ = store.close_vault(&lease);
+                    Err(e.into())
+                }
+            });
+        match taken {
+            Ok(lease) => {
+                tracing::info!(vault = %vault, after_ms = now - lost_at_ms, tries = tries + 1, "regained the vault's writer lease");
+                leases.insert(vault.clone(), LeaseSlot::Held(lease.clone()));
+                Ok(lease)
+            }
+            Err(e) => {
+                let tries = tries + 1;
+                tracing::debug!(vault = %vault, tries, error = %e, "can't regain the vault's writer lease yet");
+                leases.insert(
+                    vault.clone(),
+                    LeaseSlot::Lost {
+                        lost_at_ms,
+                        tries,
+                        next_try_ms: now + regain_delay_ms(tries),
+                    },
+                );
+                Err(e)
+            }
         }
-        let lease = self.engine.store().open_vault(vault)?;
-        self.blobs.purge_incomplete(vault)?;
-        leases.insert(vault.clone(), lease.clone());
-        Ok(lease)
+    }
+
+    /// True while this vault's writer lease is lost and not yet regained, so a caller can stay quiet about the failures that follow: the server logs the loss and the regain once each.
+    pub fn lease_lost(&self, vault: &VaultId) -> bool {
+        match self.leases.lock().expect("lock").get(vault) {
+            Some(LeaseSlot::Held(l)) => !self.engine.store().lease_held(l),
+            Some(LeaseSlot::Lost { .. }) => true,
+            None => false,
+        }
     }
 
     /// The first-run step. Creates a server admin and returns its token once. Refused if any principal exists.

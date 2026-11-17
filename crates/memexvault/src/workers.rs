@@ -5,7 +5,7 @@ use memex_core::{Server, ServerEdges, StepOutcome};
 use memex_types::{JobRow, Mutation, VaultId};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -14,6 +14,37 @@ use std::time::Duration;
 const KEEPER_POLL: Duration = Duration::from_millis(250);
 /// How long a keeper waits to try again after the store failed a renewal.
 const RENEW_RETRY_MS: i64 = 2_000;
+
+/// The least time between two lines of the same warning from the poll loop, across all worker threads.
+const QUIET_MS: i64 = 10_000;
+
+/// Lets one warning through at most once per `QUIET_MS`, process wide, and counts the ones it held back. Every worker thread polls every vault ten times a second, so a database that's away would otherwise fill the log.
+struct Quiet {
+    last_ms: AtomicI64,
+    held: AtomicU64,
+}
+
+impl Quiet {
+    const fn new() -> Self {
+        Self {
+            last_ms: AtomicI64::new(i64::MIN),
+            held: AtomicU64::new(0),
+        }
+    }
+
+    /// Some(how many were held back since the last line) when this one may be logged.
+    fn allow(&self, now_ms: i64) -> Option<u64> {
+        let last = self.last_ms.load(Ordering::Relaxed);
+        if now_ms.saturating_sub(last) >= QUIET_MS && self.last_ms.compare_exchange(last, now_ms, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+            return Some(self.held.swap(0, Ordering::Relaxed));
+        }
+        self.held.fetch_add(1, Ordering::Relaxed);
+        None
+    }
+}
+
+static LIST_QUIET: Quiet = Quiet::new();
+static CLAIM_QUIET: Quiet = Quiet::new();
 
 /// Why a job failed. `retryable: false` means trying again can't help.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,20 +96,31 @@ fn keep_lease<E: ServerEdges>(server: &Server<E>, vault: &VaultId, job: &JobRow,
     // Counted from the claim, as this thread can start late on a busy machine.
     let claimed_at = job.lease_until_ms.map_or_else(|| clock.now_ms(), |until| until - memex_core::jobs::LEASE_MS);
     let mut next_at = claimed_at + memex_core::jobs::RENEW_EVERY_MS;
+    // One line when renewals start failing and one when they work again, however long the store is away.
+    let mut failing = false;
     while let Err(RecvTimeoutError::Timeout) = finished.recv_timeout(KEEPER_POLL) {
         let now = clock.now_ms();
         if now < next_at {
             continue;
         }
         match server.hold_job(vault, job, false, vec![]) {
-            Ok(true) => next_at = now + memex_core::jobs::RENEW_EVERY_MS,
+            Ok(true) => {
+                if failing {
+                    tracing::info!(job = %job.header.id, "renewed the job's lease again");
+                    failing = false;
+                }
+                next_at = now + memex_core::jobs::RENEW_EVERY_MS;
+            }
             Ok(false) | Err(memex_core::ServerError::NotFound) => {
                 tracing::info!(job = %job.header.id, "the job was cancelled or taken, so its handler stops");
                 hold.lost.store(true, Ordering::Relaxed);
                 return;
             }
             Err(e) => {
-                tracing::warn!(job = %job.header.id, error = %e, "can't renew a job's lease, and will try again");
+                if !failing {
+                    tracing::warn!(job = %job.header.id, error = %e, "can't renew a job's lease, and will keep trying");
+                    failing = true;
+                }
                 next_at = now + RENEW_RETRY_MS;
             }
         }
@@ -134,10 +176,14 @@ where
     E: ServerEdges,
     Server<E>: Sync,
 {
+    use memex_core::Clock as _;
+    let now_ms = || server.engine().clock().now_ms();
     let vaults = match server.vault_ids() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!(error = %e, "can't list vaults");
+            if let Some(held) = LIST_QUIET.allow(now_ms()) {
+                tracing::warn!(error = %e, held_back = held, "can't list vaults");
+            }
             return false;
         }
     };
@@ -145,8 +191,12 @@ where
         let job = match server.claim_job(&vault, kind, owner) {
             Ok(Some(j)) => j,
             Ok(None) => continue,
+            // The server says once that the vault's lease was lost and once that it's back.
+            Err(_) if server.lease_lost(&vault) => continue,
             Err(e) => {
-                tracing::warn!(error = %e, "can't claim a job");
+                if let Some(held) = CLAIM_QUIET.allow(now_ms()) {
+                    tracing::warn!(vault = %vault, error = %e, held_back = held, "can't claim a job");
+                }
                 continue;
             }
         };

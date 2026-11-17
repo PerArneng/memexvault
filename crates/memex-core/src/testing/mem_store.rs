@@ -21,6 +21,7 @@ struct VaultState {
 pub struct CallCounts {
     pub reads: AtomicU64,
     pub commits: AtomicU64,
+    pub opens: AtomicU64,
 }
 
 /// An in-memory Store with the same semantics as a real one. Snapshots share state until a commit copies it.
@@ -44,6 +45,7 @@ pub struct MemStore {
     leases: Mutex<HashMap<VaultId, u64>>,
     next_token: AtomicU64,
     fail_next_commit: Mutex<Option<StoreError>>,
+    fail_opens: Mutex<Option<(u32, StoreError)>>,
     counts: CallCounts,
 }
 
@@ -59,6 +61,16 @@ impl MemStore {
     /// The next commit fails with this error and applies nothing, like a transaction the backend aborted.
     pub fn fail_next_commit(&self, error: StoreError) {
         *self.fail_next_commit.lock().expect("lock") = Some(error);
+    }
+
+    /// The vault's writer loses its lease, as when its connection drops and the backend lets the lock go. The vault and its data stay.
+    pub fn lose_lease(&self, vault: &VaultId) {
+        self.leases.lock().expect("lock").remove(vault);
+    }
+
+    /// The next `n` opens of any vault fail with this error, as when the backend is still away. Zero lets them work again.
+    pub fn fail_next_opens(&self, n: u32, error: StoreError) {
+        *self.fail_opens.lock().expect("lock") = (n > 0).then_some((n, error));
     }
 
     fn check_lease(&self, lease: &WriterLease) -> Result<(), StoreError> {
@@ -931,6 +943,18 @@ impl Store for MemStore {
     }
 
     fn open_vault(&self, vault: &VaultId) -> Result<WriterLease, StoreError> {
+        self.counts.opens.fetch_add(1, Ordering::Relaxed);
+        {
+            let mut fail = self.fail_opens.lock().expect("lock");
+            if let Some((n, e)) = fail.as_mut() {
+                let e = e.clone();
+                *n -= 1;
+                if *n == 0 {
+                    *fail = None;
+                }
+                return Err(e);
+            }
+        }
         let mut leases = self.leases.lock().expect("lock");
         if leases.contains_key(vault) {
             return Err(StoreError::WriterActive { vault: vault.clone() });
@@ -945,6 +969,10 @@ impl Store for MemStore {
         self.check_lease(lease)?;
         self.leases.lock().expect("lock").remove(&lease.vault);
         Ok(())
+    }
+
+    fn lease_held(&self, lease: &WriterLease) -> bool {
+        self.check_lease(lease).is_ok()
     }
 
     fn snapshot(&self, vault: &VaultId) -> Result<MemSnapshot<'_>, StoreError> {

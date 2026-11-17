@@ -295,6 +295,8 @@ pub trait Store {
     /// Creates the vault if it's new, and takes its exclusive writer lease.
     fn open_vault(&self, vault: &VaultId) -> Result<WriterLease, StoreError>;
     fn close_vault(&self, lease: &WriterLease) -> Result<(), StoreError>;
+    /// Whether this lease can still write, as far as the store knows without asking the backend. False once it's closed, replaced or its connection is gone, which a failed call is what usually shows.
+    fn lease_held(&self, lease: &WriterLease) -> bool;
     fn snapshot(&self, vault: &VaultId) -> Result<Self::Snap<'_>, StoreError>;
     /// Atomic and durable when it returns. An error means no trace of the event or its mutations.
     fn commit(&self, lease: &WriterLease, event: &Event, mutations: &[Mutation]) -> Result<Receipt, StoreError> {
