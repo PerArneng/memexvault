@@ -1,6 +1,9 @@
 import {
   activityPageFromWire,
   changeOriginFromWire,
+  chatSettingsFromWire,
+  chatThreadDetailFromWire,
+  chatThreadPageFromWire,
   citingClaimsFromWire,
   claimVersionFromWire,
   entityDetailFromWire,
@@ -302,6 +305,10 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
         () => client.GET("/api/v1/vaults/{id}/search", { params: { path: { id: vault }, query: searchQuery(request) }, ...(cancel === null ? {} : { signal: cancel as AbortSignal }) }),
         evidencePackageFromWire,
       ),
+    getChatSettings: (vault) => attempt(() => client.GET("/api/v1/vaults/{id}/chat/settings", { params: { path: { id: vault } } }), chatSettingsFromWire),
+    listChatThreads: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/chat/threads", { params: { path: { id: vault }, query: page(cursor) } }), chatThreadPageFromWire),
+    getChatThread: (vault, id, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/chat/threads/{tid}", { params: { path: { id: vault, tid: id }, query: page(cursor) } }), chatThreadDetailFromWire),
+    deleteChatThread: (vault, id) => attempt(() => client.DELETE("/api/v1/vaults/{id}/chat/threads/{tid}", { params: { path: { id: vault, tid: id } } }), none),
     health: (timeoutMs) => attempt(() => client.GET("/api/v1/health", { signal: AbortSignal.timeout(timeoutMs) }), none),
   };
 };

@@ -27,6 +27,9 @@ import type { IngestCases } from "./ingest-cases";
 import type { Uploader } from "./upload-queue";
 import { createSearchCases } from "./search-cases";
 import type { SearchCases } from "./search-cases";
+import { createChatCases } from "./chat-cases";
+import type { ChatCases } from "./chat-cases";
+import type { AgentChannel } from "./chat";
 
 export interface Edges {
   readonly clock: Clock;
@@ -40,13 +43,15 @@ export interface Edges {
   /** Left out by tests of other screens, which never open a live view or upload. */
   readonly activity?: ActivityFeed;
   readonly uploader?: Uploader;
+  /** Loads the chat's channel, and the AG-UI client with it, the first time someone sends a message. Left out, chat says it can't run. */
+  readonly agentChannel?: () => Promise<AgentChannel>;
 }
 
 /** A vault list can't run forever if a server hands back cursors in a loop: 50 pages of 200 is 10,000 vaults. */
 const MAX_VAULT_PAGES = 50;
 
 /** The single entry point for views. Later specs add a method per use case. */
-export interface Engine extends WikiCases, DocumentCases, ReviewCases, EntityCases, SearchCases, IngestCases {
+export interface Engine extends WikiCases, DocumentCases, ReviewCases, EntityCases, SearchCases, IngestCases, ChatCases {
   startedAt(): EpochMs;
   uptimeMs(): number;
   settings(): Settings;
@@ -140,6 +145,7 @@ export const createEngine = (edges: Edges): Engine => {
     ...createEntityCases({ edges, watched }),
     ...ingest,
     ...createSearchCases({ edges, watched }),
+    ...createChatCases({ edges, watched }),
     startedAt: () => started,
     uptimeMs: () => clock.now() - started,
     settings: () => edges.settings,
