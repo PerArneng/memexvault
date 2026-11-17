@@ -159,6 +159,8 @@ export interface EntityListRequest {
   readonly type: string;
   /** `<field>:<op>:<value>`. */
   readonly filters: readonly string[];
+  /** `<field>:<asc|desc>`, across every row, or null for id order. A cursor only continues the order it came from. */
+  readonly sort: string | null;
   readonly cursor: string | null;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attributeOf, entityLabel, filterProblem, MAX_DEFAULT_COLUMNS, MAX_SCHEMA_FIELDS, parseFieldValue, schemaView, sortLoadedRows, valueText } from "./entity-schema";
+import { attributeOf, entityLabel, filterProblem, MAX_DEFAULT_COLUMNS, MAX_SCHEMA_FIELDS, parseFieldValue, schemaView, valueText } from "./entity-schema";
 import type { EntityFilterDef, SchemaField } from "./entity-schema";
 
 const schemaOf = (properties: unknown, required?: unknown) => ({ type: "object", additionalProperties: false, properties, ...(required === undefined ? {} : { required }) });
@@ -161,24 +161,19 @@ describe("valueText", () => {
   });
 });
 
-describe("sortLoadedRows", () => {
-  const rows = [{ v: 2 }, { v: null }, { v: 10 }, { v: 1 }];
-  it("sorts numbers as numbers, both ways, with empty values last", () => {
-    expect(sortLoadedRows(rows, (r) => r.v, "number", "asc").map((r) => r.v)).toEqual([1, 2, 10, null]);
-    expect(sortLoadedRows(rows, (r) => r.v, "number", "desc").map((r) => r.v)).toEqual([10, 2, 1, null]);
-  });
-  it("sorts text ignoring case, and keeps the order of equal rows", () => {
-    const text = [{ v: "b", n: 1 }, { v: "A", n: 2 }, { v: "a", n: 3 }];
-    expect(sortLoadedRows(text, (r) => r.v, "text", "asc").map((r) => r.n)).toEqual([2, 3, 1]);
-  });
-  it("copes with a value of the wrong type in a numeric column", () => {
-    const mixed = [{ v: 2 }, { v: "x" }, { v: 1 }];
-    expect(() => sortLoadedRows(mixed, (r) => r.v, "number", "asc")).not.toThrow();
-  });
-  it("doesn't change what it's given", () => {
-    const before = [...rows];
-    sortLoadedRows(rows, (r) => r.v, "number", "asc");
-    expect(rows).toEqual(before);
+describe("sortable columns", () => {
+  it("are the filterable fields with one comparable value, as the server's parse_sort decides", () => {
+    const view = schemaView({ type: "object", properties: {
+      name: { type: "string", filterable: true },
+      price: { type: "number", filterable: true },
+      at: { type: "string", format: "date", filterable: true },
+      live: { type: "boolean", filterable: true },
+      notes: { type: "string" },
+      tags: { type: "array", items: { type: "string" }, filterable: true },
+      shape: { type: "object", filterable: true },
+    } });
+    const sortable = Object.fromEntries(view.columns.map((c) => [c.id, c.sortable]));
+    expect(sortable).toEqual({ name: true, price: true, at: true, live: true, notes: false, tags: false, shape: false });
   });
 });
 

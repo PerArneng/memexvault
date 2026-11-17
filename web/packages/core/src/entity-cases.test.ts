@@ -32,10 +32,10 @@ describe("entity cases", () => {
 
   it("sends filters in the API's form and pages by cursor", async () => {
     const { api, engine } = setup({ entities: [row("a"), row("b"), row("c")], pageSize: 2 });
-    const first = await engine.listEntities(vault, "T", [{ field: "price", op: "lt", value: "100" }], null);
+    const first = await engine.listEntities(vault, "T", [{ field: "price", op: "lt", value: "100" }], null, null);
     expect(api.calls).toContain("listEntities:T:price:lt:100");
     expect(first.ok && first.value.nextCursor).toBe("2");
-    const second = await engine.listEntities(vault, "T", [], "2");
+    const second = await engine.listEntities(vault, "T", [], null, "2");
     expect(second.ok && second.value.items.map((r) => r.id)).toEqual(["c"]);
   });
 

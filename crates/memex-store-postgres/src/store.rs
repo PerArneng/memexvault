@@ -3,8 +3,8 @@ use crate::net::net_mutations;
 use crate::tls::Target;
 use memex_types::{
     AssertionRow, BlockKind, BlockRow, ChangeSetRow, ChatMessage, ChatReservation, ChatStored, ChatThread, ChatThreadKey, DocKind, EdgeDirection, EdgeRow,
-    EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, FilterValue, Header, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow, RenditionRow,
-    RevisionRow, Row, RowKey, SegmentRow, SharedValue, SourceRow, Status, Table, ValueMatch, VaultId,
+    EntityRow, EntityTypeRow, Event, EvidenceRow, FieldFilter, FieldSort, FilterValue, Header, IdDigest, JobRow, JobState, Mutation, ObjectId, PageRow,
+    RenditionRow, RevisionRow, Row, RowKey, SegmentRow, SharedValue, SortAfter, SortColumn, SourceRow, Status, Table, ValueMatch, VaultId,
 };
 use postgres::{Client, Statement, types::ToSql};
 use serde_json::Value;
@@ -923,6 +923,15 @@ fn upsert_json_row(t: &mut postgres::Transaction<'_>, cache: &mut Statements, sc
     Ok(())
 }
 
+/// The field-value table's column for a value, and the value as a parameter.
+fn filter_param(value: &FilterValue) -> (&'static str, Box<dyn ToSql + Sync>) {
+    match value {
+        FilterValue::Text(t) => ("text_value", Box::new(t.clone())),
+        FilterValue::Number(n) => ("number_value", Box::new(*n)),
+        FilterValue::Time(t) => ("time_value", Box::new(*t)),
+    }
+}
+
 fn block_kind_text(kind: BlockKind) -> String {
     format!("{kind:?}").to_lowercase()
 }
@@ -1704,6 +1713,80 @@ impl PgSnapshot<'_> {
         );
         let refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref() as &(dyn ToSql + Sync)).collect();
         let rows = self.with_statement(&sql, |c, st| c.query(st, &refs))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Entity(e) = json_row(r) { Some(e) } else { None })
+            .collect())
+    }
+
+    /// Two queries in this snapshot: rows with a value, walking the sorted column's B-tree from the cursor, then, if the page isn't full, rows with none, in id order. Filters are semi-joins, so a list field's several values can't repeat a row.
+    pub fn entities_sorted(
+        &self,
+        type_name: &str,
+        filters: &[FieldFilter],
+        sort: &FieldSort,
+        after: Option<&SortAfter>,
+        limit: usize,
+    ) -> Result<Vec<EntityRow>, PgError> {
+        let s = &self.schema;
+        let column = match sort.column {
+            SortColumn::Text => "text_value",
+            SortColumn::Number => "number_value",
+            SortColumn::Time => "time_value",
+        };
+        let (dir, past) = if sort.descending { ("DESC", "<") } else { ("ASC", ">") };
+        let filter_sql = |params: &mut Vec<Box<dyn ToSql + Sync>>, entity: &str| {
+            let mut out = String::new();
+            for (i, f) in filters.iter().enumerate() {
+                params.push(Box::new(f.field.clone()));
+                let field_param = params.len();
+                let (col, value) = filter_param(&f.value);
+                params.push(value);
+                out.push_str(&format!(
+                    " AND EXISTS (SELECT 1 FROM {s}.entity_fields x{i} WHERE x{i}.entity_id = {entity} AND x{i}.type_name = $1 AND x{i}.field = ${field_param} AND x{i}.{col} {op} ${value_param})",
+                    op = f.op.as_sql(),
+                    value_param = params.len()
+                ));
+            }
+            out
+        };
+        let mut out = vec![];
+        if after.is_none_or(|a| a.value.is_some()) {
+            let mut params: Vec<Box<dyn ToSql + Sync>> = vec![Box::new(type_name.to_string()), Box::new(sort.field.clone()), Box::new(limit as i64)];
+            let mut conditions = String::new();
+            if let Some(SortAfter { value: Some(v), id }) = after {
+                params.push(filter_param(v).1);
+                params.push(Box::new(id.0.clone()));
+                conditions.push_str(&format!(" AND (v.{column}, v.entity_id) {past} (${}, ${})", params.len() - 1, params.len()));
+            }
+            conditions.push_str(&filter_sql(&mut params, "v.entity_id"));
+            let sql = format!(
+                "SELECT e.row FROM {s}.entity_fields v JOIN {s}.entities e ON e.id = v.entity_id WHERE v.type_name = $1 AND v.field = $2 AND v.{column} IS NOT NULL{conditions} ORDER BY v.{column} {dir}, v.entity_id {dir} LIMIT $3"
+            );
+            out = self.entity_rows(&sql, &params)?;
+        }
+        if out.len() < limit {
+            let after_id = after.filter(|a| a.value.is_none()).map(|a| a.id.0.clone());
+            let mut params: Vec<Box<dyn ToSql + Sync>> = vec![
+                Box::new(type_name.to_string()),
+                Box::new(sort.field.clone()),
+                Box::new((limit - out.len()) as i64),
+                Box::new(after_id),
+            ];
+            let conditions = filter_sql(&mut params, "e.id");
+            let sql = format!(
+                "SELECT e.row FROM {s}.entities e WHERE e.current AND e.type_name = $1 AND ($4::text IS NULL OR e.id {past} $4)
+                 AND NOT EXISTS (SELECT 1 FROM {s}.entity_fields v WHERE v.entity_id = e.id AND v.type_name = $1 AND v.field = $2 AND v.{column} IS NOT NULL){conditions}
+                 ORDER BY e.id {dir} LIMIT $3"
+            );
+            out.extend(self.entity_rows(&sql, &params)?);
+        }
+        Ok(out)
+    }
+
+    fn entity_rows(&self, sql: &str, params: &[Box<dyn ToSql + Sync>]) -> Result<Vec<EntityRow>, PgError> {
+        let refs: Vec<&(dyn ToSql + Sync)> = params.iter().map(|p| p.as_ref() as &(dyn ToSql + Sync)).collect();
+        let rows = self.with_statement(sql, |c, st| c.query(st, &refs))?;
         Ok(rows
             .iter()
             .filter_map(|r| if let Row::Entity(e) = json_row(r) { Some(e) } else { None })

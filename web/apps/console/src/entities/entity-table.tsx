@@ -1,4 +1,4 @@
-import { attributeOf, entityFilterText, entityLabel, entityPath, FILTER_OP_LABELS, filterProblem, requestIdText, sortLoadedRows, valueText } from "@memex/core";
+import { attributeOf, entityFilterText, entityLabel, entityPath, entitySortText, FILTER_OP_LABELS, filterProblem, requestIdText, valueText } from "@memex/core";
 import type { EntityColumn, EntityFilter, EntityFilterDef, EntitySort, EntityTableRoute, FilterOp, SchemaField, SchemaView } from "@memex/core";
 import type { EntitySummary, Page, VaultId } from "@memex/types";
 import { Button, ConflictBadge, DataTable, EmptyState, Input, Badge } from "@memex/ui";
@@ -156,19 +156,22 @@ const Rows = ({ vault, route, view }: { readonly vault: VaultId; readonly route:
   const engine = useEngine();
   const go = useGo();
   const filterKey = route.filters.map(entityFilterText).join("&");
+  const known = useMemo(() => new Map(view.columns.map((c) => [c.id, c])), [view.columns]);
+  // A sort the URL names on a field that can't be sorted isn't sent, and the page says why.
+  const asked = route.sort;
+  const askedColumn = asked === null ? undefined : known.get(asked.field);
+  const sort = askedColumn?.sortable === true ? asked : null;
+  const sortKey = sort === null ? "" : entitySortText(sort);
   const query = useInfiniteQuery({
-    queryKey: ENTITY_KEYS.rows(vault, route.type, filterKey),
-    queryFn: async ({ pageParam }) => unwrap(await engine.listEntities(vault, route.type, route.filters, pageParam)),
+    queryKey: ENTITY_KEYS.rows(vault, route.type, filterKey, sortKey),
+    queryFn: async ({ pageParam }) => unwrap(await engine.listEntities(vault, route.type, route.filters, sort, pageParam)),
     initialPageParam: null as string | null,
     getNextPageParam: (last: Page<EntitySummary>) => last.nextCursor,
     placeholderData: keepPreviousData,
   });
   const rows = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
-  const known = useMemo(() => new Map(view.columns.map((c) => [c.id, c])), [view.columns]);
   const visibleIds = useMemo(() => route.columns?.filter((c) => known.has(c)) ?? view.columns.filter((c) => c.visibleByDefault).map((c) => c.id), [known, route.columns, view.columns]);
-  const sortColumn = route.sort === null ? undefined : known.get(route.sort.field);
-  const sort = sortColumn === undefined ? null : route.sort;
-  const sorted = useMemo(() => (sort === null ? rows : sortLoadedRows(rows, (r) => attributeOf(r.attributes, sort.field), sortColumn?.kind ?? "text", sort.direction)), [rows, sort, sortColumn?.kind]);
+  const unsortable = useMemo(() => visibleIds.flatMap((id) => (known.get(id)?.sortable === false ? [id] : [])), [known, visibleIds]);
   const to = useCallback((over: Partial<EntityTableRoute>) => go(entityPath(vault, { ...route, ...over }), true), [go, route, vault]);
 
   const columns = useMemo((): readonly Column<EntitySummary>[] => {
@@ -182,12 +185,14 @@ const Rows = ({ vault, route, view }: { readonly vault: VaultId; readonly route:
           header: c.label,
           width: c.width,
           numeric: c.numeric,
-          ariaSort: sortedHere === null ? "none" : sortedHere === "asc" ? "ascending" : "descending",
-          // Sorting says what it covers, as the API only lists by id: see the note this turns on.
-          headerCell: (
-            <button type="button" className="inline-flex items-center gap-1 hover:text-text" title="Sort the rows loaded so far" onClick={() => to({ sort: nextSort(c.id, sort) })}>
+          ...(c.sortable ? { ariaSort: sortedHere === null ? "none" : sortedHere === "asc" ? "ascending" : "descending" } : {}),
+          // The server sorts every row. A field it can't sort by says so, here and in the note under the table.
+          headerCell: c.sortable ? (
+            <button type="button" className="inline-flex items-center gap-1 hover:text-text" title={`Sort every row by ${c.label}`} onClick={() => to({ sort: nextSort(c.id, sort) })}>
               {c.label} {sortedHere !== null && <span aria-hidden={true}>{SORT_MARK[sortedHere]}</span>}
             </button>
+          ) : (
+            <span title={`${c.label} can't be sorted`} data-unsortable-column={c.id}>{c.label}</span>
           ),
           cell: (row) => {
             const text = valueText(attributeOf(row.attributes, c.id));
@@ -214,15 +219,23 @@ const Rows = ({ vault, route, view }: { readonly vault: VaultId; readonly route:
           {isPlaceholderData ? "Filtering…" : `${rows.length.toLocaleString("en")} ${rows.length === 1 ? "row" : "rows"} loaded${hasNextPage ? ", more as you scroll" : ", which is all of them"}`}
         </p>
       </div>
-      {sort !== null && (
-        <div data-sort-note={true}>
-          <Callout tone="warning" title={`Sorted by ${sort.field} within the ${rows.length.toLocaleString("en")} rows loaded so far, not across every row.`}>
-            The server lists entities by id, so a row that isn't loaded yet can belong anywhere in this order. Filters do cover every row.
-            {" "}Loading stops while sorted, so rows don't move under you.
-            {hasNextPage && <> <Button onClick={loadMore} disabled={isFetchingNextPage}>Load more rows</Button></>}
-            {" "}<Button variant="ghost" onClick={() => to({ sort: null })}>Clear the sort</Button>
+      {asked !== null && sort === null && (
+        <div data-sort-refused={asked.field}>
+          <Callout tone="warning" title={askedColumn === undefined ? `This type has no field ${asked.field} to sort by, so rows are in the order they were created.` : `${asked.field} can't be sorted, so rows are in the order they were created.`}>
+            <Button variant="ghost" onClick={() => to({ sort: null })}>Clear the sort</Button>
           </Callout>
         </div>
+      )}
+      {sort !== null && (
+        <p className="flex flex-wrap items-center gap-2 text-sm text-text-muted" data-sort={sortKey}>
+          Every row sorted by {sort.field}, {sort.direction === "asc" ? "lowest first" : "highest first"}. Rows with no value come last.
+          <Button variant="ghost" onClick={() => to({ sort: null })}>Clear the sort</Button>
+        </p>
+      )}
+      {unsortable.length > 0 && (
+        <p className="text-xs text-text-muted" data-unsortable={unsortable.join(",")}>
+          {unsortable.join(", ")} can't be sorted: only a filterable field holding one text, number, date or true-or-false value can.
+        </p>
       )}
       {isFetchNextPageError && (
         <Callout tone="danger" title={`Couldn't load more rows: ${query.error?.message ?? "no answer"}`}>
@@ -235,7 +248,7 @@ const Rows = ({ vault, route, view }: { readonly vault: VaultId; readonly route:
         isEmpty={(d) => d.pages.every((p) => p.items.length === 0)}
         empty={<EmptyState title={route.filters.length > 0 ? "No entity matches these filters." : "No entities of this type yet."} />}
       >
-        {() => <DataTable label={`${route.type} entities`} rows={sorted} columns={columns} rowKey={(r) => r.id} height={TABLE_HEIGHT} {...(sort === null ? { onNearEnd: loadMore } : {})} />}
+        {() => <DataTable label={`${route.type} entities`} rows={rows} columns={columns} rowKey={(r) => r.id} height={TABLE_HEIGHT} onNearEnd={loadMore} />}
       </QueryView>
     </div>
   );

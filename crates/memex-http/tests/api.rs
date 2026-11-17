@@ -982,6 +982,72 @@ async fn typed_filters_find_entities_and_bad_ones_say_why() {
     assert_eq!(call(&w.s, "GET", &format!("{base}/entities?type=Nope"), t, None).await.0, StatusCode::NOT_FOUND);
 }
 
+/// Spec 087: a sort across every row, paged by its own cursor, and a clear 400 for what can't be sorted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sort_orders_every_row_and_bad_ones_say_why() {
+    let w = world();
+    let (base, seg) = entity_setup(&w).await;
+    let t = Some(w.admin.as_str());
+    let cheap = new_widget(&w, &base, "w1", "Pump", &seg, 10.0).await;
+    let dear = new_widget(&w, &base, "w2", "Valve", &seg, 500.0).await;
+    let mid = new_widget(&w, &base, "w3", "Axle", &seg, 50.0).await;
+    let ids = |v: &Value| {
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["id"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    let (_, desc, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&sort=price:desc"), t, None).await;
+    assert_eq!(ids(&desc), [dear.clone(), mid.clone(), cheap.clone()]);
+    let (_, by_name, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&sort=name:asc&filter=price:gte:50"), t, None).await;
+    assert_eq!(ids(&by_name), [mid.clone(), dear.clone()]);
+    let mut walked = vec![];
+    let mut cursor: Option<String> = None;
+    loop {
+        let after = cursor.as_ref().map_or(String::new(), |c| format!("&cursor={}", urlencoding(c)));
+        let (status, page, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&sort=price:asc&limit=1{after}"), t, None).await;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        walked.extend(ids(&page));
+        match page["next_cursor"].as_str() {
+            Some(c) => cursor = Some(c.to_string()),
+            None => break,
+        }
+    }
+    assert_eq!(walked, [cheap, mid, dear]);
+    for (bad, says) in [
+        ("sort=nope:asc", "the type has no field nope"),
+        ("sort=notes:asc", "the field notes isn't filterable, so it can't be sorted"),
+        ("sort=price", "a sort is <field>:asc or <field>:desc, not 'price'"),
+        ("sort=price:up", "a sort's direction is asc or desc, not 'up'"),
+        (
+            "sort=price:asc&sort=name:asc",
+            "sort can only be given once: sorting by more than one field isn't supported",
+        ),
+        (
+            "sort=price:asc&cursor=abc",
+            "this cursor isn't from a list in this order: start again without one",
+        ),
+    ] {
+        let (status, body, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&{bad}"), t, None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}: {body}");
+        assert_eq!(body["error"]["message"], says, "{bad}");
+    }
+}
+
+fn urlencoding(s: &str) -> String {
+    s.bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect()
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn the_preview_matches_what_a_submission_does() {
     let w = world();

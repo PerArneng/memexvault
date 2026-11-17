@@ -225,3 +225,65 @@ impl FieldLookup {
         }
     }
 }
+
+/// Which column of the field-value table a sort reads. A boolean sorts as the text `false` before `true`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortColumn {
+    Text,
+    Number,
+    Time,
+}
+
+/// An order on one field. Rows with a value come first, by value and then by id, both in the sort's direction. Rows with no value come after them, in either direction, by id in the sort's direction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldSort {
+    pub field: String,
+    pub column: SortColumn,
+    pub descending: bool,
+}
+
+/// Where a sorted page ended: the last row's value, none if it had none, and its id. The next page starts after it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SortAfter {
+    pub value: Option<FilterValue>,
+    pub id: ObjectId,
+}
+
+/// Text in byte order, which is Postgres's `C` collation, and numbers and times by value. Values of different kinds don't meet in one sort.
+pub fn compare_values(a: &FilterValue, b: &FilterValue) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match (a, b) {
+        (FilterValue::Text(x), FilterValue::Text(y)) => x.cmp(y),
+        (FilterValue::Number(x), FilterValue::Number(y)) => x.partial_cmp(y).unwrap_or(Ordering::Equal),
+        (FilterValue::Time(x), FilterValue::Time(y)) => x.cmp(y),
+        _ => Ordering::Equal,
+    }
+}
+
+impl FieldSort {
+    /// The order of two rows, given each one's value and id. Every store sorts by this.
+    pub fn compare(&self, a: (Option<&FilterValue>, &ObjectId), b: (Option<&FilterValue>, &ObjectId)) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        let directed = |o: Ordering| if self.descending { o.reverse() } else { o };
+        match (a.0, b.0) {
+            (Some(x), Some(y)) => directed(compare_values(x, y).then_with(|| a.1.cmp(b.1))),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => directed(a.1.cmp(b.1)),
+        }
+    }
+}
+
+impl EntityRow {
+    /// The value a sort reads: the field's current value in the sort's column, as the field-value table holds it. None for a merged-away entity, a field with no value, and text too long for the table.
+    pub fn sort_value(&self, sort: &FieldSort) -> Option<FilterValue> {
+        if !self.is_current() {
+            return None;
+        }
+        self.field(&sort.field)?.lookups.iter().find_map(|l| match sort.column {
+            SortColumn::Text => l.text.clone().map(FilterValue::Text),
+            SortColumn::Number => l.number.as_ref().and_then(Number::as_f64).map(FilterValue::Number),
+            SortColumn::Time => l.time_ms.map(FilterValue::Time),
+        })
+    }
+}

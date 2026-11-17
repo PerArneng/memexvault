@@ -289,6 +289,28 @@ fn pg_entity_merge_and_revert_restore_rows_values_and_redirects() {
     let _ = &r.pg;
 }
 
+/// Spec 087's items 1, 2 and 4 on Postgres: the same suite as the in-memory store's.
+#[test]
+#[ignore = "needs Postgres"]
+fn pg_entity_sort_matches_an_independent_sort() {
+    let r = rig("entity-sort");
+    memex_core::testing::entity_sort::sort_matches_an_independent_sort(&r.s, &r.admin, &r.v);
+}
+
+#[test]
+#[ignore = "needs Postgres"]
+fn pg_entity_sort_walk_returns_each_row_once_while_rows_are_written() {
+    let r = rig("entity-sort-walk");
+    memex_core::testing::entity_sort::walking_returns_each_row_once_while_rows_are_written(&r.s, &r.admin, &r.v);
+}
+
+#[test]
+#[ignore = "needs Postgres"]
+fn pg_entity_sort_bad_cases() {
+    let r = rig("entity-sort-bad");
+    memex_core::testing::entity_sort::bad_sorts_are_refused(&r.s, &r.admin, &r.v);
+}
+
 fn text(t: String) -> FieldLookup {
     FieldLookup {
         text: Some(t),
@@ -518,5 +540,142 @@ fn entity_filter_bench() {
         .map(|x| x.2)
         .unwrap();
     println!("the target is exact filter p95 <= 2 ms at 200k values: measured {at_200k:.2} ms");
+    let _ = lease;
+}
+
+/// Spec 087's pass rule for item 3, set before anything was measured. Through `Server::list_entities_sorted` and `list_entities`, with the console's page of 200 rows plus one, at 200,000 entities:
+/// - a sorted first page, and a sorted page with a filter, each p95 ≤ 50 ms;
+/// - unsorted filtering, whose query this spec doesn't change, p95 ≤ 50 ms as well, so it's no slower than what spec 045's API time was (p95 26.9 ms through HTTP on debug) by more than the noise of a shared machine.
+const SORT_RULE_P95_MS: f64 = 50.0;
+
+/// Spec 087's item 3. Rows go straight to the store, as in `entity_filter_bench`.
+#[test]
+#[ignore = "needs Postgres; about 2 minutes and 750 MB in its own database"]
+fn entity_sort_bench() {
+    let r = rig("entity-sort-bench");
+    r.s.propose_entity_type(&r.admin, &r.v, "Gadget", None, gadget(), "r".into(), "t".into())
+        .unwrap();
+    let store = r.s.engine().store();
+    let lease = r.s.vault_lease_for_tests(&r.v).unwrap();
+    let mut head = store.snapshot(&r.v).unwrap().head().unwrap().unwrap();
+    let entities: usize = std::env::var("MEMEX_ENTITY_SORT_COUNT").map_or(200_000, |m| m.parse().expect("a number"));
+    let started = Instant::now();
+    let mut loaded = 0;
+    while loaded < entities {
+        let upto = (loaded + 2000).min(entities);
+        // Every tenth has no price, so the sort meets missing values.
+        let mutations: Vec<Mutation> = (loaded..upto)
+            .map(|i| {
+                let mut e = bench_entity(i);
+                if i % 10 == 9 {
+                    e.fields.retain(|f| f.field != "price");
+                }
+                Mutation::Put(Row::Entity(e))
+            })
+            .collect();
+        head += 1;
+        let event = Event {
+            seq: head,
+            vault: r.v.clone(),
+            actor: "bench".into(),
+            time_ms: 0,
+            kind: "state.recorded".into(),
+            schema_version: 1,
+            payload: json!({"mutations": []}),
+        };
+        store
+            .commit_batch(
+                &lease,
+                &[CommitItem {
+                    event: &event,
+                    mutations: &mutations,
+                }],
+            )
+            .unwrap();
+        loaded = upto;
+    }
+    println!("loaded {entities} entities in {:.1} s", started.elapsed().as_secs_f64());
+    let schema = memex_store_postgres::schema_of_vault(&r.v);
+    let mut conn = r.pg.take_conn().unwrap();
+    conn.client
+        .batch_execute(&format!("ANALYZE {schema}.entity_fields; ANALYZE {schema}.entities;"))
+        .unwrap();
+    let size: i64 = conn
+        .client
+        .query_one(
+            &format!("SELECT pg_total_relation_size('{schema}.entity_fields') + pg_total_relation_size('{schema}.entities')"),
+            &[],
+        )
+        .unwrap()
+        .get(0);
+    r.pg.give_conn(conn);
+    println!("entity tables with their indexes: {} MB", size / (1 << 20));
+    let load = || {
+        std::fs::read_to_string("/proc/loadavg")
+            .unwrap_or_default()
+            .split_whitespace()
+            .next()
+            .unwrap_or("?")
+            .to_string()
+    };
+    const N: usize = 300;
+    let mut results: Vec<(String, f64)> = vec![];
+    let mut sorted_lane = |what: &str, sort: &str, filters: &dyn Fn(usize) -> Vec<(String, String, String)>, deep: bool| {
+        let before = load();
+        // A cursor from the middle of the order, for the deep lane.
+        let cursor = deep.then(|| {
+            let (rows, parsed) = r.s.list_entities_sorted(&r.admin, &r.v, "Gadget", &filters(0), sort, None, 1).unwrap();
+            let mut c = memex_core::entity::sort_cursor(&parsed, &rows[0]);
+            for _ in 0..3 {
+                let (rows, _) = r.s.list_entities_sorted(&r.admin, &r.v, "Gadget", &filters(0), sort, Some(&c), 201).unwrap();
+                c = memex_core::entity::sort_cursor(&parsed, &rows[199]);
+            }
+            c
+        });
+        let mut ms = Vec::with_capacity(N);
+        let mut rows_seen = 0;
+        for i in 0..N {
+            let f = filters(i * 7907 % entities);
+            let t = Instant::now();
+            let (rows, _) = r.s.list_entities_sorted(&r.admin, &r.v, "Gadget", &f, sort, cursor.as_deref(), 201).unwrap();
+            ms.push(t.elapsed().as_secs_f64() * 1000.0);
+            rows_seen += rows.len();
+        }
+        let p95 = report(&format!("{what} (avg {} rows, load {before} to {})", rows_seen / N, load()), ms);
+        results.push((what.to_string(), p95));
+    };
+    let none = |_: usize| vec![];
+    let category = |i: usize| vec![("category".to_string(), "eq".to_string(), format!("category {}", i % CATEGORIES))];
+    let half = |_: usize| vec![("price".to_string(), "lt".to_string(), "50000".to_string())];
+    sorted_lane("sorted first page, price asc", "price:asc", &none, false);
+    sorted_lane("sorted first page, price desc", "price:desc", &none, false);
+    sorted_lane("sorted first page, name asc", "name:asc", &none, false);
+    sorted_lane("sorted first page, released desc", "released:desc", &none, false);
+    sorted_lane("sorted, fourth page, price asc", "price:asc", &none, true);
+    sorted_lane("sorted with exact filter ~0.1%, price desc", "price:desc", &category, false);
+    sorted_lane("sorted with range filter ~50%, name asc", "name:asc", &half, false);
+    sorted_lane("sorted with range filter ~50%, price desc", "price:desc", &half, false);
+    let mut unsorted_lane = |what: &str, filters: &dyn Fn(usize) -> Vec<(String, String, String)>| {
+        let before = load();
+        let mut ms = Vec::with_capacity(N);
+        for i in 0..N {
+            let f = filters(i * 7907 % entities);
+            let t = Instant::now();
+            let rows = r.s.list_entities(&r.admin, &r.v, "Gadget", &f, None, 201).unwrap();
+            ms.push(t.elapsed().as_secs_f64() * 1000.0);
+            assert!(!rows.is_empty());
+        }
+        let p95 = report(&format!("{what} (load {before} to {})", load()), ms);
+        results.push((what.to_string(), p95));
+    };
+    unsorted_lane("unsorted, no filter", &none);
+    unsorted_lane("unsorted, exact filter ~0.1%", &category);
+    unsorted_lane("unsorted, range filter ~50%", &half);
+    println!("--- summary, p95 in ms against the rule of {SORT_RULE_P95_MS} ms, on a machine shared with other workers ---");
+    for (what, p95) in &results {
+        println!("{what}: {p95:.2} {}", if *p95 <= SORT_RULE_P95_MS { "pass" } else { "FAIL" });
+    }
+    let failed: Vec<_> = results.iter().filter(|(_, p95)| *p95 > SORT_RULE_P95_MS).collect();
+    assert!(failed.is_empty(), "over the rule: {failed:?}");
     let _ = lease;
 }
