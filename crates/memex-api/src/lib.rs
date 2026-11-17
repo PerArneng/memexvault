@@ -16,9 +16,9 @@ pub use entities::*;
 pub use extraction::*;
 pub use meeting::*;
 use memex_types::{
-    AsOf, AssertionRow, ChangeSetRow, Citation, Conflict, DocKind, Event, EvidenceItem, EvidencePackage, EvidenceRow, FacetCount, Facets, Grant, JobRow,
-    LexicalFilter, LexicalResults, ObjectId, Op, Principal, PrincipalKind, RenditionRow, Scope, SearchDebug, SearchMode, SearchRequest, SegmentRow,
-    SignalScores, SourceRow, TokenRow, VaultId, VaultRow,
+    ActorCard, AsOf, AssertionRow, ChangeSetRow, Citation, Conflict, DocKind, Event, EvidenceItem, EvidencePackage, EvidenceRow, FacetCount, Facets, Grant,
+    JobAction, JobActionKind, JobRow, LexicalFilter, LexicalResults, ObjectId, Op, Principal, PrincipalKind, RenditionRow, Scope, SearchDebug, SearchMode,
+    SearchRequest, SegmentRow, SignalScores, SourceRow, TokenRow, VaultId, VaultRow,
 };
 pub use pages::*;
 pub use review::*;
@@ -442,6 +442,59 @@ pub struct JobDto {
     pub finished_at_ms: Option<i64>,
     /// Set while the job waits for something that's away, such as the LLM.
     pub waiting_since_ms: Option<i64>,
+    /// Cancels and retries by people, oldest first. The actor is a principal's id, which `GET /vaults/{id}/principals/{pid}` names.
+    #[serde(default)]
+    pub actions: Vec<JobActionDto>,
+}
+
+/// A person's cancel or retry of a job.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct JobActionDto {
+    /// `cancel` or `retry`.
+    pub action: String,
+    pub actor: String,
+    pub time_ms: i64,
+}
+
+impl From<JobAction> for JobActionDto {
+    fn from(a: JobAction) -> Self {
+        Self {
+            action: match a.action {
+                JobActionKind::Cancel => "cancel",
+                JobActionKind::Retry => "retry",
+            }
+            .into(),
+            actor: a.actor,
+            time_ms: a.time_ms,
+        }
+    }
+}
+
+/// Who an actor in a vault is, as anyone who can read the vault may see it. It holds nothing about tokens, scopes or admin.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ActorDto {
+    pub id: String,
+    /// Absent when the id names no principal, such as a worker's or one that's gone.
+    pub name: Option<String>,
+    /// `human`, `agent`, or `unknown` when the id names no principal.
+    pub kind: String,
+    pub disabled: bool,
+}
+
+impl From<ActorCard> for ActorDto {
+    fn from(a: ActorCard) -> Self {
+        Self {
+            id: a.id,
+            name: a.name,
+            kind: match a.kind {
+                Some(PrincipalKind::Human) => "human",
+                Some(PrincipalKind::Agent) => "agent",
+                None => "unknown",
+            }
+            .into(),
+            disabled: a.disabled,
+        }
+    }
 }
 
 impl From<JobRow> for JobDto {
@@ -457,6 +510,7 @@ impl From<JobRow> for JobDto {
             created_at_ms: j.created_at_ms,
             finished_at_ms: j.finished_at_ms,
             waiting_since_ms: j.wait.map(|w| w.since_ms),
+            actions: j.actions.into_iter().map(Into::into).collect(),
         }
     }
 }

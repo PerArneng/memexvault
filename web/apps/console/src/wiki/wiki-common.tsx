@@ -1,10 +1,9 @@
 import { isNotFound, parseWikiRoute, pageIndex, requestIdText, sectionPath, wikiPath } from "@memex/core";
 import type { ApiFailure, PageIndex, SaveOutcome, WikiChange, WikiPageList, WikiRoute } from "@memex/core";
-import type { VaultId, WikiAttribution as Attribution } from "@memex/types";
-import { Badge, Button, Input } from "@memex/ui";
+import type { VaultId } from "@memex/types";
+import { Button, Input } from "@memex/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { Bot, UserRound } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import { useEngine } from "../engine-context";
@@ -67,28 +66,6 @@ export const useRefreshWiki = (vault: VaultId) => {
     await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.wiki(vault) });
     await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.objects(vault) });
   }, [queryClient, vault]);
-};
-
-const AuthorBadge = ({ attribution }: { readonly attribution: Attribution }) =>
-  attribution.machine ? (
-    <Badge tone="info"><Bot size={12} aria-hidden={true} /> Agent</Badge>
-  ) : (
-    <Badge><UserRound size={12} aria-hidden={true} /> Person</Badge>
-  );
-
-/** Who made a change, clearly saying whether it was a person or an agent. */
-export const ChangeAuthor = ({ vault, changesetId, fallback }: { readonly vault: VaultId; readonly changesetId: string; readonly fallback: string }) => {
-  const engine = useEngine();
-  const query = useQuery({ queryKey: QUERY_KEYS.wikiAttribution(vault, changesetId), queryFn: async () => unwrap(await engine.getWikiAttribution(vault, changesetId)), staleTime: Infinity });
-  if (query.data === undefined) return <span className="text-xs text-text-muted">{fallback}</span>;
-  const { proposer, extractor, rationale } = query.data;
-  return (
-    <span className="inline-flex flex-wrap items-center gap-1.5 text-xs text-text-muted" title={rationale}>
-      <AuthorBadge attribution={query.data} />
-      <span className="text-text">{proposer}</span>
-      {extractor !== null && extractor !== proposer && <span>via {extractor}</span>}
-    </span>
-  );
 };
 
 export const failureText = (failure: ApiFailure): string => {

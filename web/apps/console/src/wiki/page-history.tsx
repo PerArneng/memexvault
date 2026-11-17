@@ -7,7 +7,8 @@ import { useState } from "react";
 import { useEngine } from "../engine-context";
 import { QueryView } from "../shell/query-view";
 import { QUERY_KEYS, unwrap } from "../query";
-import { AppLink, ChangeAuthor, formatTime, InlineAction, useGo, useRefreshWiki, wikiPath } from "./wiki-common";
+import { ActorName } from "../actor-name";
+import { AppLink, formatTime, InlineAction, useGo, useRefreshWiki, wikiPath } from "./wiki-common";
 
 const SHOW_AT_FIRST = 50;
 
@@ -22,7 +23,7 @@ const Row = ({ vault, id, row, current, writable, onReview }: { readonly vault: 
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <AppLink to={wikiPath(vault, { kind: "read", id, revision: row.revision })}>Revision {row.revision}</AppLink>
         <span className="min-w-0 truncate">{row.title}</span>
-        <ChangeAuthor vault={vault} changesetId={row.changesetId} fallback={row.creator} />
+        <ActorName vault={vault} id={row.creator} />
         <time className="font-mono text-xs text-text-muted tabular-nums">{formatTime(row.createdAt)}</time>
         {row.restoredFrom !== null && <Badge>Restored from {row.restoredFrom}</Badge>}
         {row.revision === current && <Badge tone="success">Current</Badge>}

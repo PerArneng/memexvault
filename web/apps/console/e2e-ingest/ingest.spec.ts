@@ -17,7 +17,6 @@ const adminToken = process.env.MEMEX_E2E_TOKEN ?? "";
 const direct = `http://${bind}`;
 const RECORDING = process.env.MEMEX_E2E_RECORDING;
 const RECORDING_BYTES = 300_000;
-const PG_CONTAINER = process.env.MEMEX_E2E_PG_CONTAINER;
 const run = Date.now().toString(36);
 const proxy = new Proxy(bind, proxyPort);
 const llm = new StandInLlm();
@@ -92,26 +91,6 @@ const approvePending = async (request: APIRequestContext) => {
     if (!res.ok() && res.status() !== 409) throw new Error(`approve: ${String(res.status())} ${await res.text()}`);
   }
   return items.length;
-};
-
-interface Attributed { readonly actor: string; readonly state: string }
-
-/** Only this run's database, named by the same URL the server uses. It reads the log, as no route shows who an event came from. */
-const actorsOf = (jobId: string): readonly Attributed[] => {
-  const database = new URL(process.env.MEMEX_DATABASE_URL ?? "").pathname.slice(1);
-  const psql = (statement: string) => execFileSync("docker", ["exec", PG_CONTAINER ?? "", "psql", "-U", "postgres", "-d", database, "-Atc", statement]).toString().trim();
-  const schemas = psql("select table_schema from information_schema.tables where table_name = 'events'").split("\n").filter((s) => s !== "");
-  for (const schema of schemas) {
-    const rows = psql(`select actor, lower(payload::text) from ${schema}.events where payload::text like '%${jobId}%' order by seq`).split("\n").filter((r) => r !== "");
-    if (rows.length === 0) continue;
-    return rows.map((row) => {
-      const split = row.indexOf("|");
-      const text = row.slice(split + 1);
-      const state = ["cancelled", "queued", "running", "done", "dead"].find((name) => new RegExp(`"state":\\s*"${name}"`).test(text)) ?? "?";
-      return { actor: row.slice(0, split), state };
-    });
-  }
-  return [];
 };
 
 const signIn = async (page: Page, token = adminToken) => {
@@ -372,8 +351,10 @@ test("item 3: killing the connection mid-run recovers with no reload, and counts
   expect(cspProblems(problems)).toEqual([]);
 });
 
-test("item 4: retry and cancel from the UI, attributed to the signed-in principal", async ({ page, browser, request }) => {
-  test.skip(PG_CONTAINER === undefined, "set MEMEX_E2E_PG_CONTAINER, as only the log can show who acted");
+interface Acted { readonly action: string; readonly actor: string; readonly time_ms: number }
+const actionsOf = async (request: APIRequestContext, jobId: string): Promise<readonly Acted[]> => (await get<{ actions?: Acted[] }>(request, `/jobs/${jobId}`)).actions ?? [];
+
+test("item 4: retry and cancel from the UI, attributed to the signed-in principal, and still after a reload", async ({ page, browser, request }) => {
   const problems = problemsOf(page);
   await signIn(page, operatorToken);
   // Its name holds a number that depends on tries, so only the start is known.
@@ -409,6 +390,16 @@ test("item 4: retry and cancel from the UI, attributed to the signed-in principa
   await expect(page.locator(`[data-job="${jobId}"]`)).toContainText(`Retried by ${who}`);
   await until("the retried job to finish", 5, async () => ((await get<{ state: string }>(request, `/jobs/${jobId}`)).state === "done" ? true : null));
 
+  // Spec 086 item 1: after a reload, both actors still show by name, from the server, with no SQL.
+  await page.reload();
+  const reloaded = page.locator(`[data-job="${jobId}"]`);
+  await expect(reloaded.locator('[data-job-action="cancel"]')).toContainText(`Cancelled by`);
+  await expect(reloaded.locator('[data-job-action="cancel"] [data-actor-name]')).toHaveText(new RegExp(`^${who}`));
+  await expect(reloaded.locator('[data-job-action="retry"] [data-actor-name]')).toHaveText(new RegExp(`^${who}`));
+  await expect(reloaded.locator('[data-job-action] [data-actor-kind="Person"]')).toHaveCount(2);
+  await expect(reloaded).toContainText(`Cancelled by`);
+  await expect(reloaded).toContainText(`Retried by`);
+
   // A dead job: bytes that say they're a PDF and aren't, and it fails for good.
   const broken = await uploadDirect(request, `broken-${run}.pdf`, `%PDF-1.4\nthis is not really a PDF ${run}\n`);
   const brokenDoc = await until("the broken document to fail", 5, async () => {
@@ -436,13 +427,14 @@ test("item 4: retry and cancel from the UI, attributed to the signed-in principa
   await page.getByRole("button", { name: "Yes, retry 1" }).click();
   await expect(page.getByText(`Retried 1 by ${who}`)).toBeVisible();
 
-  const scanEvents = actorsOf(jobId);
-  const deadEvents = actorsOf(deadJob);
-  const byOperator = (events: readonly Attributed[], state: string) => events.filter((e) => e.state === state && e.actor === operatorId).length;
-  expect(byOperator(scanEvents, "cancelled"), JSON.stringify(scanEvents)).toBe(1);
-  expect(scanEvents.filter((e) => e.actor === operatorId).length, JSON.stringify(scanEvents)).toBe(2);
-  expect(deadEvents.filter((e) => e.actor === operatorId).length, JSON.stringify(deadEvents)).toBe(2);
-  record("item 4", { progressShown, cancelledAfterMs: Date.now() - cancelledAt, operatorId, cancelEvents: scanEvents.filter((e) => e.actor === operatorId), retryEvents: deadEvents.filter((e) => e.actor === operatorId), load: loadAverage() });
+  // What the route says, which is what the page showed after the reload.
+  const scanActions = await actionsOf(request, jobId);
+  const deadActions = await actionsOf(request, deadJob);
+  expect(scanActions.map((a) => [a.action, a.actor]), JSON.stringify(scanActions)).toEqual([["cancel", operatorId], ["retry", operatorId]]);
+  expect(deadActions.map((a) => [a.action, a.actor]), JSON.stringify(deadActions)).toEqual([["retry", operatorId], ["retry", operatorId]]);
+  await page.goto(`/vaults/${vault}/ingest/${broken}`);
+  await expect(page.locator(`[data-job="${deadJob}"] [data-job-action="retry"]`)).toHaveCount(2);
+  record("item 4", { progressShown, cancelledAfterMs: Date.now() - cancelledAt, operatorId, scanActions, deadActions, load: loadAverage() });
   expect(cspProblems(problems)).toEqual([]);
 });
 

@@ -24,6 +24,15 @@ export interface Principal {
   readonly machine: boolean;
 }
 
+/** Who did something in a vault, as anyone who can read it may see: no tokens, scopes or admin. */
+export interface Actor {
+  readonly id: string;
+  /** Null when the id names no principal, such as one that's gone or a worker. Chosen by whoever named it, so it's untrusted text. */
+  readonly name: string | null;
+  readonly kind: "human" | "agent" | "unknown";
+  readonly disabled: boolean;
+}
+
 /** Who the current credential is, from `whoami`. */
 export interface Identity {
   readonly principal: Principal;
