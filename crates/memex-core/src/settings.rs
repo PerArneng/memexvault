@@ -95,6 +95,78 @@ pub struct Settings {
     pub auto_commit_threshold_permille: u16,
     pub transcribe: TranscribeSettings,
     pub activity: crate::ActivityLimits,
+    pub job_ceilings: JobCeilings,
+}
+
+/// The longest one attempt at a job of each kind may run, in seconds, counted from its claim. Past it the worker stops renewing the lease, fails the attempt with a reason that names the ceiling, and goes back to work. A handler that's still running is left to finish on its own thread, as a thread can't be killed, and whatever it returns is thrown away. Spec 084 has each default's reasons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JobCeilings {
+    pub rendition_s: u64,
+    pub transcription_s: u64,
+    pub embed_s: u64,
+    pub extract_s: u64,
+    pub review_s: u64,
+    pub audit_s: u64,
+}
+
+const HOUR_S: u64 = 3600;
+
+impl Default for JobCeilings {
+    fn default() -> Self {
+        Self {
+            // Over 7,000 OCR pages at the 2 s each that a 400-page PDF measured under load.
+            rendition_s: 4 * HOUR_S,
+            // Twice the longest recording accepted, and every transcriber measured is faster than real time.
+            transcription_s: 2 * TranscribeSettings::default().max_seconds,
+            // 32 texts take about a second, so this is hundreds of times that.
+            embed_s: 600,
+            // Over 100 calls that each use their whole 120 s, and each batch commits as it goes, so a new attempt carries on.
+            extract_s: 4 * HOUR_S,
+            // One call of up to 60 s and a retry.
+            review_s: 900,
+            // The scan and over 100 calls of up to 120 s, and an audit commits as it goes, so a new attempt carries on.
+            audit_s: 4 * HOUR_S,
+        }
+    }
+}
+
+impl JobCeilings {
+    /// The ceiling for a kind. A kind with none of its own gets the longest, so it's never cut off sooner than the others.
+    pub fn for_kind(&self, kind: &str) -> std::time::Duration {
+        let s = match kind {
+            crate::RENDITION_JOB => self.rendition_s,
+            crate::TRANSCRIBE_JOB => self.transcription_s,
+            crate::EMBED_JOB => self.embed_s,
+            crate::EXTRACT_JOB => self.extract_s,
+            crate::REVIEW_JOB => self.review_s,
+            crate::AUDIT_JOB => self.audit_s,
+            _ => [
+                self.rendition_s,
+                self.transcription_s,
+                self.embed_s,
+                self.extract_s,
+                self.review_s,
+                self.audit_s,
+            ]
+            .into_iter()
+            .max()
+            .unwrap_or(0),
+        };
+        std::time::Duration::from_secs(s)
+    }
+
+    /// The setting that changes a kind's ceiling, for messages that name it.
+    pub fn setting(kind: &str) -> Option<&'static str> {
+        match kind {
+            crate::RENDITION_JOB => Some("MEMEX_RENDITION_CEILING_S"),
+            crate::TRANSCRIBE_JOB => Some("MEMEX_TRANSCRIBE_CEILING_S"),
+            crate::EMBED_JOB => Some("MEMEX_EMBED_CEILING_S"),
+            crate::EXTRACT_JOB => Some("MEMEX_EXTRACT_CEILING_S"),
+            crate::REVIEW_JOB => Some("MEMEX_REVIEW_CEILING_S"),
+            crate::AUDIT_JOB => Some("MEMEX_AUDIT_CEILING_S"),
+            _ => None,
+        }
+    }
 }
 
 /// How recordings are transcribed.
@@ -197,6 +269,7 @@ impl Default for Settings {
             auto_commit_threshold_permille: (crate::review::DEFAULT_THRESHOLD * 1000.0) as u16,
             transcribe: TranscribeSettings::default(),
             activity: crate::ActivityLimits::default(),
+            job_ceilings: JobCeilings::default(),
         }
     }
 }
@@ -227,6 +300,7 @@ impl fmt::Debug for Settings {
             .field("audit", &self.audit)
             .field("auto_commit_threshold_permille", &self.auto_commit_threshold_permille)
             .field("transcribe", &self.transcribe)
+            .field("job_ceilings", &self.job_ceilings)
             .finish()
     }
 }
@@ -456,6 +530,15 @@ impl Settings {
         t.max_seconds = count("MEMEX_TRANSCRIBE_MAX_SECONDS", text("MEMEX_TRANSCRIBE_MAX_SECONDS")?, t.max_seconds as usize)? as u64;
         t.max_rss_mb = count("MEMEX_TRANSCRIBE_MAX_RSS_MB", text("MEMEX_TRANSCRIBE_MAX_RSS_MB")?, t.max_rss_mb as usize)? as u64;
         t.stall_seconds = count("MEMEX_TRANSCRIBE_STALL_S", text("MEMEX_TRANSCRIBE_STALL_S")?, t.stall_seconds as usize)? as u64;
+        // Transcription's follows the longest recording, unless it's set itself.
+        let j = &mut s.job_ceilings;
+        let ceiling = |name: &'static str, default: u64| -> Result<u64, SettingsError> { Ok(count(name, text(name)?, default as usize)? as u64) };
+        j.rendition_s = ceiling("MEMEX_RENDITION_CEILING_S", j.rendition_s)?;
+        j.transcription_s = ceiling("MEMEX_TRANSCRIBE_CEILING_S", t.max_seconds.saturating_mul(2))?;
+        j.embed_s = ceiling("MEMEX_EMBED_CEILING_S", j.embed_s)?;
+        j.extract_s = ceiling("MEMEX_EXTRACT_CEILING_S", j.extract_s)?;
+        j.review_s = ceiling("MEMEX_REVIEW_CEILING_S", j.review_s)?;
+        j.audit_s = ceiling("MEMEX_AUDIT_CEILING_S", j.audit_s)?;
         let a = &mut s.activity;
         a.max_streams = count("MEMEX_ACTIVITY_MAX_STREAMS", text("MEMEX_ACTIVITY_MAX_STREAMS")?, a.max_streams)?;
         a.buffer.max_frames = count("MEMEX_ACTIVITY_BUFFER_FRAMES", text("MEMEX_ACTIVITY_BUFFER_FRAMES")?, a.buffer.max_frames)?;
@@ -733,6 +816,33 @@ mod tests {
             Err(SettingsError::InvalidCacheSize { .. })
         ));
         assert!(from(&[("MEMEX_CACHE_DISK_BYTES", &over_ram)]).is_ok(), "the disk has a higher limit");
+    }
+
+    #[test]
+    fn each_job_kind_has_a_ceiling_and_transcription_follows_the_longest_recording() {
+        let d = from(&[]).unwrap().job_ceilings;
+        assert_eq!(d, JobCeilings::default());
+        assert_eq!(d.for_kind(crate::TRANSCRIBE_JOB).as_secs(), 12 * 3600);
+        assert_eq!(d.for_kind(crate::EMBED_JOB).as_secs(), 600);
+        assert_eq!(d.for_kind("unknown").as_secs(), 12 * 3600, "an unknown kind gets the longest");
+        let s = from(&[("MEMEX_TRANSCRIBE_MAX_SECONDS", "3600"), ("MEMEX_RENDITION_CEILING_S", "90")]).unwrap();
+        assert_eq!(s.job_ceilings.transcription_s, 7200);
+        assert_eq!(s.job_ceilings.for_kind(crate::RENDITION_JOB).as_secs(), 90);
+        let s = from(&[("MEMEX_TRANSCRIBE_MAX_SECONDS", "3600"), ("MEMEX_TRANSCRIBE_CEILING_S", "5000")]).unwrap();
+        assert_eq!(s.job_ceilings.transcription_s, 5000, "set by itself, it wins");
+        for name in [
+            "MEMEX_RENDITION_CEILING_S",
+            "MEMEX_TRANSCRIBE_CEILING_S",
+            "MEMEX_EMBED_CEILING_S",
+            "MEMEX_EXTRACT_CEILING_S",
+            "MEMEX_REVIEW_CEILING_S",
+            "MEMEX_AUDIT_CEILING_S",
+        ] {
+            for bad in ["0", "-1", "soon"] {
+                assert!(matches!(from(&[(name, bad)]), Err(SettingsError::InvalidNumber { .. })), "{name}={bad}");
+            }
+        }
+        assert_eq!(JobCeilings::setting(crate::AUDIT_JOB), Some("MEMEX_AUDIT_CEILING_S"));
     }
 
     #[test]

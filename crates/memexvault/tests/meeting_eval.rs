@@ -228,7 +228,16 @@ impl Rig {
     /// Runs the job queue's next transcription through the pool's own code path.
     fn transcribe_next(&self) -> f64 {
         let started = Instant::now();
-        assert!(run_one(self.s.as_ref(), &self.handler(), TRANSCRIBE_JOB, "eval"), "a job should be waiting");
+        assert!(
+            run_one(
+                &self.s,
+                &Arc::new(self.handler()),
+                TRANSCRIBE_JOB,
+                "eval",
+                memex_core::JobCeilings::default().for_kind(TRANSCRIBE_JOB)
+            ),
+            "a job should be waiting"
+        );
         started.elapsed().as_secs_f64()
     }
 

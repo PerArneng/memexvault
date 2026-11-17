@@ -5,14 +5,15 @@ use memex_core::{Server, ServerEdges, StepOutcome};
 use memex_types::{JobRow, Mutation, VaultId};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-/// How often a job's keeper looks at the clock. The clock decides when to renew, and this is only how soon it notices.
+/// How often a worker looks at the clock while its handler runs. The clock decides when to renew, and this is only how soon it notices.
 const KEEPER_POLL: Duration = Duration::from_millis(250);
-/// How long a keeper waits to try again after the store failed a renewal.
+/// How long a worker waits to try again after the store failed a renewal.
 const RENEW_RETRY_MS: i64 = 2_000;
 
 /// Why a job failed. `retryable: false` means trying again can't help.
@@ -58,16 +59,99 @@ pub trait JobHandler: Send + Sync {
     fn run(&self, vault: &VaultId, job: &JobRow, hold: &JobHold) -> Result<Vec<Mutation>, JobFailure>;
 }
 
-/// Renews a job's lease until `finished` closes. It's a thread of the process running the handler, so a server that dies stops renewing, and its job comes free within one lease. It stops at the first answer that the job has gone. A store that's away isn't that: it tries again, and the fence on completion decides whether the work counts.
-fn keep_lease<E: ServerEdges>(server: &Server<E>, vault: &VaultId, job: &JobRow, hold: &JobHold, finished: &Receiver<()>) {
+/// Handler threads left running past their job's ceiling, in this process. Each still holds a thread and whatever its handler holds.
+static ABANDONED: AtomicUsize = AtomicUsize::new(0);
+
+/// How many handlers this process has given up on at their ceiling and that haven't returned since.
+pub fn abandoned_handlers() -> usize {
+    ABANDONED.load(Ordering::Relaxed)
+}
+
+/// What came of running a handler under its ceiling.
+enum Held {
+    Finished(Result<Vec<Mutation>, JobFailure>),
+    /// It ran past its ceiling and was left running. Nothing it returns is read.
+    PastCeiling,
+}
+
+/// Where a handler's thread puts its result, unless the worker has stopped waiting for it.
+struct Handoff {
+    abandoned: Mutex<bool>,
+}
+
+/// Runs the handler on a thread of its own, while this thread keeps the job's lease, renewing it every `RENEW_EVERY_MS` counted from the claim, by the server's clock. Renewing stops at the first answer that the job has gone, and the handler is told through its `JobHold`. A store that's away isn't that: it tries again, and the fence on completion decides whether the work counts.
+///
+/// At `ceiling` from the claim it stops renewing and stops waiting: the handler is told the job is lost, and its thread is left to end on its own, as a thread can't be killed. Whatever it returns then is thrown away. The worker is free at once for the next job. Renewals and the result are on this one thread, so no renewal can land after the result is recorded.
+fn run_held<E, H>(server: &Arc<Server<E>>, handler: &Arc<H>, vault: &VaultId, job: &JobRow, ceiling: Duration) -> Held
+where
+    E: ServerEdges + 'static,
+    Server<E>: Send + Sync,
+    H: JobHandler + ?Sized + 'static,
+{
     use memex_core::Clock as _;
+    let hold = Arc::new(JobHold::default());
+    let handoff = Arc::new(Handoff { abandoned: Mutex::new(false) });
+    let (send, result) = channel::<Result<Vec<Mutation>, JobFailure>>();
+    let spawned = std::thread::Builder::new().name(format!("job-{}", job.kind)).spawn({
+        let (handler, vault, job, hold, handoff) = (handler.clone(), vault.clone(), job.clone(), hold.clone(), handoff.clone());
+        move || {
+            // A panic in a handler is that job's failure, and doesn't take the worker with it.
+            let outcome = catch_unwind(AssertUnwindSafe(|| handler.run(&vault, &job, &hold))).unwrap_or_else(|_| {
+                Err(JobFailure {
+                    message: "the handler panicked".into(),
+                    retryable: true,
+                    waiting: false,
+                })
+            });
+            let abandoned = handoff.abandoned.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if *abandoned {
+                let left = ABANDONED.fetch_sub(1, Ordering::Relaxed) - 1;
+                tracing::warn!(job = %job.header.id, still_running = left, "a handler given up on at its ceiling has returned, and its result is thrown away");
+            } else {
+                let _ = send.send(outcome);
+            }
+        }
+    });
+    if let Err(e) = spawned {
+        return Held::Finished(Err(JobFailure {
+            message: format!("can't start the thread that runs the job: {e}"),
+            retryable: true,
+            waiting: false,
+        }));
+    }
     let clock = server.engine().clock();
-    // Counted from the claim, as this thread can start late on a busy machine.
+    // Counted from the claim, as this can start late on a busy machine.
     let claimed_at = job.lease_until_ms.map_or_else(|| clock.now_ms(), |until| until - memex_core::jobs::LEASE_MS);
+    let ceiling_at = claimed_at.saturating_add(i64::try_from(ceiling.as_millis()).unwrap_or(i64::MAX));
     let mut next_at = claimed_at + memex_core::jobs::RENEW_EVERY_MS;
-    while let Err(RecvTimeoutError::Timeout) = finished.recv_timeout(KEEPER_POLL) {
+    let mut renewing = true;
+    loop {
+        match result.recv_timeout(KEEPER_POLL) {
+            Ok(outcome) => return Held::Finished(outcome),
+            // It can't end without sending, short of a bug.
+            Err(RecvTimeoutError::Disconnected) => {
+                return Held::Finished(Err(JobFailure {
+                    message: "the handler's thread ended without a result".into(),
+                    retryable: true,
+                    waiting: false,
+                }));
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+        }
         let now = clock.now_ms();
-        if now < next_at {
+        if now >= ceiling_at {
+            let mut abandoned = handoff.abandoned.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            // It may have finished in the moment before.
+            if let Ok(outcome) = result.try_recv() {
+                return Held::Finished(outcome);
+            }
+            *abandoned = true;
+            hold.lost.store(true, Ordering::Relaxed);
+            let left = ABANDONED.fetch_add(1, Ordering::Relaxed) + 1;
+            tracing::warn!(job = %job.header.id, kind = %job.kind, ceiling_s = ceiling.as_secs(), still_running = left, "a job ran past its ceiling, so its worker gives up on it and leaves its handler's thread to end on its own");
+            return Held::PastCeiling;
+        }
+        if !renewing || now < next_at {
             continue;
         }
         match server.hold_job(vault, job, false, vec![]) {
@@ -75,7 +159,7 @@ fn keep_lease<E: ServerEdges>(server: &Server<E>, vault: &VaultId, job: &JobRow,
             Ok(false) | Err(memex_core::ServerError::NotFound) => {
                 tracing::info!(job = %job.header.id, "the job was cancelled or taken, so its handler stops");
                 hold.lost.store(true, Ordering::Relaxed);
-                return;
+                renewing = false;
             }
             Err(e) => {
                 tracing::warn!(job = %job.header.id, error = %e, "can't renew a job's lease, and will try again");
@@ -85,54 +169,29 @@ fn keep_lease<E: ServerEdges>(server: &Server<E>, vault: &VaultId, job: &JobRow,
     }
 }
 
-/// Runs the handler with a keeper beside it. A panic in a handler is that job's failure, and doesn't take the worker with it.
-fn run_held<E>(server: &Server<E>, handler: &dyn JobHandler, vault: &VaultId, job: &JobRow) -> Result<Vec<Mutation>, JobFailure>
-where
-    E: ServerEdges,
-    Server<E>: Sync,
-{
-    let hold = JobHold::default();
-    let (finish, finished) = channel::<()>();
-    std::thread::scope(|scope| {
-        let keeper = std::thread::Builder::new()
-            .name("job-lease".into())
-            .spawn_scoped(scope, {
-                let hold = &hold;
-                move || keep_lease(server, vault, job, hold, &finished)
-            })
-            .map_err(|e| JobFailure {
-                message: format!("can't start the thread that keeps the job's lease: {e}"),
-                retryable: true,
-                waiting: false,
-            })?;
-        let outcome = catch_unwind(AssertUnwindSafe(|| handler.run(vault, job, &hold))).unwrap_or_else(|_| {
-            Err(JobFailure {
-                message: "the handler panicked".into(),
-                retryable: true,
-                waiting: false,
-            })
-        });
-        // No renewal can land after this, so what's recorded next is the last word on the attempt.
-        drop(finish);
-        if keeper.join().is_err() {
-            tracing::warn!(job = %job.header.id, "the thread keeping a job's lease panicked");
-        }
-        outcome
-    })
+/// The reason recorded on an attempt that ran past its ceiling.
+pub fn past_ceiling_message(kind: &str, ceiling: Duration) -> String {
+    let setting = memex_core::JobCeilings::setting(kind).map_or_else(String::new, |name| format!(", set by {name}"));
+    format!(
+        "the job ran past its ceiling of {} s for {kind} jobs{setting}, so its worker gave up on it",
+        ceiling.as_secs()
+    )
 }
 
-/// One kind of job and how many may run at once.
+/// One kind of job, how many may run at once, and how long one attempt may take.
 pub struct Pool {
     pub kind: String,
     pub workers: usize,
     pub handler: Arc<dyn JobHandler>,
+    pub ceiling: Duration,
 }
 
-/// Runs at most one job. Returns whether it found one, so the caller knows whether to wait.
-pub fn run_one<E>(server: &Server<E>, handler: &dyn JobHandler, kind: &str, owner: &str) -> bool
+/// Runs at most one job, giving up on it at `ceiling`. Returns whether it found one, so the caller knows whether to wait.
+pub fn run_one<E, H>(server: &Arc<Server<E>>, handler: &Arc<H>, kind: &str, owner: &str, ceiling: Duration) -> bool
 where
-    E: ServerEdges,
-    Server<E>: Sync,
+    E: ServerEdges + 'static,
+    Server<E>: Send + Sync,
+    H: JobHandler + ?Sized + 'static,
 {
     let vaults = match server.vault_ids() {
         Ok(v) => v,
@@ -150,13 +209,15 @@ where
                 continue;
             }
         };
-        let outcome = run_held(server, handler, &vault, &job);
+        let outcome = run_held(server, handler, &vault, &job, ceiling);
         // Whatever came of it, there's nothing more to say about this attempt.
-        memex_core::Progress::finished(server, &vault, &job.header.id);
+        memex_core::Progress::finished(server.as_ref(), &vault, &job.header.id);
         let recorded = match outcome {
-            Ok(results) => server.complete_job(&vault, &job, results),
-            Err(f) if f.waiting => server.wait_job(&vault, &job, &f.message),
-            Err(f) => server.fail_job(&vault, &job, &f.message, f.retryable),
+            Held::Finished(Ok(results)) => server.complete_job(&vault, &job, results),
+            Held::Finished(Err(f)) if f.waiting => server.wait_job(&vault, &job, &f.message),
+            Held::Finished(Err(f)) => server.fail_job(&vault, &job, &f.message, f.retryable),
+            // Another attempt may well finish: extraction and audits carry on from what they committed, and a hang may not come again.
+            Held::PastCeiling => server.fail_job(&vault, &job, &past_ceiling_message(kind, ceiling), true),
         };
         match recorded {
             Ok(true) => {}
@@ -178,11 +239,11 @@ where
     let mut threads = vec![];
     for pool in pools {
         for n in 0..pool.workers {
-            let (server, handler, stop, kind) = (server.clone(), pool.handler.clone(), stop.clone(), pool.kind.clone());
+            let (server, handler, stop, kind, ceiling) = (server.clone(), pool.handler.clone(), stop.clone(), pool.kind.clone(), pool.ceiling);
             let owner = format!("{kind}-{}-{n}", std::process::id());
             threads.push(std::thread::spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
-                    if !run_one(&server, handler.as_ref(), &kind, &owner) {
+                    if !run_one(&server, &handler, &kind, &owner, ceiling) {
                         std::thread::sleep(Duration::from_millis(100));
                     }
                 }
@@ -413,6 +474,11 @@ mod tests {
         (s, v, c)
     }
 
+    /// One worker's turn, with the default ceiling for its kind.
+    fn run<H: JobHandler + 'static>(s: &Arc<Server<Fakes>>, handler: &Arc<H>, kind: &str, owner: &str) -> bool {
+        run_one(s, handler, kind, owner, memex_core::JobCeilings::default().for_kind(kind))
+    }
+
     fn count(s: &Server<Fakes>, v: &memex_types::VaultId, state: JobState) -> usize {
         s.engine().store().snapshot(v).unwrap().jobs(None, Some(state), None, 100_000).unwrap().len()
     }
@@ -471,6 +537,7 @@ mod tests {
                 kind: "rendition".into(),
                 workers: 6,
                 handler: handler.clone(),
+                ceiling: memex_core::JobCeilings::default().for_kind("rendition"),
             }],
             stop.clone(),
         );
@@ -491,16 +558,16 @@ mod tests {
     #[test]
     fn a_panic_is_one_job_s_failure_and_the_worker_goes_on() {
         let (s, v) = setup(1);
-        assert!(run_one(s.as_ref(), &Panics, "rendition", "w"));
+        assert!(run(&s, &Arc::new(Panics), "rendition", "w"));
         let dead_or_retry = count(&s, &v, JobState::Queued);
         assert_eq!(dead_or_retry, 1, "it goes back to the queue with a delay");
-        assert!(!run_one(s.as_ref(), &Panics, "rendition", "w"), "the delay holds it back");
+        assert!(!run(&s, &Arc::new(Panics), "rendition", "w"), "the delay holds it back");
     }
 
     #[test]
     fn a_permanent_failure_goes_dead_at_once() {
         let (s, v) = setup(1);
-        assert!(run_one(s.as_ref(), &Refuses, "rendition", "w"));
+        assert!(run(&s, &Arc::new(Refuses), "rendition", "w"));
         assert_eq!(count(&s, &v, JobState::Dead), 1);
     }
 
@@ -541,15 +608,15 @@ mod tests {
                 tool_calls: 0,
             }),
         ];
-        let handler = ExtractHandler {
+        let handler = Arc::new(ExtractHandler {
             server: s.clone(),
             agent: memex_core::testing::ScriptedAgent::new(script),
-        };
-        assert!(run_one(s.as_ref(), &handler, memex_core::EXTRACT_JOB, "w"));
+        });
+        assert!(run(&s, &handler, memex_core::EXTRACT_JOB, "w"));
         assert_eq!(s.extraction_status(&c, &v, &source).unwrap().state, memex_core::ExtractionState::Waiting);
-        assert!(!run_one(s.as_ref(), &handler, memex_core::EXTRACT_JOB, "w"), "it holds back until due");
+        assert!(!run(&s, &handler, memex_core::EXTRACT_JOB, "w"), "it holds back until due");
         s.engine().clock().advance(Duration::from_secs(600));
-        assert!(run_one(s.as_ref(), &handler, memex_core::EXTRACT_JOB, "w"));
+        assert!(run(&s, &handler, memex_core::EXTRACT_JOB, "w"));
         assert_eq!(s.extraction_status(&c, &v, &source).unwrap().state, memex_core::ExtractionState::Done);
     }
 
@@ -598,7 +665,7 @@ mod tests {
     /// A handler that does `during` while it holds the job, and then says it's finished, so anything written must be stopped by the fence.
     struct Scripted<F>(F, AtomicU32);
 
-    impl<F: Fn(&VaultId, &JobRow, &JobHold) + Send + Sync> JobHandler for Scripted<F> {
+    impl<F: Fn(&VaultId, &JobRow, &JobHold) + Send + Sync + 'static> JobHandler for Scripted<F> {
         fn run(&self, vault: &VaultId, job: &JobRow, hold: &JobHold) -> Result<Vec<Mutation>, JobFailure> {
             self.1.fetch_add(1, Ordering::SeqCst);
             (self.0)(vault, job, hold);
@@ -606,38 +673,41 @@ mod tests {
         }
     }
 
-    fn scripted<F: Fn(&VaultId, &JobRow, &JobHold) + Send + Sync>(during: F) -> Scripted<F> {
-        Scripted(during, AtomicU32::new(0))
+    fn scripted<F: Fn(&VaultId, &JobRow, &JobHold) + Send + Sync + 'static>(during: F) -> Arc<Scripted<F>> {
+        Arc::new(Scripted(during, AtomicU32::new(0)))
     }
 
     #[test]
     fn a_job_running_for_three_leases_finishes_in_one_attempt_and_nobody_else_can_claim_it() {
         let (s, v) = setup(1);
-        let clock = || s.engine().clock();
-        let renewals = AtomicU32::new(0);
-        let handler = scripted(|vault, job, hold| {
-            let start = job.attempts[0].started_at_ms;
-            let mut last_until = job.lease_until_ms.unwrap();
-            // 200 s in steps of one renewal: over three leases.
-            for _ in 0..10 {
-                clock().advance(Duration::from_millis(memex_core::jobs::RENEW_EVERY_MS as u64));
-                eventually("the lease moves on", || {
-                    held_job(&s, vault, &job.header.id).lease_until_ms.unwrap() > last_until
-                });
-                renewals.fetch_add(1, Ordering::SeqCst);
-                let now = held_job(&s, vault, &job.header.id);
-                last_until = now.lease_until_ms.unwrap();
-                assert!(
-                    s.claim_job(vault, "rendition", "second").unwrap().is_none(),
-                    "a second worker can't claim a job being renewed"
-                );
-                assert_eq!((now.state, now.attempts.len()), (JobState::Running, 1));
-                assert!(!hold.lost());
+        let renewals = Arc::new(AtomicU32::new(0));
+        let handler = scripted({
+            let (s, renewals) = (s.clone(), renewals.clone());
+            move |vault, job, hold| {
+                let clock = || s.engine().clock();
+                let start = job.attempts[0].started_at_ms;
+                let mut last_until = job.lease_until_ms.unwrap();
+                // 200 s in steps of one renewal: over three leases.
+                for _ in 0..10 {
+                    clock().advance(Duration::from_millis(memex_core::jobs::RENEW_EVERY_MS as u64));
+                    eventually("the lease moves on", || {
+                        held_job(&s, vault, &job.header.id).lease_until_ms.unwrap() > last_until
+                    });
+                    renewals.fetch_add(1, Ordering::SeqCst);
+                    let now = held_job(&s, vault, &job.header.id);
+                    last_until = now.lease_until_ms.unwrap();
+                    assert!(
+                        s.claim_job(vault, "rendition", "second").unwrap().is_none(),
+                        "a second worker can't claim a job being renewed"
+                    );
+                    assert_eq!((now.state, now.attempts.len()), (JobState::Running, 1));
+                    assert!(!hold.lost());
+                }
+                use memex_core::Clock as _;
+                assert!(clock().now_ms() - start >= 3 * memex_core::jobs::LEASE_MS);
             }
-            use memex_core::Clock as _;
-            assert!(clock().now_ms() - start >= 3 * memex_core::jobs::LEASE_MS);
         });
-        assert!(run_one(s.as_ref(), &handler, "rendition", "first"));
+        assert!(run(&s, &handler, "rendition", "first"));
         assert_eq!(renewals.load(Ordering::SeqCst), 10);
         assert_eq!(handler.1.load(Ordering::SeqCst), 1);
         let job = the_job(&s, &v);
@@ -648,24 +718,27 @@ mod tests {
     #[test]
     fn a_renewal_is_never_longer_than_one_lease() {
         let (s, _) = setup(1);
-        let handler = scripted(|vault, job, _| {
-            use memex_core::Clock as _;
-            for _ in 0..3 {
-                s.engine().clock().advance(Duration::from_millis(memex_core::jobs::RENEW_EVERY_MS as u64));
-                let before = s.engine().clock().now_ms();
-                eventually("the lease moves on", || {
-                    held_job(&s, vault, &job.header.id).lease_until_ms == Some(before + memex_core::jobs::LEASE_MS)
-                });
+        let handler = scripted({
+            let s = s.clone();
+            move |vault, job, _| {
+                use memex_core::Clock as _;
+                for _ in 0..3 {
+                    s.engine().clock().advance(Duration::from_millis(memex_core::jobs::RENEW_EVERY_MS as u64));
+                    let before = s.engine().clock().now_ms();
+                    eventually("the lease moves on", || {
+                        held_job(&s, vault, &job.header.id).lease_until_ms == Some(before + memex_core::jobs::LEASE_MS)
+                    });
+                }
             }
         });
-        assert!(run_one(s.as_ref(), &handler, "rendition", "first"));
+        assert!(run(&s, &handler, "rendition", "first"));
     }
 
     #[test]
     fn a_short_job_makes_no_renewal() {
         let (s, v) = setup(1);
         let before = s.engine().store().snapshot(&v).unwrap().head().unwrap();
-        assert!(run_one(s.as_ref(), &Derives(AtomicU32::new(0)), "rendition", "first"));
+        assert!(run(&s, &Arc::new(Derives(AtomicU32::new(0))), "rendition", "first"));
         // Its claim and its completion.
         assert_eq!(s.engine().store().snapshot(&v).unwrap().head().unwrap(), before.map(|h| h + 2));
     }
@@ -673,13 +746,16 @@ mod tests {
     #[test]
     fn a_job_cancelled_while_it_runs_is_told_at_the_next_renewal_and_writes_nothing() {
         let (s, v, c) = setup_with_caller(1);
-        let handler = scripted(|vault, job, hold| {
-            s.cancel_job(&c, vault, &job.header.id).unwrap();
-            assert!(!hold.lost());
-            s.engine().clock().advance(Duration::from_millis(memex_core::jobs::RENEW_EVERY_MS as u64));
-            eventually("the handler hears", || hold.lost());
+        let handler = scripted({
+            let s = s.clone();
+            move |vault, job, hold| {
+                s.cancel_job(&c, vault, &job.header.id).unwrap();
+                assert!(!hold.lost());
+                s.engine().clock().advance(Duration::from_millis(memex_core::jobs::RENEW_EVERY_MS as u64));
+                eventually("the handler hears", || hold.lost());
+            }
         });
-        assert!(run_one(s.as_ref(), &handler, "rendition", "first"));
+        assert!(run(&s, &handler, "rendition", "first"));
         assert_eq!(count(&s, &v, JobState::Cancelled), 1);
         assert!(!derived(&s, &v, &the_job(&s, &v).header.id), "its result was refused");
     }
@@ -687,20 +763,23 @@ mod tests {
     #[test]
     fn a_job_taken_while_it_runs_is_told_at_the_next_renewal_and_writes_nothing() {
         let (s, v) = setup(1);
-        let taken = std::sync::Mutex::new(None);
-        let handler = scripted(|vault, _, hold| {
-            // A stall long enough to lose the lease, as a stopped machine would give. The keeper may get in first once, so it goes on until the other worker has it.
-            let second = loop {
-                s.engine().clock().advance(Duration::from_millis(memex_core::jobs::LEASE_MS as u64));
-                if let Some(j) = s.claim_job(vault, "rendition", "second").unwrap() {
-                    break j;
-                }
-            };
-            s.engine().clock().advance(Duration::from_millis(memex_core::jobs::RENEW_EVERY_MS as u64));
-            eventually("the handler hears", || hold.lost());
-            *taken.lock().unwrap() = Some(second);
+        let taken = Arc::new(std::sync::Mutex::new(None));
+        let handler = scripted({
+            let (s, taken) = (s.clone(), taken.clone());
+            move |vault, _, hold| {
+                // A stall long enough to lose the lease, as a stopped machine would give. The keeper may get in first once, so it goes on until the other worker has it.
+                let second = loop {
+                    s.engine().clock().advance(Duration::from_millis(memex_core::jobs::LEASE_MS as u64));
+                    if let Some(j) = s.claim_job(vault, "rendition", "second").unwrap() {
+                        break j;
+                    }
+                };
+                s.engine().clock().advance(Duration::from_millis(memex_core::jobs::RENEW_EVERY_MS as u64));
+                eventually("the handler hears", || hold.lost());
+                *taken.lock().unwrap() = Some(second);
+            }
         });
-        assert!(run_one(s.as_ref(), &handler, "rendition", "first"));
+        assert!(run(&s, &handler, "rendition", "first"));
         assert!(!derived(&s, &v, &the_job(&s, &v).header.id), "its result was refused");
         let second = taken.lock().unwrap().take().unwrap();
         let now = held_job(&s, &v, &second.header.id);
@@ -715,25 +794,187 @@ mod tests {
     #[test]
     fn a_store_that_fails_a_renewal_does_not_stop_the_handler() {
         let (s, v) = setup(1);
-        let handler = scripted(|vault, job, hold| {
-            s.engine().store().fail_next_commit(memex_core::StoreError::Backend("away".into()));
-            let first = job.lease_until_ms.unwrap();
-            s.engine().clock().advance(Duration::from_millis(memex_core::jobs::RENEW_EVERY_MS as u64));
-            // The tries after the failed one find the store back, and the job was never lost.
-            eventually("the lease moves on", || {
-                s.engine().clock().advance(Duration::from_millis(RENEW_RETRY_MS as u64));
-                held_job(&s, vault, &job.header.id).lease_until_ms.unwrap() > first
-            });
-            assert!(!hold.lost());
+        let handler = scripted({
+            let s = s.clone();
+            move |vault, job, hold| {
+                s.engine().store().fail_next_commit(memex_core::StoreError::Backend("away".into()));
+                let first = job.lease_until_ms.unwrap();
+                s.engine().clock().advance(Duration::from_millis(memex_core::jobs::RENEW_EVERY_MS as u64));
+                // The tries after the failed one find the store back, and the job was never lost.
+                eventually("the lease moves on", || {
+                    s.engine().clock().advance(Duration::from_millis(RENEW_RETRY_MS as u64));
+                    held_job(&s, vault, &job.header.id).lease_until_ms.unwrap() > first
+                });
+                assert!(!hold.lost());
+            }
         });
-        assert!(run_one(s.as_ref(), &handler, "rendition", "first"));
+        assert!(run(&s, &handler, "rendition", "first"));
         assert!(derived(&s, &v, &the_job(&s, &v).header.id));
+    }
+
+    /// A handler that hangs on the jobs `hangs` picks until it's released, and then answers with a page of its own, which must never be written. Other jobs it finishes at once.
+    struct Hangs {
+        hangs: Box<dyn Fn(&JobRow) -> bool + Send + Sync>,
+        release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+        started: AtomicU32,
+        returned: AtomicU32,
+        told_lost: AtomicBool,
+    }
+
+    fn hangs(pick: impl Fn(&JobRow) -> bool + Send + Sync + 'static) -> (Arc<Hangs>, std::sync::mpsc::Sender<()>) {
+        let (release, wait) = channel();
+        let h = Hangs {
+            hangs: Box::new(pick),
+            release: std::sync::Mutex::new(wait),
+            started: AtomicU32::new(0),
+            returned: AtomicU32::new(0),
+            told_lost: AtomicBool::new(false),
+        };
+        (Arc::new(h), release)
+    }
+
+    fn late_page(job: &ObjectId) -> ObjectId {
+        ObjectId(format!("late-{job}"))
+    }
+
+    impl JobHandler for Hangs {
+        fn run(&self, vault: &VaultId, job: &JobRow, hold: &JobHold) -> Result<Vec<Mutation>, JobFailure> {
+            if !(self.hangs)(job) {
+                return Derives(AtomicU32::new(0)).run(vault, job, hold);
+            }
+            self.started.fetch_add(1, Ordering::SeqCst);
+            let _ = self.release.lock().unwrap().recv();
+            self.told_lost.store(hold.lost(), Ordering::SeqCst);
+            self.returned.fetch_add(1, Ordering::SeqCst);
+            let header = Header {
+                id: late_page(&job.header.id),
+                creator: "w".into(),
+                status: Status::Active,
+                version: 1,
+                acl_id: None,
+            };
+            Ok(vec![Mutation::Put(Row::Page(PageRow {
+                header,
+                title: "late".into(),
+                body: "late".into(),
+                updated_at_ms: 0,
+                slug: String::new(),
+                redirects: vec![],
+            }))])
+        }
+    }
+
+    fn has_page(s: &Server<Fakes>, v: &VaultId, id: ObjectId) -> bool {
+        let key = memex_types::RowKey {
+            table: memex_types::Table::Page,
+            id,
+        };
+        s.engine().store().snapshot(v).unwrap().get(&key).unwrap().is_some()
+    }
+
+    #[test]
+    fn a_handler_that_never_returns_is_failed_at_its_ceiling_and_its_late_result_writes_nothing() {
+        let (s, v) = setup(1);
+        let ceiling = memex_core::JobCeilings::default().for_kind("rendition");
+        let (handler, release) = hangs(|_| true);
+        let first = std::thread::spawn({
+            let (s, handler) = (s.clone(), handler.clone());
+            move || run_one(&s, &handler, "rendition", "first", ceiling)
+        });
+        eventually("the handler starts", || handler.started.load(Ordering::SeqCst) == 1);
+        let job = the_job(&s, &v);
+        // A second short of the ceiling, it's still running and still held.
+        s.engine().clock().advance(ceiling - Duration::from_secs(1));
+        eventually("the lease moves on", || held_job(&s, &v, &job.header.id).lease_until_ms > job.lease_until_ms);
+        assert!(!first.is_finished());
+        assert_eq!(held_job(&s, &v, &job.header.id).state, JobState::Running);
+        assert!(s.claim_job(&v, "rendition", "second").unwrap().is_none());
+        // At the ceiling the worker gives up on it, while the handler still hangs.
+        s.engine().clock().advance(Duration::from_secs(1));
+        eventually("the worker gives up", || first.is_finished());
+        assert!(first.join().unwrap());
+        assert_eq!(handler.returned.load(Ordering::SeqCst), 0, "the handler is still hanging");
+        assert!(abandoned_handlers() >= 1);
+        let failed = held_job(&s, &v, &job.header.id);
+        assert_eq!(
+            (failed.state, failed.attempts.len(), failed.lease_owner.as_deref()),
+            (JobState::Queued, 1, None)
+        );
+        let reason = failed.attempts[0].error.clone().unwrap();
+        assert_eq!(reason, past_ceiling_message("rendition", ceiling));
+        assert!(
+            reason.contains("ceiling of 14400 s for rendition jobs, set by MEMEX_RENDITION_CEILING_S"),
+            "{reason}"
+        );
+        // Item 2: a second worker claims it after its delay, and finishes it.
+        assert!(s.claim_job(&v, "rendition", "second").unwrap().is_none(), "it waits out its delay first");
+        s.engine().clock().advance(Duration::from_secs(60));
+        assert!(run(&s, &Arc::new(Derives(AtomicU32::new(0))), "rendition", "second"));
+        let done = held_job(&s, &v, &job.header.id);
+        assert_eq!((done.state, done.attempts.len()), (JobState::Done, 2));
+        assert!(derived(&s, &v, &job.header.id));
+        // The hung handler returns at last, told its job was lost, and what it returns writes nothing.
+        let head = s.engine().store().snapshot(&v).unwrap().head().unwrap();
+        release.send(()).unwrap();
+        eventually("the handler returns", || handler.returned.load(Ordering::SeqCst) == 1);
+        assert!(handler.told_lost.load(Ordering::SeqCst));
+        std::thread::sleep(KEEPER_POLL * 2);
+        assert_eq!(s.engine().store().snapshot(&v).unwrap().head().unwrap(), head, "nothing was written after it");
+        assert!(!has_page(&s, &v, late_page(&job.header.id)));
+        assert_eq!(held_job(&s, &v, &job.header.id), done);
+    }
+
+    #[test]
+    fn a_hung_handler_does_not_stop_other_jobs_of_its_kind() {
+        let (s, v) = setup(3);
+        let ceiling = Duration::from_secs(600);
+        // The first job it sees hangs on its first attempt. Every other one finishes.
+        let picked = Arc::new(std::sync::Mutex::new(None::<ObjectId>));
+        let (handler, release) = hangs({
+            let picked = picked.clone();
+            move |job| {
+                let mut p = picked.lock().unwrap();
+                let id = p.get_or_insert_with(|| job.header.id.clone());
+                *id == job.header.id && job.attempts.len() == 1
+            }
+        });
+        let stop = Arc::new(AtomicBool::new(false));
+        // One worker, as the embedding pool has.
+        let threads = start(
+            s.clone(),
+            vec![Pool {
+                kind: "rendition".into(),
+                workers: 1,
+                handler: handler.clone(),
+                ceiling,
+            }],
+            stop.clone(),
+        );
+        eventually("the handler hangs", || handler.started.load(Ordering::SeqCst) == 1);
+        assert_eq!(count(&s, &v, JobState::Queued), 2, "with its one worker hung, the others wait for the ceiling");
+        s.engine().clock().advance(ceiling);
+        eventually("the other two finish", || count(&s, &v, JobState::Done) == 2);
+        // The worker it had is free again, and does the retry too, while the hung thread still hangs.
+        s.engine().clock().advance(Duration::from_secs(60));
+        eventually("all three finish", || count(&s, &v, JobState::Done) == 3);
+        assert_eq!(handler.returned.load(Ordering::SeqCst), 0);
+        let id = picked.lock().unwrap().clone().unwrap();
+        let retried = held_job(&s, &v, &id);
+        assert_eq!(retried.attempts.len(), 2);
+        assert!(retried.attempts[0].error.as_deref().unwrap().contains("ceiling"));
+        release.send(()).unwrap();
+        eventually("the handler returns", || handler.returned.load(Ordering::SeqCst) == 1);
+        stop.store(true, Ordering::SeqCst);
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert!(!has_page(&s, &v, late_page(&id)));
     }
 
     #[test]
     fn a_panic_ends_the_keeper_too() {
         let (s, v) = setup(1);
-        assert!(run_one(s.as_ref(), &Panics, "rendition", "first"));
+        assert!(run(&s, &Arc::new(Panics), "rendition", "first"));
         let head = s.engine().store().snapshot(&v).unwrap().head().unwrap();
         s.engine().clock().advance(Duration::from_secs(3600));
         std::thread::sleep(KEEPER_POLL * 3);
@@ -765,7 +1006,7 @@ mod tests {
             other => panic!("{other:?}"),
         };
         s.blobs().delete(&v, &memex_types::BlobHash::parse(&row.sha256).unwrap()).unwrap();
-        let handler = crate::rendition_job::RenditionHandler {
+        let handler = Arc::new(crate::rendition_job::RenditionHandler {
             server: s.clone(),
             worker: crate::rendition_job::WorkerCommand {
                 program: "/bin/false".into(),
@@ -773,8 +1014,8 @@ mod tests {
                 timeout: Duration::from_secs(5),
             },
             ocr: None,
-        };
-        assert!(run_one(s.as_ref(), &handler, "rendition", "w"));
+        });
+        assert!(run(&s, &handler, "rendition", "w"));
         let job = the_job(&s, &v);
         assert_eq!((job.state, job.attempts.len()), (JobState::Dead, 1));
         assert!(job.attempts[0].error.as_deref().unwrap().contains("missing"), "{:?}", job.attempts);
@@ -783,6 +1024,6 @@ mod tests {
     #[test]
     fn no_work_returns_false() {
         let (s, _) = setup(0);
-        assert!(!run_one(s.as_ref(), &Panics, "rendition", "w"));
+        assert!(!run(&s, &Arc::new(Panics), "rendition", "w"));
     }
 }

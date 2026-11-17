@@ -71,7 +71,7 @@ pub use server::{
     TranscriptWindow, TriggerAudit, TypeDecision, UnresolvedLink, new_chat_cancel,
 };
 pub use session::{LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, SESSION_TTL_MS};
-pub use settings::{Backends, CacheSettings, LlmSettings, Settings, SettingsError, TranscribeApi, TranscribeSettings};
+pub use settings::{Backends, CacheSettings, JobCeilings, LlmSettings, Settings, SettingsError, TranscribeApi, TranscribeSettings};
 pub use sources::{ALLOWED_MEDIA_TYPES, UNTRUSTED, UploadLimits, UploadOutcome, UploadRequest, sniff_media_type};
 pub use store::{CommitItem, MAX_SHARED_IDS, PAGE_LIMIT, Receipt, Snapshot, Store, StoreError, WriterLease};
 pub use upcast::{CURRENT_VERSIONS, UpcastError, upcast};

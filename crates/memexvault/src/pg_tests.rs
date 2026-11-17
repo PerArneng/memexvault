@@ -556,6 +556,7 @@ fn pg_job_child() {
         kind: memex_core::RENDITION_JOB.into(),
         workers: 4,
         handler: Arc::new(DerivedOnce),
+        ceiling: memex_core::JobCeilings::default().for_kind(memex_core::RENDITION_JOB),
     }];
     println!("ready");
     for t in crate::workers::start(server, pools, stop) {
@@ -586,6 +587,7 @@ fn pg_job_child_long() {
         kind: memex_core::RENDITION_JOB.into(),
         workers: 1,
         handler: Arc::new(RunsUntilStopped),
+        ceiling: memex_core::JobCeilings::default().for_kind(memex_core::RENDITION_JOB),
     }];
     println!("ready");
     for t in crate::workers::start(server, pools, Arc::new(AtomicBool::new(false))) {
@@ -714,7 +716,7 @@ impl memex_core::ServerEdges for ManualLeaseEdges {
 /// A handler that does `during` and then reports a result, so a refused result shows as no rendition job done.
 struct LeaseScript<F>(F);
 
-impl<F: Fn(&memex_types::JobRow, &crate::workers::JobHold) + Send + Sync> crate::workers::JobHandler for LeaseScript<F> {
+impl<F: Fn(&memex_types::JobRow, &crate::workers::JobHold) + Send + Sync + 'static> crate::workers::JobHandler for LeaseScript<F> {
     fn run(&self, _: &VaultId, job: &memex_types::JobRow, hold: &crate::workers::JobHold) -> Result<Vec<memex_types::Mutation>, crate::workers::JobFailure> {
         (self.0)(job, hold);
         Ok(vec![])
@@ -732,14 +734,14 @@ fn pg_job_lease_renewal_cancel_and_takeover() {
         .batch_execute("DELETE FROM memex_server.tokens; DELETE FROM memex_server.principals; DELETE FROM memex_server.vault_meta;")
         .expect("clean");
     let pg = Arc::new(PgStore::connect(&url(), 8).expect("connect"));
-    let s = memex_core::Server::<ManualLeaseEdges>::new(
+    let s = Arc::new(memex_core::Server::<ManualLeaseEdges>::new(
         crate::registry_edge::PostgresRegistry(pg.clone()),
         PostgresStore(pg),
         crate::edges::FsBlobStore(memex_blob_fs::FsBlobs::new(&data, memex_blob_fs::RealFs)),
         ManualClock::starting_at(wall_ms()),
         crate::edges::SystemSeed,
         memex_core::testing::mem_search(),
-    );
+    ));
     let token = s.bootstrap("harness").expect("bootstrap").token;
     let caller = s.authenticate(&token).expect("auth");
     let v = s.create_vault(&caller, "lease-manual").expect("vault").id;
@@ -754,8 +756,12 @@ fn pg_job_lease_renewal_cancel_and_takeover() {
             .expect("upload");
     };
     let renew_every = Duration::from_millis(memex_core::jobs::RENEW_EVERY_MS as u64);
-    let job_now = |job: &memex_types::JobRow| s.get_job(&caller, &v, &job.header.id).expect("job");
-    let eventually = |what: &str, done: &dyn Fn() -> bool| {
+    // The handlers run on threads of their own, so each owns what it uses.
+    let ctx = || (s.clone(), caller.clone(), v.clone());
+    fn job_now(s: &memex_core::Server<ManualLeaseEdges>, caller: &memex_core::Caller, v: &VaultId, job: &memex_types::JobRow) -> memex_types::JobRow {
+        s.get_job(caller, v, &job.header.id).expect("job")
+    }
+    fn eventually(what: &str, done: &dyn Fn() -> bool) {
         for _ in 0..1200 {
             if done() {
                 return;
@@ -763,22 +769,26 @@ fn pg_job_lease_renewal_cancel_and_takeover() {
             std::thread::sleep(Duration::from_millis(25));
         }
         panic!("this never happened: {what}");
-    };
+    }
     let kind = memex_core::RENDITION_JOB;
+    let ceiling = memex_core::JobCeilings::default().for_kind(kind);
 
     // Three leases and more, in one attempt, with a second worker refused each time.
     upload("one");
-    let long = LeaseScript(|job: &memex_types::JobRow, hold: &crate::workers::JobHold| {
-        let mut until = job.lease_until_ms;
-        for _ in 0..10 {
-            s.engine().clock().advance(renew_every);
-            eventually("the lease moves on", &|| job_now(job).lease_until_ms > until);
-            until = job_now(job).lease_until_ms;
-            assert!(s.claim_job(&v, kind, "second").expect("claim").is_none());
-            assert!(!hold.lost());
+    let long = Arc::new(LeaseScript({
+        let (s, caller, v) = ctx();
+        move |job: &memex_types::JobRow, hold: &crate::workers::JobHold| {
+            let mut until = job.lease_until_ms;
+            for _ in 0..10 {
+                s.engine().clock().advance(renew_every);
+                eventually("the lease moves on", &|| job_now(&s, &caller, &v, job).lease_until_ms > until);
+                until = job_now(&s, &caller, &v, job).lease_until_ms;
+                assert!(s.claim_job(&v, kind, "second").expect("claim").is_none());
+                assert!(!hold.lost());
+            }
         }
-    });
-    assert!(crate::workers::run_one(&s, &long, kind, "first"));
+    }));
+    assert!(crate::workers::run_one(&s, &long, kind, "first", ceiling));
     let jobs = |state| {
         s.engine()
             .store()
@@ -793,29 +803,35 @@ fn pg_job_lease_renewal_cancel_and_takeover() {
 
     // Cancelled during a renewal: the handler hears and its completion is refused.
     upload("two");
-    let cancelled = LeaseScript(|job: &memex_types::JobRow, hold: &crate::workers::JobHold| {
-        s.cancel_job(&caller, &v, &job.header.id).expect("cancel");
-        s.engine().clock().advance(renew_every);
-        eventually("the handler hears", &|| hold.lost());
-    });
-    assert!(crate::workers::run_one(&s, &cancelled, kind, "first"));
+    let cancelled = Arc::new(LeaseScript({
+        let (s, caller, v) = ctx();
+        move |job: &memex_types::JobRow, hold: &crate::workers::JobHold| {
+            s.cancel_job(&caller, &v, &job.header.id).expect("cancel");
+            s.engine().clock().advance(renew_every);
+            eventually("the handler hears", &|| hold.lost());
+        }
+    }));
+    assert!(crate::workers::run_one(&s, &cancelled, kind, "first", ceiling));
     assert_eq!(jobs(memex_types::JobState::Cancelled).len(), 1);
     assert_eq!(jobs(memex_types::JobState::Done).len(), 1, "it wasn't recorded as done");
 
     // Taken: the new holder keeps it, whatever the old one says.
     upload("three");
-    let taken = LeaseScript(|_: &memex_types::JobRow, hold: &crate::workers::JobHold| {
-        let second = loop {
-            s.engine().clock().advance(Duration::from_millis(memex_core::jobs::LEASE_MS as u64));
-            if let Some(j) = s.claim_job(&v, kind, "second").expect("claim") {
-                break j;
-            }
-        };
-        s.engine().clock().advance(renew_every);
-        eventually("the handler hears", &|| hold.lost());
-        assert_eq!(job_now(&second).lease_owner.as_deref(), Some("second"));
-    });
-    assert!(crate::workers::run_one(&s, &taken, kind, "first"));
+    let taken = Arc::new(LeaseScript({
+        let (s, caller, v) = ctx();
+        move |_: &memex_types::JobRow, hold: &crate::workers::JobHold| {
+            let second = loop {
+                s.engine().clock().advance(Duration::from_millis(memex_core::jobs::LEASE_MS as u64));
+                if let Some(j) = s.claim_job(&v, kind, "second").expect("claim") {
+                    break j;
+                }
+            };
+            s.engine().clock().advance(renew_every);
+            eventually("the handler hears", &|| hold.lost());
+            assert_eq!(job_now(&s, &caller, &v, &second).lease_owner.as_deref(), Some("second"));
+        }
+    }));
+    assert!(crate::workers::run_one(&s, &taken, kind, "first", ceiling));
     let running = jobs(memex_types::JobState::Running);
     assert_eq!(
         (running.len(), running[0].lease_owner.as_deref(), running[0].attempts.len()),

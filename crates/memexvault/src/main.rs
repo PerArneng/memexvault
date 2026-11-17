@@ -363,17 +363,20 @@ fn main() -> ExitCode {
                     kind: memex_core::RENDITION_JOB.into(),
                     workers: 2,
                     handler: Arc::new(handler),
+                    ceiling: settings.job_ceilings.for_kind(memex_core::RENDITION_JOB),
                 },
                 // One at a time, since each holds a large model in memory.
                 Pool {
                     kind: memex_core::TRANSCRIBE_JOB.into(),
                     workers: 1,
                     handler: Arc::new(transcribe),
+                    ceiling: settings.job_ceilings.for_kind(memex_core::TRANSCRIBE_JOB),
                 },
                 Pool {
                     kind: memex_core::EMBED_JOB.into(),
                     workers: 1,
                     handler: Arc::new(EmbedHandler { server: server.clone() }),
+                    ceiling: settings.job_ceilings.for_kind(memex_core::EMBED_JOB),
                 },
             ];
             // Audits run with no LLM too, doing what costs no tokens. Their LLM checks are asked for by name, as each sampled claim is two calls.
@@ -401,6 +404,7 @@ fn main() -> ExitCode {
                     server: server.clone(),
                     agent: auditor,
                 }),
+                ceiling: settings.job_ceilings.for_kind(memex_core::AUDIT_JOB),
             });
             // Only with an LLM set up does anything leave this server.
             if let Some(llm) = &settings.llm {
@@ -415,6 +419,7 @@ fn main() -> ExitCode {
                     kind: memex_core::EXTRACT_JOB.into(),
                     workers: 1,
                     handler: Arc::new(ExtractHandler { server: server.clone(), agent }),
+                    ceiling: settings.job_ceilings.for_kind(memex_core::EXTRACT_JOB),
                 });
                 // Each queued claim is a call, so this is asked for by name. It sees claims and quotes only, and nothing it says can commit anything.
                 if let Some(model) = &settings.reviewer_model {
@@ -432,6 +437,7 @@ fn main() -> ExitCode {
                         kind: memex_core::REVIEW_JOB.into(),
                         workers: 1,
                         handler: Arc::new(ReviewHandler { server: server.clone(), agent }),
+                        ceiling: settings.job_ceilings.for_kind(memex_core::REVIEW_JOB),
                     });
                 }
             }

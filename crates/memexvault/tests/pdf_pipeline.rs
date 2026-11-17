@@ -74,7 +74,19 @@ fn upload(w: &World, name: &str, bytes: &[u8]) -> ObjectId {
 }
 
 fn run(w: &World) {
-    assert!(run_one(w.s.as_ref(), &w.handler, "rendition", "worker"));
+    // The handler runs on a thread of its own, so it gets a copy of the one the test set up.
+    let handler = Arc::new(RenditionHandler {
+        server: w.s.clone(),
+        worker: w.handler.worker.clone(),
+        ocr: w.handler.ocr.clone(),
+    });
+    assert!(run_one(
+        &w.s,
+        &handler,
+        "rendition",
+        "worker",
+        memex_core::JobCeilings::default().for_kind("rendition")
+    ));
 }
 
 #[test]
