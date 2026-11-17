@@ -527,7 +527,10 @@ mod tests {
     #[test]
     fn an_endpoint_keeps_only_its_scheme_host_and_port() {
         assert_eq!(endpoint_origin("http://127.0.0.1:8000/v1").as_deref(), Some("http://127.0.0.1:8000"));
-        assert_eq!(endpoint_origin("HTTPS://user:secret@LLM.example:443/v1?key=abc#x").as_deref(), Some("https://llm.example:443"));
+        assert_eq!(
+            endpoint_origin("HTTPS://user:secret@LLM.example:443/v1?key=abc#x").as_deref(),
+            Some("https://llm.example:443")
+        );
         assert_eq!(endpoint_origin("https://h?key=abc").as_deref(), Some("https://h"));
         assert_eq!(endpoint_origin("https://a@b@h/p").as_deref(), Some("https://h"));
         for bad in ["", "h/v1", "://h", "https://", "https://user@/v1", "ht tp://h"] {
