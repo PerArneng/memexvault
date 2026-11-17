@@ -10,10 +10,11 @@ use postgres::{Client, Statement, types::ToSql};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, Weak};
+use std::time::{Duration, Instant};
 
 pub const PAGE_LIMIT: i64 = 1000;
 
@@ -60,6 +61,16 @@ fn backend(e: postgres::Error) -> PgError {
 pub struct Conn {
     pub client: Client,
     statements: HashMap<String, Statement>,
+    /// The pool's count this connection is part of, given back when it's dropped. A writer's connection has none.
+    slot: Option<Weak<Slots>>,
+}
+
+impl Drop for Conn {
+    fn drop(&mut self) {
+        if let Some(slots) = self.slot.take().and_then(|w| w.upgrade()) {
+            slots.release();
+        }
+    }
 }
 
 impl Conn {
@@ -67,6 +78,7 @@ impl Conn {
         Self {
             client,
             statements: HashMap::new(),
+            slot: None,
         }
     }
 
@@ -108,10 +120,72 @@ pub struct PgLease {
     pub token: u64,
 }
 
+/// How many connections a store's pool may open, how many it keeps idle, and how long a caller waits for one past the limit.
+///
+/// Writers' lock connections are outside this count, one per vault this server writes to, so a burst of readers can't stop a writer opening its vault or committing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PoolLimits {
+    pub max_open: usize,
+    pub idle: usize,
+    pub wait: Duration,
+}
+
+/// Chosen from spec 085's measurements: see its Result.
+pub const DEFAULT_MAX_OPEN: usize = 32;
+pub const DEFAULT_WAIT: Duration = Duration::from_secs(5);
+
+impl PoolLimits {
+    /// The defaults, keeping at most `idle` idle connections.
+    pub fn with_idle(idle: usize) -> Self {
+        Self {
+            max_open: DEFAULT_MAX_OPEN.max(idle).max(1),
+            idle,
+            wait: DEFAULT_WAIT,
+        }
+    }
+}
+
+/// Pooled connections: the idle ones, and the count of every one open, idle or taken.
+struct Slots {
+    state: Mutex<SlotState>,
+    freed: Condvar,
+}
+
+struct SlotState {
+    idle: Vec<Conn>,
+    open: usize,
+    /// Waiters' tickets, oldest first. Only the oldest may take a connection that comes free, so a busy caller giving one back and taking it again can't starve a waiter.
+    queue: VecDeque<u64>,
+    next_ticket: u64,
+}
+
+impl Slots {
+    /// A pooled connection was dropped, so one more may open.
+    fn release(&self) {
+        let mut st = self.state.lock().expect("lock");
+        st.open = st.open.saturating_sub(1);
+        drop(st);
+        self.freed.notify_all();
+    }
+}
+
+/// Takes a connection out of the count without calling back into it, for one dropped while the count's lock is held.
+fn detach(mut conn: Conn) -> Conn {
+    conn.slot = None;
+    conn
+}
+
+/// How many pooled connections are open, and how many of those are idle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PoolStats {
+    pub open: usize,
+    pub idle: usize,
+}
+
 pub struct PgStore {
     target: Target,
-    pool: Mutex<Vec<Conn>>,
-    pool_max: usize,
+    slots: Arc<Slots>,
+    limits: PoolLimits,
     writers: Mutex<HashMap<VaultId, Arc<Mutex<Writer>>>>,
     schemas: Mutex<HashMap<VaultId, String>>,
     next_token: AtomicU64,
@@ -140,28 +214,120 @@ fn lock_key(vault: &VaultId) -> i64 {
 }
 
 impl PgStore {
+    /// The default limits, keeping at most `pool_max` idle connections.
     pub fn connect(url: &str, pool_max: usize) -> Result<Self, PgError> {
+        Self::connect_with(url, PoolLimits::with_idle(pool_max))
+    }
+
+    pub fn connect_with(url: &str, limits: PoolLimits) -> Result<Self, PgError> {
+        if limits.max_open == 0 {
+            return Err(PgError::Refused("the connection limit must be at least 1".into()));
+        }
         let store = Self {
             target: Target::parse(url)?,
-            pool: Mutex::new(vec![]),
-            pool_max,
+            slots: Arc::new(Slots {
+                state: Mutex::new(SlotState {
+                    idle: vec![],
+                    open: 0,
+                    queue: VecDeque::new(),
+                    next_ticket: 0,
+                }),
+                freed: Condvar::new(),
+            }),
+            limits,
             writers: Mutex::new(HashMap::new()),
             schemas: Mutex::new(HashMap::new()),
             next_token: AtomicU64::new(1),
         };
-        store.new_client()?;
+        // Proves the server is reachable, and keeps the connection for the first caller.
+        let first = store.take_conn()?;
+        store.give_conn(first);
         Ok(store)
+    }
+
+    pub fn limits(&self) -> PoolLimits {
+        self.limits
+    }
+
+    pub fn pool_stats(&self) -> PoolStats {
+        let st = self.slots.state.lock().expect("lock");
+        PoolStats {
+            open: st.open,
+            idle: st.idle.len(),
+        }
     }
 
     fn new_client(&self) -> Result<Client, PgError> {
         self.target.connect().map_err(backend)
     }
 
+    /// An idle connection, or a new one while fewer than the limit are open. Past the limit it waits for one to be given back or dropped, up to the set time, then fails with a backend error that says the pool is full. A closed connection stops counting once it's dropped.
+    // Edge: the wait is measured on the real clock, as it's a time a person waits.
+    #[allow(clippy::disallowed_methods)]
     pub fn take_conn(&self) -> Result<Conn, PgError> {
-        let pooled = self.pool.lock().expect("lock").pop();
-        match pooled {
-            Some(c) if !c.client.is_closed() => Ok(c),
-            _ => self.new_client().map(Conn::new),
+        let deadline = Instant::now() + self.limits.wait;
+        let mut closed = vec![];
+        let mut ticket = None;
+        let mut st = self.slots.state.lock().expect("lock");
+        loop {
+            let my_turn = match st.queue.front() {
+                None => true,
+                Some(front) => ticket == Some(*front),
+            };
+            if my_turn {
+                while let Some(c) = st.idle.pop() {
+                    if c.client.is_closed() {
+                        st.open = st.open.saturating_sub(1);
+                        closed.push(detach(c));
+                    } else {
+                        self.leave_queue(st, ticket);
+                        return Ok(c);
+                    }
+                }
+                if st.open < self.limits.max_open {
+                    st.open += 1;
+                    self.leave_queue(st, ticket);
+                    drop(closed);
+                    return match self.new_client() {
+                        Ok(client) => {
+                            let mut conn = Conn::new(client);
+                            conn.slot = Some(Arc::downgrade(&self.slots));
+                            Ok(conn)
+                        }
+                        Err(e) => {
+                            self.slots.release();
+                            Err(e)
+                        }
+                    };
+                }
+            }
+            if ticket.is_none() {
+                let t = st.next_ticket;
+                st.next_ticket += 1;
+                st.queue.push_back(t);
+                ticket = Some(t);
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                self.leave_queue(st, ticket);
+                return Err(PgError::Backend(format!(
+                    "the connection pool is full: all {} connections are in use, and none came free within {} ms",
+                    self.limits.max_open,
+                    self.limits.wait.as_millis()
+                )));
+            }
+            st = self.slots.freed.wait_timeout(st, deadline - now).expect("lock").0;
+        }
+    }
+
+    /// Takes a waiter's ticket out of the queue, and wakes the others, as the next one may now take what's free.
+    fn leave_queue(&self, mut st: std::sync::MutexGuard<'_, SlotState>, ticket: Option<u64>) {
+        let Some(t) = ticket else { return };
+        st.queue.retain(|q| *q != t);
+        let others = !st.queue.is_empty();
+        drop(st);
+        if others {
+            self.slots.freed.notify_all();
         }
     }
 
@@ -174,10 +340,16 @@ impl PgStore {
         self.take_conn()
     }
 
+    /// Keeps the connection idle and wakes a waiter, or drops it, which also wakes one.
     pub(crate) fn give_client(&self, conn: Conn) {
-        let mut pool = self.pool.lock().expect("lock");
-        if pool.len() < self.pool_max && !conn.client.is_closed() {
-            pool.push(conn);
+        let mut st = self.slots.state.lock().expect("lock");
+        if st.idle.len() < self.limits.idle && !conn.client.is_closed() && conn.slot.is_some() {
+            st.idle.push(conn);
+            drop(st);
+            self.slots.freed.notify_all();
+        } else {
+            drop(st);
+            drop(conn);
         }
     }
 
@@ -681,7 +853,7 @@ fn exec(t: &mut postgres::Transaction<'_>, cache: &mut Statements, sql: &str, pa
 }
 
 fn commit_in_transaction(conn: &mut Conn, schema: &str, batch: &[(&Event, &[Mutation])]) -> Result<(), PgError> {
-    let Conn { client, statements: cache } = conn;
+    let Conn { client, statements: cache, .. } = conn;
     let mut t = client.transaction().map_err(backend)?;
     let head_sql = format!("SELECT max(seq) FROM {schema}.events");
     let head_st = match cache.get(&head_sql) {
