@@ -73,6 +73,10 @@ pub struct ChatSettingsDto {
     pub day_tokens_used: u64,
     /// The limit today's spending is held to.
     pub day_tokens_limit: u64,
+    /// The model that answers, or null when this server has no chat model. Anyone who can read the vault sees it.
+    pub model: Option<String>,
+    /// Where the model is served, as `scheme://host[:port]` with no path, query or credentials. Only an admin of this vault receives it, and anyone else gets null, as it says where vault content goes and can name an internal host. Null too with no chat model.
+    pub endpoint: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

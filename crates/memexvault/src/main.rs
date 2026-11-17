@@ -445,6 +445,14 @@ fn main() -> ExitCode {
                     match llm_endpoint(&chat).and_then(memex_agent_adk::AdkAgent::new) {
                         Ok(a) => {
                             server.set_chat(Some(settings.chat));
+                            let endpoint = match chat.provider.as_str() {
+                                "gemini" => Some(memex_core::chat::GEMINI_ENDPOINT.to_string()),
+                                _ => chat.base_url.as_deref().and_then(memex_core::chat::endpoint_origin),
+                            };
+                            server.set_chat_model(Some(memex_core::chat::ChatModel {
+                                model: model.clone(),
+                                endpoint: endpoint.unwrap_or_else(|| "unknown".into()),
+                            }));
                             tracing::info!(model = %model, "the chat agent is available");
                             Some(Arc::new(AdkAgentRunner(a)))
                         }
