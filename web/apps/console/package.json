@@ -26,6 +26,7 @@
     "@codemirror/view": "6.43.15",
     "@lezer/highlight": "1.2.5",
     "@memex/core": "workspace:*",
+    "@memex/edge-agui": "workspace:*",
     "@memex/edge-browser": "workspace:*",
     "@memex/edge-http": "workspace:*",
     "@memex/edge-sse": "workspace:*",

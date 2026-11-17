@@ -92,6 +92,11 @@ export const QUERY_KEYS = {
   contradictions: (vault: string) => ["review", vault, "contradictions"] as const,
   autoCommit: (vault: string) => ["review", vault, "auto-commit"] as const,
   search: (vault: string, request: unknown) => ["search", vault, request] as const,
+  /** Everything about one vault's chat. */
+  chat: (vault: string) => ["chat", vault] as const,
+  chatSettings: (vault: string) => ["chat", vault, "settings"] as const,
+  chatThreads: (vault: string) => ["chat", vault, "threads"] as const,
+  chatThread: (vault: string, id: string) => ["chat", vault, "thread", id] as const,
   reading: (vault: string, rendition: string) => ["documents", vault, "reading", rendition] as const,
   // A changeset's author never changes, so this one can stay cached across writes.
   wikiAttribution: (vault: string, changeset: string) => ["attribution", vault, changeset] as const,

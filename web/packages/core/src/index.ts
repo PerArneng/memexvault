@@ -76,7 +76,7 @@ export { changeSearch, citationPath, EMPTY_SEARCH, groupItems, itemPath, markQuo
 export type { AsOf, ItemGroup, MarkedPart, ParsedSearch, SearchExpand, SearchMode, SearchProblem, SearchRequest, SearchState } from "./search";
 export { segmentRegion } from "./segment-region";
 export type { CancelSignal } from "./api";
-export { attachableFrom, citationIndex, EMPTY_TRANSCRIPT, MAX_MESSAGE_CHARS, messageWith, replyParts, stepSummary, transcriptOf, transcriptReducer, unresolvedCount } from "./chat";
-export type { AgentChannel, AgentRun, AgentRunRequest, ChatAttachment, CitationIndex, ReplyEnd, ReplyPart, RunStatus, TranscriptAction, TranscriptEntry, TranscriptState } from "./chat";
+export { attachableFrom, citationIndex, EMPTY_TRANSCRIPT, MAX_MESSAGE_CHARS, messageWith, prepareReply, replyParts, stepSummary, transcriptOf, transcriptReducer, unresolvedCount } from "./chat";
+export type { AgentChannel, AgentRun, AgentRunRequest, ChatAttachment, CitationIndex, PreparedReply, ReplyEnd, ReplyPart, RunStatus, TranscriptAction, TranscriptEntry, TranscriptState } from "./chat";
 export { createChatSession } from "./chat-cases";
 export type { ChatApi, ChatCases, ChatSession } from "./chat-cases";

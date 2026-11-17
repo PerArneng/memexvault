@@ -56,6 +56,9 @@ importers:
       '@memex/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@memex/edge-agui':
+        specifier: workspace:*
+        version: link:../../packages/edge-agui
       '@memex/edge-browser':
         specifier: workspace:*
         version: link:../../packages/edge-browser

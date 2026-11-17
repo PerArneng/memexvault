@@ -1,16 +1,19 @@
-import { defaultSectionPath, parseVaultPath, scopeIn, sectionPath, switchVaultPath, vaultPath, visibleSections } from "@memex/core";
+import { attachableFrom, defaultSectionPath, parseVaultPath, scopeIn, sectionPath, switchVaultPath, vaultPath, visibleSections } from "@memex/core";
 import type { Identity, Vault, VaultId } from "@memex/types";
 import { Button, EmptyState, Menu, Skeleton, Toasts } from "@memex/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
-import { ChevronDown, Search as SearchIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDown, MessageSquare, Search as SearchIcon } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useConnectivity, useEngine, useNotices, useSession } from "../engine-context";
 import { Frame } from "../frame";
 import { QUERY_KEYS, unwrap } from "../query";
 import { Palette } from "./palette";
 import { QueryView } from "./query-view";
 import { SectionScreen } from "./section-screen";
+
+// Lazy, so nobody pays for the chat, its Markdown or its AG-UI client until they open it. The AG-UI client itself loads on the first message.
+const ChatPanel = lazy(() => import("../chat/chat-panel"));
 
 const VaultSwitcher = ({ identity, vault, vaults }: { readonly identity: Identity; readonly vault: VaultId | null; readonly vaults: readonly Vault[] }) => {
   const navigate = useNavigate();
@@ -84,6 +87,7 @@ const Shell = () => {
   const location = useLocation();
   const router = useRouter();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   useCacheLifecycle();
 
   const vaultsQuery = useQuery({ queryKey: QUERY_KEYS.vaults, queryFn: async () => unwrap(await engine.listVaults()) });
@@ -115,6 +119,11 @@ const Shell = () => {
           <span className="px-2 text-xs text-text-muted">Vault</span>
           <VaultSwitcher identity={identity} vault={vault} vaults={vaults} />
         </div>
+        {vault !== null && place?.section !== "chat" && (
+          <Button onClick={() => setChatOpen((open) => !open)} aria-expanded={chatOpen} aria-controls="chat-side" className="justify-start" data-testid="chat-toggle">
+            <MessageSquare size={14} aria-hidden={true} /> {chatOpen ? "Hide chat" : "Chat"}
+          </Button>
+        )}
         <Button onClick={() => setPaletteOpen(true)} className="justify-between">
           <span className="inline-flex items-center gap-1.5"><SearchIcon size={14} aria-hidden={true} /> Commands</span>
           <kbd className="font-mono text-xs text-text-muted">Ctrl K</kbd>
@@ -141,6 +150,13 @@ const Shell = () => {
           <SectionScreen identity={identity} vault={place.vault} sectionName={place.section} rest={place.rest} />
         )}
       </main>
+      {chatOpen && vault !== null && place?.section !== "chat" && (
+        <aside id="chat-side" className="flex w-[26rem] shrink-0 flex-col border-l border-border">
+          <Suspense fallback={<Skeleton className="m-3 h-24" />}>
+            <ChatPanel key={vault} identity={identity} vault={vault} attachable={attachableFrom(place?.section ?? null, place?.rest ?? [])} onClose={() => setChatOpen(false)} />
+          </Suspense>
+        </aside>
+      )}
       <Palette open={paletteOpen} onOpenChange={setPaletteOpen} identity={identity} vault={vault} vaults={vaults} onSignOut={startSignOut} />
       <Toasts messages={notices} onDismiss={engine.dismissNotice} />
     </Frame>

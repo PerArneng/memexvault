@@ -1,3 +1,4 @@
+import { INLINE_CLOSE, INLINE_OPEN } from "@memex/types";
 import type { ChannelEvent, ChatStoredMessage, ChatToolAnswer, EvidenceItem, VaultId } from "@memex/types";
 import { documentPath } from "./document-routes";
 import type { SourceViewRoute } from "./document-routes";
@@ -321,6 +322,26 @@ export const replyParts = (text: string, index: CitationIndex): readonly ReplyPa
   }
   if (last < text.length) parts.push({ kind: "text", text: text.slice(last) });
   return parts;
+};
+
+export interface PreparedReply {
+  /** Markdown, with each citation as an `INLINE_OPEN<n>INLINE_CLOSE` placeholder for `SafeMarkdown`. */
+  readonly text: string;
+  readonly cites: readonly Extract<ReplyPart, { kind: "cite" }>[];
+}
+
+/** A reply ready for `SafeMarkdown`. Placeholder characters already in the reply are replaced first, so the model can't forge a chip. */
+export const prepareReply = (text: string, index: CitationIndex): PreparedReply => {
+  const clean = text.replaceAll(INLINE_OPEN, "\uFFFD").replaceAll(INLINE_CLOSE, "\uFFFD");
+  const cites: Extract<ReplyPart, { kind: "cite" }>[] = [];
+  const out = replyParts(clean, index)
+    .map((part) => {
+      if (part.kind === "text") return part.text;
+      cites.push(part);
+      return `${INLINE_OPEN}${String(cites.length - 1)}${INLINE_CLOSE}`;
+    })
+    .join("");
+  return { text: out, cites };
 };
 
 /** How many of a reply's citations lead nowhere, which the reply says. */

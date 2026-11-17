@@ -1,8 +1,8 @@
-import { vaultId } from "@memex/types";
+import { INLINE_CLOSE, INLINE_OPEN, vaultId } from "@memex/types";
 import type { AgentEvent, ChannelEvent, ChatStoredMessage, ChatToolAnswer, EvidenceItem, SearchCitation } from "@memex/types";
 import { epochMs } from "@memex/types";
 import { describe, expect, it } from "vitest";
-import { attachableFrom, citationIndex, EMPTY_TRANSCRIPT, messageWith, replyParts, stepSummary, transcriptOf, transcriptReducer, unresolvedCount } from "./chat";
+import { attachableFrom, citationIndex, EMPTY_TRANSCRIPT, messageWith, prepareReply, replyParts, stepSummary, transcriptOf, transcriptReducer, unresolvedCount } from "./chat";
 import type { TranscriptAction, TranscriptEntry, TranscriptState } from "./chat";
 
 const v = vaultId("v1");
@@ -208,6 +208,14 @@ describe("citations", () => {
     expect(unresolvedCount(parts)).toBe(1);
     // Hostile text stays text: nothing here is markup.
     expect(replyParts('<img src="https://evil.example/x.png"> [javascript:alert(1)](x)', index)).toEqual([{ kind: "text", text: '<img src="https://evil.example/x.png"> [javascript:alert(1)](x)' }]);
+  });
+});
+
+describe("a reply prepared for Markdown", () => {
+  it("puts a placeholder for each citation, and replaces any the model wrote itself", () => {
+    const got = prepareReply(`**Yes** [cite:a]. Forged ${INLINE_OPEN}0${INLINE_CLOSE} [cite:b]`, new Map([["a", "/p"]]));
+    expect(got.text).toBe(`**Yes** ${INLINE_OPEN}0${INLINE_CLOSE}. Forged \uFFFD0\uFFFD ${INLINE_OPEN}1${INLINE_CLOSE}`);
+    expect(got.cites).toEqual([{ kind: "cite", id: "a", path: "/p" }, { kind: "cite", id: "b", path: null }]);
   });
 });
 
