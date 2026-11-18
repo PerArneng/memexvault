@@ -31,9 +31,9 @@ fn store() -> PostgresStore {
     PostgresStore(Arc::new(pg))
 }
 
-/// The container tool, `docker` unless `MEMEX_TEST_CONTAINER_CLI` names another, such as `podman`.
+/// The container tool, `docker` unless `MEMEX_TEST_CONTAINER_ENGINE` names another, such as `podman`.
 fn container_cli() -> String {
-    std::env::var("MEMEX_TEST_CONTAINER_CLI").unwrap_or_else(|_| "docker".into())
+    std::env::var("MEMEX_TEST_CONTAINER_ENGINE").unwrap_or_else(|_| "docker".into())
 }
 
 fn sql() -> Client {
