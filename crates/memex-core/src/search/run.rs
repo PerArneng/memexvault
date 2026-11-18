@@ -269,13 +269,13 @@ where
     L: LexicalIndex,
     V: VectorIndex,
 {
-    let snap = store.snapshot(vault)?;
-    let head = snap.head()?;
+    let head = store.snapshot(vault)?.head()?;
     if head.is_none_or(|h| min_seq > h) {
         return Err(ServerError::Invalid(format!(
             "min_seq {min_seq} is ahead of the log, whose last event is {head:?}"
         )));
     }
+    // The snapshot is given back before the vector index takes a connection of its own, so one search never holds two pooled connections at once, which could wait on each other at the pool's limit. A later snapshot only sees more of the log, so the check is the same.
     let lexical_mark = if plan.use_lexical {
         match lexical.watermark(vault, Generation::Live) {
             Ok(w) => Some(w),
@@ -293,7 +293,12 @@ where
     } else {
         None
     };
-    for mark in [lexical_mark, vector_mark].into_iter().flatten() {
+    let marks: Vec<_> = [lexical_mark, vector_mark].into_iter().flatten().collect();
+    if marks.iter().all(|m| m.is_some_and(|w| w >= min_seq)) {
+        return Ok(());
+    }
+    let snap = store.snapshot(vault)?;
+    for mark in marks {
         if !caught_up(&snap, mark, min_seq)? {
             return Err(ServerError::NotCaughtUp { min_seq, reached: mark });
         }

@@ -5,7 +5,7 @@ use memex_blob_fs::{FsBlobs, RealFs};
 use memex_core::{SearchEdges, Server, ServerEdges, Settings};
 use memex_inference::{OnnxEmbedder, OnnxReranker};
 use memex_lexical::TantivyLexical;
-use memex_store_postgres::PgStore;
+use memex_store_postgres::{PgStore, PoolLimits};
 use memex_vector::PgVectors;
 use memexvault::cache_edge::TieredCaches;
 use memexvault::edges::{AdkAgentRunner, FsBlobStore, PgVectorIndex, SystemClock, SystemSeed, TantivyIndex, llm_endpoint};
@@ -43,7 +43,12 @@ fn fail(message: impl std::fmt::Display) -> ExitCode {
 
 fn build(settings: &Settings) -> Result<(Arc<PgStore>, Server<Production>), String> {
     let url = settings.database_url.as_deref().ok_or("MEMEX_DATABASE_URL isn't set")?;
-    let pg = Arc::new(PgStore::connect(url, 16).map_err(|e| e.to_string())?);
+    let limits = PoolLimits {
+        max_open: settings.pg_max_connections,
+        idle: settings.pg_max_connections.min(16),
+        wait: Duration::from_millis(settings.pg_wait_ms),
+    };
+    let pg = Arc::new(PgStore::connect_with(url, limits).map_err(|e| e.to_string())?);
     let server = Server::new(
         PostgresRegistry(pg.clone()),
         PostgresStore(pg.clone()),

@@ -61,6 +61,10 @@ impl Default for CacheSettings {
 #[derive(Clone, PartialEq, Eq)]
 pub struct Settings {
     pub database_url: Option<String>,
+    /// How many pooled Postgres connections one server may open. Writers' lock connections, one per vault being written, come on top.
+    pub pg_max_connections: usize,
+    /// How long a caller waits for a pooled connection past that limit, before it gets an error.
+    pub pg_wait_ms: u64,
     pub data_dir: PathBuf,
     /// Where `models fetch` puts model files.
     pub models_dir: PathBuf,
@@ -175,6 +179,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             database_url: None,
+            pg_max_connections: 32,
+            pg_wait_ms: 5000,
             data_dir: PathBuf::from("./memex-data"),
             models_dir: PathBuf::from("./memex-models"),
             http_bind: "127.0.0.1:8080".into(),
@@ -206,6 +212,8 @@ impl fmt::Debug for Settings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Settings")
             .field("database_url", &self.database_url.as_ref().map(|_| "<redacted>"))
+            .field("pg_max_connections", &self.pg_max_connections)
+            .field("pg_wait_ms", &self.pg_wait_ms)
             .field("data_dir", &self.data_dir)
             .field("models_dir", &self.models_dir)
             .field("http_bind", &self.http_bind)
@@ -414,6 +422,8 @@ impl Settings {
                 .filter(|p| *p >= 1);
             s.auto_commit_threshold_permille = permille.ok_or(SettingsError::InvalidThreshold { value: v })?;
         }
+        s.pg_max_connections = count("MEMEX_PG_MAX_CONNECTIONS", text("MEMEX_PG_MAX_CONNECTIONS")?, s.pg_max_connections)?;
+        s.pg_wait_ms = count("MEMEX_PG_WAIT_MS", text("MEMEX_PG_WAIT_MS")?, s.pg_wait_ms as usize)? as u64;
         s.embed_threads = count("MEMEX_EMBED_THREADS", text("MEMEX_EMBED_THREADS")?, s.embed_threads)?;
         s.embed_query_sessions = count("MEMEX_EMBED_QUERY_SESSIONS", text("MEMEX_EMBED_QUERY_SESSIONS")?, s.embed_query_sessions)?;
         s.rerank_threads = count("MEMEX_RERANK_THREADS", text("MEMEX_RERANK_THREADS")?, s.rerank_threads)?;
@@ -569,6 +579,19 @@ mod tests {
     fn debug_never_shows_the_password() {
         let s = from(&[("MEMEX_DATABASE_URL", "postgres://u:hunter2@h/d")]).unwrap();
         assert!(!format!("{s:?}").contains("hunter2"));
+    }
+
+    #[test]
+    fn postgres_pool_limits_parse_and_refuse_nonsense() {
+        let s = from(&[]).unwrap();
+        assert_eq!((s.pg_max_connections, s.pg_wait_ms), (32, 5000));
+        let s = from(&[("MEMEX_PG_MAX_CONNECTIONS", "8"), ("MEMEX_PG_WAIT_MS", "250")]).unwrap();
+        assert_eq!((s.pg_max_connections, s.pg_wait_ms), (8, 250));
+        for var in ["MEMEX_PG_MAX_CONNECTIONS", "MEMEX_PG_WAIT_MS"] {
+            for bad in ["0", "lots", "-3"] {
+                assert!(matches!(from(&[(var, bad)]), Err(SettingsError::InvalidNumber { .. })), "{var}={bad}");
+            }
+        }
     }
 
     #[test]
