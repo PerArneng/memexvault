@@ -121,6 +121,12 @@ The API's own time for these was p50 57.4, p95 139.2 ms. Every lane returned 200
 - `pnpm --filter @memex/console e2e:entities`: 16 of 16, on a database of its own, port 18187 and a debug build. The first run's three scale checks failed at once with `spawnSync docker ENOENT`: `scale.spec.ts` runs `docker exec`, and this machine has only podman. I reran that file with a `docker` on `PATH` that runs `podman`, outside the repository and not committed, and all three passed.
 - `cargo deny check licenses`: not run, as it isn't installed. No dependency was added.
 
+**After merging `main` again** at `97be1d5` (spec 086, which also changed `web/` and the API types; the merge had no conflicts):
+- `cargo fmt --check` and `clippy -D warnings`: pass. `cargo test --workspace --no-fail-fast`: 1000 passed, 0 failed, 112 ignored. `pg_` entity tests: 5 of 5, in 41 s.
+- `pnpm typecheck`, `lint`, `test` (722 tests in 42 files), `build` and `budget` (139,910 bytes gzip): pass.
+- `pnpm api:check` against a running `memexvault serve` from this branch: "API types and document match the server's document", so the merged types needed no regeneration, and the hand edit of `schema.ts` is confirmed.
+- `e2e:entities`: 13 passed, at load 54 → 23. The 3 scale checks were skipped this time (no `MEMEX_E2E_PG_CONTAINER`), as they take about 6 minutes and 750 MB; their numbers above are from the previous merge.
+
 **Before the merge,** `memexvault` didn't compile on Linux: `scripts/fetch-pdfium.sh` pinned only a macOS build, and `memex-pdf` used pdfium-render's Apple-only `core_graphics` feature. Spec 091 fixed that. The first runs above used a local workaround that was never committed, and the 10 PDF tests failed under it.
 
 **e2e changes.**
@@ -129,7 +135,6 @@ The API's own time for these was p50 57.4, p95 139.2 ms. Every lane returned 200
 - The table's status gained `data-sort-key`.
 
 **Follow-ups.**
-- Run `pnpm api:check` against a running server, to confirm the hand edit of `schema.ts` against the server and not only against the committed document.
 - Run `cargo deny check licenses`.
 - The facade lane that sorts by name with a range filter on price passed 2 of 3 runs since the fix, and failed once at load 12 to 17. If it fails again on a quieter machine, a field-specific index for correlated pairs needs a new spec, as Decisions says.
 - `scale.spec.ts` (spec 045's) calls `docker` directly, so it needs a shim on a podman-only machine.
