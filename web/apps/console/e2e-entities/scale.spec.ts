@@ -11,7 +11,12 @@ import { startServer, stopServer } from "../e2e-shell/server";
  *   across all trials ≤100 ms, over at least 200 trials across five kinds of filter, each trial with a new value so no cache answers it.
  * - Scroll: scrolling from the first row to the last, loading every page. The longest main-thread task ≤250 ms, the p99 gap between frames ≤100 ms,
  *   every row reached, and at most 200 row elements in the DOM at any time.
- * - The sort over 200,000 loaded rows and the filter with all of them loaded are recorded, and aren't part of the rule, which is about the table as first opened.
+ * - The filter with all 200,000 rows loaded is recorded, and isn't part of the rule, which is about the table as first opened.
+ *
+ * Spec 087's item 3, its pass rule also set before anything was measured: the same filter rule, ≤100 ms over the API's time at p95 over at least 200 trials,
+ * with the table sorted on the server. Its lanes are a sorted first page (a filter every row passes, with a new value each trial, so no cache answers) and
+ * sorted with a filter. The API's own p95 is recorded beside it, with the load. A column click on a table of 200,001 rows must put the highest price of them
+ * all first, which only a sort on the server can.
  * A debug server is fine, as both rules are about the browser's side: the API's time is taken out or doesn't block frames.
  *
  * The rows go straight into the entity tables, as spec 023's `entity_filter_bench` does through the store. Loading them through proposals would take hours and
@@ -179,6 +184,8 @@ const timedSubmit = (page: Page, expectedKey: string): Promise<Trial> =>
 
 interface Lane {
   readonly name: string;
+  /** `<field>:<asc|desc>`, sorted on the server. */
+  readonly sort?: string;
   readonly filters: (i: number) => readonly (readonly [string, string, string])[];
   /** Rows the first page should hold, so a filter that answered wrongly can't pass for a fast one. */
   readonly rows: (i: number) => number;
@@ -192,19 +199,28 @@ const LANES: readonly Lane[] = [
   { name: "exact and range", filters: (i) => [["category", "eq", `category ${String(i + 500)}`], ["price", "lt", String(50_000 + i)]], rows: () => 100 },
 ];
 
-const keyOf = (filters: readonly (readonly [string, string, string])[]) => filters.map(([f, o, v]) => `${f}:${o}:${v}`).join("&");
-const tableUrl = (filters: readonly (readonly [string, string, string])[]) => `/vaults/${vault}/entities/-/types/${TYPE}?f=${encodeURIComponent(filters.map(([f, o, v]) => `${f}:${o}:${v}`).join("\n"))}`;
+const SORTED_LANES: readonly Lane[] = [
+  { name: "sorted first page, price desc", sort: "price:desc", filters: (i) => [["price", "gte", String(-1 - i)]], rows: () => 200 },
+  { name: "sorted first page, name asc", sort: "name:asc", filters: (i) => [["price", "gte", String(-1 - i)]], rows: () => 200 },
+  { name: "sorted first page, released desc", sort: "released:desc", filters: (i) => [["price", "gte", String(-1 - i)]], rows: () => 200 },
+  { name: "sorted, exact ~0.1%, price desc", sort: "price:desc", filters: (i) => [["category", "eq", `category ${String(i + 100)}`]], rows: () => 200 },
+  { name: "sorted, range ~50%, name asc", sort: "name:asc", filters: (i) => [["price", "lt", String(50_000 + i)]], rows: () => 200 },
+];
 
-const measureLanes = async (page: Page, trialsPerLane: number) => {
+const keyOf = (filters: readonly (readonly [string, string, string])[]) => filters.map(([f, o, v]) => `${f}:${o}:${v}`).join("&");
+const tableUrl = (filters: readonly (readonly [string, string, string])[], sort?: string) =>
+  `/vaults/${vault}/entities/-/types/${TYPE}?f=${encodeURIComponent(filters.map(([f, o, v]) => `${f}:${o}:${v}`).join("\n"))}${sort === undefined ? "" : `&sort=${encodeURIComponent(sort)}`}`;
+
+const measureLanes = async (page: Page, trialsPerLane: number, lanes: readonly Lane[] = LANES) => {
   const out: Record<string, ReturnType<typeof summary>> = {};
   const rowCounts: Record<string, { min: number; max: number }> = {};
   const overheads: number[] = [];
   const apis: number[] = [];
-  for (const lane of LANES) {
+  for (const lane of lanes) {
     const laneOverheads: number[] = [];
     const laneRows: number[] = [];
-    await page.goto(tableUrl(lane.filters(1000)));
-    await expect(page.locator(`[data-filter-key="${keyOf(lane.filters(1000))}"][data-settled=true]`)).toBeVisible();
+    await page.goto(tableUrl(lane.filters(1000), lane.sort));
+    await expect(page.locator(`[data-filter-key="${keyOf(lane.filters(1000))}"][data-sort-key="${lane.sort ?? ""}"][data-settled=true]`)).toBeVisible();
     for (let i = 0; i < trialsPerLane; i += 1) {
       const filters = lane.filters(i);
       for (const [index, [, , value]] of filters.entries()) await page.locator(`#filter-${String(index)}-value`).fill(value);
@@ -233,6 +249,30 @@ test("item 6: filtering 200,000 entities, over the API's time", async ({ page })
   // A 0.1% filter on 200,000 finds about 200, and 200 is a page.
   expect(result.rowCounts["exact, ~0.1%"]).toEqual({ min: 200, max: 200 });
   expect(result.rowCounts["range, ~50%"]).toEqual({ min: 200, max: 200 });
+  expect(result.overhead.p95).toBeLessThanOrEqual(OVERHEAD_P95_MS);
+});
+
+test("spec 087 item 3: a sorted first page and a sorted filter over 200,000 entities, over the API's time", async ({ page }) => {
+  test.setTimeout(1_200_000);
+  await signIn(page);
+  const loadAtStart = loadAverage();
+  // A column click sorts all the rows: the highest price of 200,001 is first, though only 200 are loaded.
+  await page.goto(`/vaults/${vault}/entities/-/types/${TYPE}?cols=name,price`);
+  await expect(page.locator("[data-filter-key][data-sort-key=''][data-settled=true]")).toHaveAttribute("data-entity-count", "200");
+  const schema = sql(`select nspname from pg_namespace where nspname like 'vault\\_${vault}%'`);
+  const highest = sql(`select max(number_value)::bigint from ${schema}.entity_fields where field = 'price'`);
+  const header = page.getByRole("columnheader", { name: "price" }).getByRole("button");
+  await header.click();
+  await expect(page.locator("[data-sort-key='price:asc'][data-settled=true]")).toHaveAttribute("data-entity-count", "200");
+  await header.click();
+  await expect(page.locator("[data-sort-key='price:desc'][data-settled=true]")).toHaveAttribute("data-entity-count", "200");
+  // A number cell shows the value as it is, with no grouping.
+  await expect(page.getByRole("row").nth(1)).toContainText(highest);
+  record("spec 087 item 3 column click", { highest, firstRow: await page.getByRole("row").nth(1).textContent() });
+  const result = await measureLanes(page, TRIALS_PER_LANE, SORTED_LANES);
+  record("spec 087 item 3 sorted overhead, ms", { byLane: result.byLane, rowCounts: result.rowCounts, overall: result.overhead, api: result.api, rule: OVERHEAD_P95_MS, loadAtStart, loadAtEnd: loadAverage() });
+  expect(result.raw.length).toBeGreaterThanOrEqual(200);
+  for (const lane of SORTED_LANES) expect(result.rowCounts[lane.name], lane.name).toEqual({ min: 200, max: 200 });
   expect(result.overhead.p95).toBeLessThanOrEqual(OVERHEAD_P95_MS);
 });
 
@@ -277,23 +317,9 @@ test("item 6: scrolling all 200,000 entities", async ({ page }) => {
   const gapSummary = summary(measured.gaps);
   record("item 6 scroll", { rows: measured.rows, seconds, gaps: gapSummary, longTasks: measured.tasks.length, longestTask: Math.round(longest), maxRowElements: measured.maxRowElements, heapMb: measured.heapMb, scrollHeight: measured.scrollHeight, rule: { longTask: LONG_TASK_MS, gapP99: FRAME_GAP_P99_MS, rowElements: MAX_ROW_ELEMENTS }, loadAtStart, loadAtEnd: loadAverage() });
 
-  // Recorded and outside the rule: the last row is really there, a sort of everything loaded, and filtering with everything loaded.
+  // Recorded and outside the rule: the last row is really there, and filtering with everything loaded.
   // The ids sort the loaded rows before the one real entity the rows were modelled on, so it's the last.
   await expect(page.getByRole("row").last()).toContainText("zz template");
-  const sortMs = await page.evaluate(async () => {
-    const started = performance.now();
-    document.querySelector<HTMLButtonElement>("[role=columnheader] button")?.click();
-    await new Promise<void>((done) => {
-      const check = () => (document.querySelector("[data-sort-note]") === null ? requestAnimationFrame(check) : done());
-      check();
-    });
-    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
-    return performance.now() - started;
-  });
-  await expect(page.locator("[data-sort-note]")).toContainText(`${(COUNT + 1).toLocaleString("en")} rows loaded`);
-  record("item 6 outside the rule, sort of all loaded rows, ms", { ms: Math.round(sortMs), load: loadAverage() });
-  await page.getByRole("button", { name: "Clear the sort" }).click();
-  await expect(page.locator("[data-sort-note]")).toHaveCount(0);
   await page.getByRole("button", { name: "Add a filter" }).click();
   await page.locator("#filter-0-field").selectOption("category");
   const loaded: number[] = [];

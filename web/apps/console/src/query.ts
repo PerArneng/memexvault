@@ -93,6 +93,6 @@ export const QUERY_KEYS = {
   autoCommit: (vault: string) => ["review", vault, "auto-commit"] as const,
   search: (vault: string, request: unknown) => ["search", vault, request] as const,
   reading: (vault: string, rendition: string) => ["documents", vault, "reading", rendition] as const,
-  // A changeset's author never changes, so this one can stay cached across writes.
-  wikiAttribution: (vault: string, changeset: string) => ["attribution", vault, changeset] as const,
+  /** Who an actor is. Outside the wiki's and the jobs' keys, so their refreshes don't ask again. */
+  actor: (vault: string, id: string) => ["actor", vault, id] as const,
 };

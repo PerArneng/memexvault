@@ -123,14 +123,6 @@ export interface WikiWrite {
 }
 
 /** Who a change came from. */
-export interface WikiAttribution {
-  readonly proposer: string;
-  readonly machine: boolean;
-  readonly extractor: string | null;
-  readonly rationale: string;
-  readonly state: string;
-}
-
 /** Something a `{{claim:` can complete to. */
 export interface WikiClaimOption {
   readonly id: string;

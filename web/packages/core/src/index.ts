@@ -57,9 +57,9 @@ export type { ReviewRoute } from "./review-routes";
 export { afterRemoving, AUDITOR, AUTO_COMMIT_RULES, automaticPath, autoCommitStateText, BATCH_LIMIT, batchesOf, changeByText, changeKindText, decisionAccess, decisionAccessText, decisionFailure, defaultApproveReason, describeMutation, describeOp, frameTouchesQueue, INITIAL_QUEUE, isChatProposal, markReviewQuote, opsAsText, parseEditedOps, percent, QUEUE_KEY_HELP, queueCommandFor, queueReconciled, queueStep, reasonProblem, selectedIn, sourcePlace, summarizeBatch, validatorLine } from "./review";
 export type { AutomaticPath, BatchSummary, DecisionAccess, DecisionOutcome, KeyPress, OpSummary, ParsedOps, PathTone, QueueCommand, QueuePanel, QueueRefusal, QueueState, QueueStep, QueueView, SourcePlace, ValidatorLine } from "./review";
 export type { QueueFeed, QueueFeedEvent, ReviewCases } from "./review-cases";
-export { attributeOf, entityLabel, FILTER_OP_LABELS, filterProblem, MAX_DEFAULT_COLUMNS, MAX_SCHEMA_FIELDS, parseFieldValue, schemaView, sortLoadedRows, valueText } from "./entity-schema";
+export { attributeOf, entityLabel, FILTER_OP_LABELS, filterProblem, MAX_DEFAULT_COLUMNS, MAX_SCHEMA_FIELDS, parseFieldValue, schemaView, valueText } from "./entity-schema";
 export type { EntityColumn, EntityFilter, EntityFilterDef, EntitySort, FieldKind, FilterInput, FilterOp, ParsedValue, SchemaField, SchemaView, SortDirection } from "./entity-schema";
-export { entityFilterText, entityPath, parseEntityFilter, parseEntityRoute } from "./entity-routes";
+export { entityFilterText, entityPath, entitySortText, parseEntityFilter, parseEntityRoute } from "./entity-routes";
 export type { EntityRoute, EntityTableRoute } from "./entity-routes";
 export { approvalText, blankDraft, blankField, DRAFT_KIND_LABELS, DRAFT_KINDS, draftFromSchema, draftProblems, entityGraph, graphClaims, MAX_GRAPH_CLAIMS, MERGE_OUTCOME_TEXT, mergePreview, schemaFromDraft, splitPreview } from "./entity-draft";
 export type { ApprovalText, DraftField, DraftKind, EntityGraph, GraphLink, GraphNode, MergeOutcome, MergePreview, MergeRow, SplitPreview, TypeDraft } from "./entity-draft";
@@ -75,4 +75,7 @@ export type { BulkRetryOutcome, IngestApi, IngestCases, IngestRoute, JobList } f
 export { changeSearch, citationPath, EMPTY_SEARCH, groupItems, itemPath, markQuote, markTerms, parseAsOf, parseInstant, parseSearchState, queryTerms, SEARCH_DEBOUNCE_MS, SEARCH_DEFAULT_LIMIT, SEARCH_EPISTEMIC, SEARCH_EXPANDS, SEARCH_KINDS, SEARCH_MODES, searchPath, searchProblem, searchRequestOf, toggled } from "./search";
 export type { AsOf, ItemGroup, MarkedPart, ParsedSearch, SearchExpand, SearchMode, SearchProblem, SearchRequest, SearchState } from "./search";
 export { segmentRegion } from "./segment-region";
+
+export { actorText, jobActionText } from "./actors";
+export type { ActorText } from "./actors";
 export type { CancelSignal } from "./api";

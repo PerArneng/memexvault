@@ -499,7 +499,7 @@ test("item 7: field values containing HTML render as plain text", async ({ brows
   await context.close();
 });
 
-test("filters, columns and sort live in the URL, and the sort says it only covers loaded rows", async ({ browser, request }) => {
+test("filters, columns and sort live in the URL, and the sort runs on the server", async ({ browser, request }) => {
   const type = `Tabled${run}`;
   await makeType(request, type);
   for (let i = 0; i < 5; i += 1) await makeEntity(request, type, { name: `Row ${String(i)}`, owner: i % 2 === 0 ? "Even Owner" : "Odd", price: 100 - i, released: `2026-01-0${String(i + 1)}`, active: i % 2 === 0 }, [], `table-${String(i)}-${run}`);
@@ -547,10 +547,13 @@ test("filters, columns and sort live in the URL, and the sort says it only cover
   await page.goto(url);
   await expect(page.locator("[data-filter-key][data-settled=true]")).toHaveAttribute("data-entity-count", "3");
   await expect(page.getByRole("columnheader")).toHaveText(["name", "price ↓", "Conflicts"]);
-  const note = page.locator("[data-sort-note]");
-  await expect(note).toContainText("within the 3 rows loaded so far, not across every row");
+  const note = page.locator("[data-sort]");
+  await expect(note).toHaveAttribute("data-sort", "price:desc");
+  await expect(note).toContainText("Every row sorted by price, descending");
+  await expect(page.locator("[data-filter-key][data-sort-key='price:desc'][data-settled=true]")).toHaveAttribute("data-entity-count", "3");
   await expect(page.getByRole("columnheader", { name: "price" })).toHaveAttribute("aria-sort", "descending");
   await expect(page.getByRole("row").nth(1)).toContainText("99");
+  await expect(page.getByRole("row").nth(3)).toContainText("97");
   await page.reload();
   await expect(page.locator("#filter-1-value")).toHaveValue("100");
 
@@ -561,6 +564,19 @@ test("filters, columns and sort live in the URL, and the sort says it only cover
   await expect(page.getByRole("columnheader", { name: "owner" })).toBeVisible();
   await page.getByRole("button", { name: "Clear the sort" }).click();
   await expect(note).toHaveCount(0);
+
+  // A column click sorts on the server, so it's the API's order, not the page's. Fields that can't be sorted say so.
+  await page.goto(screen(`/-/types/${type}?cols=name,price,notes`));
+  await expect(page.locator("[data-unsortable]")).toContainText("notes can't be sorted");
+  await expect(page.getByRole("columnheader", { name: "notes" }).locator("button")).toHaveCount(0);
+  await page.getByRole("columnheader", { name: "price" }).getByRole("button").click();
+  await expect(page.locator("[data-sort-key='price:asc'][data-settled=true]")).toHaveAttribute("data-entity-count", "5");
+  await expect(page.getByRole("row").nth(1)).toContainText("96");
+  const apiOrder = await request.get(api(`/entities?type=${type}&sort=price:asc`), { headers: bearer });
+  const names = ((await apiOrder.json()) as { items: { attributes: { name: string } }[] }).items.map((i) => i.attributes.name);
+  await expect(page.locator("[role=row] a")).toHaveText(names);
+  await page.goto(screen(`/-/types/${type}?sort=notes:asc`));
+  await expect(page.locator("[data-sort-refused=notes]")).toContainText("notes can't be sorted");
   expect(cspProblems(problems)).toEqual([]);
   await context.close();
 });
@@ -663,7 +679,7 @@ test("axe finds no violations on the type list, the editor, the table and the de
   };
   await check("types", "", "[role=table]");
   await check("new type", "/-/new-type", "[data-draft-field]");
-  await check("table", `/-/types/${type}?sort=name:asc`, "[data-sort-note]");
+  await check("table", `/-/types/${type}?sort=name:asc`, "[data-sort]");
   await check("schema", `/-/types/${type}/schema`, "[data-schema-field]");
   await check("new entity", `/-/types/${type}/new`, "[data-field-input]");
   await check("detail", `/${a.entity_id}`, "[data-field]");

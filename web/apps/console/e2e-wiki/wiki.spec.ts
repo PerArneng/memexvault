@@ -696,7 +696,8 @@ test("agent and human edits are attributed, and a held edit says it's waiting fo
   await send(request, api(`/changesets/${out.changeset.id}/approve`), { reason: "fine" });
   await page.goto(`${pagesUrl()}/${made.page_id}`);
   await expect(page.locator("article header")).toContainText("Agent");
-  await expect(page.locator("article header")).toContainText(world.agentId);
+  // Spec 086: by name, with the id kept for whoever needs it.
+  await expect(page.locator(`article header [data-actor="${world.agentId}"] [data-actor-name]`)).toHaveText(`agent-${run}`);
   await page.goto(`${pagesUrl()}/${made.page_id}/history`);
   const rows = page.getByRole("region", { name: "History" }).getByRole("listitem");
   await expect(rows.filter({ hasText: "Revision 2" })).toContainText("Agent");
@@ -722,6 +723,66 @@ test("agent and human edits are attributed, and a held edit says it's waiting fo
   expect((await pageBody(request, made.page_id)).body).toBe("By an agent.\n");
   expect(await agent.page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("memex.draft.")))).toEqual([]);
   await agent.context.close();
+  expect(problems).toEqual([]);
+});
+
+test("spec 086: history names a person and an agent for a read token, a disabled one says so, and a name holding HTML is text", async ({ page, request }) => {
+  const problems = problemsOf(page);
+  // A person whose name is markup, and who is disabled afterwards, and an agent.
+  const hostile = `<img src=x onerror="window.__pwned=1"><b>Pat ${run}</b>`;
+  const pat = await send<{ id: string }>(request, "/api/v1/principals", { name: hostile, kind: "human" }, 201);
+  const patToken = await send<{ token: string }>(request, "/api/v1/tokens", { name: "pat", principal_id: pat.id, grants: [{ vault_id: world.vault, scope: "propose" }] }, 201);
+  const made = await send<{ page_id: string }>(request, api("/pages"), { title: `Named ${run}`, body: "By Pat.\n", rationale: "fixture", idempotency_key: `nm-${run}` }, 200, patToken.token);
+  const edit = await send<{ changeset: { id: string } }>(request, api(`/pages/${made.page_id}/edit`), { base_version: 1, body: "By an agent.\n", rationale: "fixture", idempotency_key: `nm2-${run}` }, 200, world.agentToken);
+  await send(request, api(`/changesets/${edit.changeset.id}/approve`), { reason: "fine" });
+  for (let i = 3; i <= 6; i += 1) await send(request, api(`/pages/${made.page_id}/edit`), { base_version: i - 1, body: `By Pat, take ${String(i)}.\n`, rationale: "fixture", idempotency_key: `nm${String(i)}-${run}` }, 200, patToken.token);
+
+  // Item 3, on the real server: the read token gets a name and a kind and nothing else, and a token with no access to the vault is refused.
+  const named = await request.get(api(`/principals/${pat.id}`), { headers: { authorization: `Bearer ${world.readToken}` } });
+  expect(named.status()).toBe(200);
+  expect(await named.json()).toEqual({ id: pat.id, name: hostile, kind: "human", disabled: false });
+  const nobody = await send<{ id: string }>(request, "/api/v1/principals", { name: `nobody-${run}`, kind: "human" }, 201);
+  const nobodyToken = await send<{ token: string }>(request, "/api/v1/tokens", { name: "nobody", principal_id: nobody.id, grants: [] }, 201);
+  const refused = await request.get(api(`/principals/${pat.id}`), { headers: { authorization: `Bearer ${nobodyToken.token}` } });
+  expect(refused.status()).toBe(404);
+  expect(await refused.text()).not.toContain("Pat");
+  // Item 4: an id that names no principal answers rather than failing.
+  const unknown = await request.get(api("/principals/gone-for-good"), { headers: { authorization: `Bearer ${world.readToken}` } });
+  expect(await unknown.json()).toEqual({ id: "gone-for-good", name: null, kind: "unknown", disabled: false });
+
+  // Item 2: the history screen, as a read token, counting the API calls it makes.
+  await signIn(page, world.readToken);
+  const calls: string[] = [];
+  page.on("request", (r) => {
+    const path = new URL(r.url()).pathname;
+    if (path.startsWith("/api/")) calls.push(path);
+  });
+  await page.goto(`${pagesUrl()}/${made.page_id}/history`);
+  const rows = page.getByRole("region", { name: "History" }).getByRole("listitem");
+  await expect(rows).toHaveCount(6);
+  // A row's text runs its link into the title ("Revision 1Named"), so rows are found by their link.
+  const row = (revision: number) => rows.filter({ has: page.getByRole("link", { name: `Revision ${String(revision)}`, exact: true }) });
+  const nameOf = (revision: number) => row(revision).locator("[data-actor-name]");
+  await expect(nameOf(1)).toHaveText(hostile);
+  await expect(nameOf(2)).toHaveText(`agent-${run}`);
+  await expect(row(2).locator('[data-actor-kind="Agent"]')).toBeVisible();
+  await expect(row(1).locator('[data-actor-kind="Person"]')).toBeVisible();
+  await expect(page.locator("[data-actor-kind=loading]")).toHaveCount(0);
+  // Item 5: the name is text. Nothing it holds became an element or ran.
+  const history = page.getByRole("region", { name: "History" });
+  expect(await history.locator("img, b").count()).toBe(0);
+  expect(await page.evaluate(() => (window as unknown as { __pwned?: unknown }).__pwned)).toBeUndefined();
+  const actorCalls = calls.filter((c) => c.includes("/principals/"));
+  const changesetCalls = calls.filter((c) => c.includes("/changesets/"));
+  console.log(`spec 086 item 2: ${String(calls.length)} API requests for a history of 6 revisions by 2 actors: ${String(actorCalls.length)} for names, ${String(changesetCalls.length)} for changesets; ${JSON.stringify(calls)}`);
+  expect(changesetCalls).toEqual([]);
+  expect(actorCalls.length).toBe(2);
+
+  // Disabled afterwards: the name stays, and says so.
+  expect((await request.post(`/api/v1/principals/${pat.id}/disable`, { headers: bearer })).status()).toBe(204);
+  await page.reload();
+  await expect(nameOf(1)).toHaveText(hostile);
+  await expect(row(1)).toContainText("(disabled)");
   expect(problems).toEqual([]);
 });
 

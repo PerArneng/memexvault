@@ -1,11 +1,11 @@
 import { epochMs, vaultId } from "@memex/types";
 import type {
+  Actor,
   ApiFailure,
   Identity,
   ObjectSummary,
   Page,
   Vault,
-  WikiAttribution,
   WikiBacklink,
   WikiCitation,
   WikiClaim,
@@ -180,12 +180,12 @@ export const wikiWriteFromWire = (r: Schemas["ProposalResult"]): WikiWrite => {
   };
 };
 
-export const wikiAttributionFromWire = (c: Schemas["ChangeSetDto"]): WikiAttribution => ({
-  proposer: c.proposer,
-  machine: c.proposer_is_machine,
-  extractor: c.extractor ?? null,
-  rationale: c.rationale,
-  state: c.state,
+/** A newer server's kind reads as unknown rather than as a person. */
+export const actorFromWire = (a: Schemas["ActorDto"]): Actor => ({
+  id: a.id,
+  name: a.name ?? null,
+  kind: a.kind === "human" || a.kind === "agent" ? a.kind : "unknown",
+  disabled: a.disabled,
 });
 
 /**

@@ -117,6 +117,7 @@ export const jobFromWire = (j: Schemas["JobDto"]): Job => {
     createdAtMs: j.created_at_ms,
     finishedAtMs: j.finished_at_ms ?? null,
     waitingSinceMs: j.waiting_since_ms ?? null,
+    actions: (j.actions ?? []).map((a) => ({ action: a.action, actor: a.actor, timeMs: a.time_ms })),
   };
 };
 

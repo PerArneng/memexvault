@@ -207,6 +207,17 @@ where
 {
     let r = memex_api::entity_list_request(pairs).map_err(|m| invalid(m, &rid))?;
     let limit = r.list.limit;
+    if let Some(sort) = r.sort {
+        let (rows, sort) = authed(server, headers, &rid, move |s, c| {
+            s.list_entities_sorted(c, &VaultId(id), &r.type_name, &r.filters, &sort, r.list.cursor.as_deref(), r.list.limit + 1)
+        })
+        .await?;
+        let (items, next_cursor) = page_of(rows, limit, |e| memex_core::entity::sort_cursor(&sort, e));
+        return Ok(Json(memex_api::EntityPage {
+            items: items.into_iter().map(Into::into).collect(),
+            next_cursor,
+        }));
+    }
     let rows = authed(server, headers, &rid, move |s, c| {
         s.list_entities(
             c,

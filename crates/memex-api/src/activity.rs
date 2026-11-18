@@ -687,6 +687,11 @@ mod tests {
                 tries: 1,
                 last_error: MARKER.into(),
             }),
+            actions: vec![memex_types::JobAction {
+                action: memex_types::JobActionKind::Cancel,
+                actor: MARKER.into(),
+                time_ms: 3,
+            }],
         }
     }
 

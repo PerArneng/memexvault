@@ -133,6 +133,18 @@ impl<S: Snapshot> Snapshot for Pending<'_, S> {
     }
 
     /// Committed rows only, as with `rows`.
+    fn entities_sorted(
+        &self,
+        type_name: &str,
+        filters: &[memex_types::FieldFilter],
+        sort: &memex_types::FieldSort,
+        after: Option<&memex_types::SortAfter>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::EntityRow>, StoreError> {
+        self.base.entities_sorted(type_name, filters, sort, after, limit)
+    }
+
+    /// Committed rows only, as with `rows`.
     fn entities_with_value(&self, text: &str, limit: usize) -> Result<Vec<memex_types::ValueMatch>, StoreError> {
         self.base.entities_with_value(text, limit)
     }

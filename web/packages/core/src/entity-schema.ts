@@ -34,6 +34,8 @@ export interface EntityColumn {
   readonly width: string;
   /** Shown until someone chooses columns. */
   readonly visibleByDefault: boolean;
+  /** Whether the server sorts by it: a filterable field holding one comparable value, not a list. Mirrors the server's `parse_sort`. */
+  readonly sortable: boolean;
 }
 
 export type FilterInput = "text" | "number" | "date" | "date-time" | "boolean" | "choice";
@@ -166,6 +168,7 @@ export const schemaView = (schema: unknown): SchemaView => {
     numeric: f.kind === "number" && !f.isArray,
     width: widthOf(f),
     visibleByDefault: i < MAX_DEFAULT_COLUMNS,
+    sortable: f.filterable && f.kind !== "other" && !f.isArray,
   }));
   const filters: EntityFilterDef[] = ordered
     // The server says a field with no one comparable value can't be compared, whatever its annotation.
@@ -190,35 +193,6 @@ export interface EntitySort {
   readonly field: string;
   readonly direction: SortDirection;
 }
-
-type SortKey = number | string | null;
-
-const keyOf = (value: unknown, kind: FieldKind): SortKey => {
-  if (value === null || value === undefined) return null;
-  if (kind === "number" && typeof value === "number") return value;
-  return valueText(value).toLowerCase();
-};
-
-const compareKeys = (a: SortKey, b: SortKey): number => {
-  if (typeof a === "number" && typeof b === "number") return a - b;
-  const [x, y] = [String(a), String(b)];
-  if (x === y) return 0;
-  return x < y ? -1 : 1;
-};
-
-/**
- * Sorts the rows given and no others. The API lists entities by id only, so a screen has to say this covers only what's loaded.
- * Rows with no value stay last in both directions. Each key is computed once, as this may see hundreds of thousands of rows.
- */
-export const sortLoadedRows = <Row>(rows: readonly Row[], valueOf: (row: Row) => unknown, kind: FieldKind, direction: SortDirection): readonly Row[] => {
-  const sign = direction === "asc" ? 1 : -1;
-  const keyed = rows.map((row, index) => ({ row, index, key: keyOf(valueOf(row), kind) }));
-  keyed.sort((a, b) => {
-    if (a.key === null || b.key === null) return a.key === b.key ? a.index - b.index : a.key === null ? 1 : -1;
-    return sign * compareKeys(a.key, b.key) || a.index - b.index;
-  });
-  return keyed.map((k) => k.row);
-};
 
 const TIME_PATTERN = /^\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:[Zz]|[+-]\d{2}:\d{2})?)?$/;
 

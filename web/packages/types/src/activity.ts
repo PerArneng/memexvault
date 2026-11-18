@@ -112,6 +112,15 @@ export interface JobAttempt {
   readonly error: string | null;
 }
 
+/** A person's cancel or retry of a job. */
+export interface JobAction {
+  /** `cancel` or `retry`, or a newer server's word for something else. */
+  readonly action: string;
+  /** A principal's id, which `getActor` names. */
+  readonly actor: string;
+  readonly timeMs: number;
+}
+
 export interface Job {
   readonly id: string;
   readonly kind: string;
@@ -124,6 +133,8 @@ export interface Job {
   readonly createdAtMs: number;
   readonly finishedAtMs: number | null;
   readonly waitingSinceMs: number | null;
+  /** Oldest first. */
+  readonly actions: readonly JobAction[];
 }
 
 export interface UploadLimits {

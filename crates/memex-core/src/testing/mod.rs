@@ -1,6 +1,7 @@
 //! Fakes and shared suites for tests in this workspace. Tests never use the production wiring.
 pub mod blob_contract;
 pub mod contract;
+pub mod entity_sort;
 mod fakes;
 pub mod generate;
 pub mod lexical_contract;
