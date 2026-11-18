@@ -7,7 +7,7 @@ export {
   objectsFromWire,
   vaultFromWire,
   vaultPageFromWire,
-  wikiAttributionFromWire,
+  actorFromWire,
   wikiBacklinkPageFromWire,
   wikiClaimFromWire,
   wikiDiffFromWire,

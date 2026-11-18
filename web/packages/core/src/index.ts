@@ -75,4 +75,7 @@ export type { BulkRetryOutcome, IngestApi, IngestCases, IngestRoute, JobList } f
 export { changeSearch, citationPath, EMPTY_SEARCH, groupItems, itemPath, markQuote, markTerms, parseAsOf, parseInstant, parseSearchState, queryTerms, SEARCH_DEBOUNCE_MS, SEARCH_DEFAULT_LIMIT, SEARCH_EPISTEMIC, SEARCH_EXPANDS, SEARCH_KINDS, SEARCH_MODES, searchPath, searchProblem, searchRequestOf, toggled } from "./search";
 export type { AsOf, ItemGroup, MarkedPart, ParsedSearch, SearchExpand, SearchMode, SearchProblem, SearchRequest, SearchState } from "./search";
 export { segmentRegion } from "./segment-region";
+
+export { actorText, jobActionText } from "./actors";
+export type { ActorText } from "./actors";
 export type { CancelSignal } from "./api";

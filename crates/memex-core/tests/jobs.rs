@@ -1,7 +1,7 @@
 //! Durable jobs and upload through the facade, in memory.
 use memex_core::testing::{ManualClock, MemBlobStore, MemRegistry, MemStore, SeededRandom};
 use memex_core::{BlobStore, Caller, NewToken, Server, ServerEdges, ServerError, Snapshot, Store, UploadLimits, UploadRequest, jobs};
-use memex_types::{Grant, Header, JobState, Mutation, ObjectId, PageRow, PrincipalKind, Row, RowKey, Scope, Status, Table, VaultId};
+use memex_types::{Grant, Header, JobActionKind, JobState, Mutation, ObjectId, PageRow, PrincipalKind, Row, RowKey, Scope, Status, Table, VaultId};
 use serde_json::json;
 use std::io::Read;
 use std::time::Duration;
@@ -364,6 +364,32 @@ fn cancel_and_retry_follow_the_rules() {
     // Cancelling running work: the worker's commit is then refused.
     w.s.cancel_job(&w.writer, &w.v, &job.header.id).unwrap();
     assert!(!w.s.complete_job(&w.v, &running, vec![derived("j", "late")]).unwrap());
+    // Spec 086: each change by a person stays on the job, with who and when, and a refused one adds nothing. The log names the same actors.
+    let after = w.s.get_job(&w.reader, &w.v, &job.header.id).unwrap();
+    let who = w.writer.principal.id.clone();
+    let seen: Vec<(JobActionKind, &str)> = after.actions.iter().map(|a| (a.action, a.actor.as_str())).collect();
+    assert_eq!(
+        seen,
+        vec![
+            (JobActionKind::Cancel, who.as_str()),
+            (JobActionKind::Retry, who.as_str()),
+            (JobActionKind::Cancel, who.as_str())
+        ]
+    );
+    assert!(after.actions.windows(2).all(|p| p[0].time_ms <= p[1].time_ms));
+    let logged: Vec<String> =
+        w.s.engine()
+            .store()
+            .snapshot(&w.v)
+            .unwrap()
+            .events(None)
+            .unwrap()
+            .into_iter()
+            // The worker's own claim carries the list along, so it's left out.
+            .filter(|e| e.actor != "w" && e.payload.to_string().contains(&job.header.id.0) && e.payload.to_string().contains("\"actions\""))
+            .map(|e| e.actor)
+            .collect();
+    assert_eq!(logged, vec![who.clone(), who.clone(), who]);
 }
 
 #[test]

@@ -4301,6 +4301,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vaults/{id}/principals/{pid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Who an actor in this vault is, at read scope: a name, `human`, `agent` or `unknown`, and whether it's disabled. No token, scope or admin flag. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    pid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ActorDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/vaults/{id}/proposals": {
         parameters: {
             query?: never;
@@ -6564,6 +6610,15 @@ export interface components {
             items: components["schemas"]["DocumentActivityDto"][];
             next_cursor?: string | null;
         };
+        /** @description Who an actor in a vault is, as anyone who can read the vault may see it. It holds nothing about tokens, scopes or admin. */
+        ActorDto: {
+            disabled: boolean;
+            id: string;
+            /** @description `human`, `agent`, or `unknown` when the id names no principal. */
+            kind: string;
+            /** @description Absent when the id names no principal, such as a worker's or one that's gone. */
+            name?: string | null;
+        };
         AssertionList: {
             items: Record<string, never>[];
         };
@@ -7559,7 +7614,17 @@ export interface components {
             mutations: Record<string, never>[];
             reversible: boolean;
         };
+        /** @description A person's cancel or retry of a job. */
+        JobActionDto: {
+            /** @description `cancel` or `retry`. */
+            action: string;
+            actor: string;
+            /** Format: int64 */
+            time_ms: number;
+        };
         JobDto: {
+            /** @description Cancels and retries by people, oldest first. The actor is a principal's id, which `GET /vaults/{id}/principals/{pid}` names. */
+            actions?: components["schemas"]["JobActionDto"][];
             attempts: Record<string, never>[];
             /** Format: int64 */
             created_at_ms: number;

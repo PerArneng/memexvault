@@ -36,7 +36,7 @@ import {
   transcriptFromWire,
   vaultFromWire,
   vaultPageFromWire,
-  wikiAttributionFromWire,
+  actorFromWire,
   wikiBacklinkPageFromWire,
   wikiDiffFromWire,
   wikiOutgoingPageFromWire,
@@ -156,7 +156,7 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
       attempt(() => client.GET("/api/v1/vaults/{id}/pages/{pid}/revisions", { params: { path: { id: vault, pid: id }, query: page(cursor) } }), wikiRevisionPageFromWire),
     getWikiDiff: (vault, id, from, to) =>
       attempt(() => client.GET("/api/v1/vaults/{id}/pages/{pid}/diff", { params: { path: { id: vault, pid: id }, query: { from, to } } }), wikiDiffFromWire),
-    getWikiAttribution: (vault, changesetId) => attempt(() => client.GET("/api/v1/vaults/{id}/changesets/{cs}", { params: { path: { id: vault, cs: changesetId } } }), wikiAttributionFromWire),
+    getActor: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/principals/{pid}", { params: { path: { id: vault, pid: id } } }), actorFromWire),
     exportWikiPage: (vault, id) =>
       attempt(() => client.GET("/api/v1/vaults/{id}/pages/{pid}/export", { params: { path: { id: vault, pid: id } }, parseAs: "text" }), (text) => String(text)),
     createWikiPage: (vault, input) =>

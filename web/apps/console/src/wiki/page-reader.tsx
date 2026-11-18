@@ -8,7 +8,8 @@ import { useEngine } from "../engine-context";
 import { QueryView } from "../shell/query-view";
 import { QUERY_KEYS, unwrap } from "../query";
 import { ClaimEvidence, PageMarkdown, useClaimsFor } from "./page-markdown";
-import { AppLink, Callout, ChangeAuthor, downloadText, failureText, formatTime, InlineAction, LINK_BUTTON, useGo, useLinkResolver, useRefreshWiki, wikiPath } from "./wiki-common";
+import { ActorName } from "../actor-name";
+import { AppLink, Callout, downloadText, failureText, formatTime, InlineAction, LINK_BUTTON, useGo, useLinkResolver, useRefreshWiki, wikiPath } from "./wiki-common";
 
 const SHOW_AT_FIRST = 50;
 
@@ -190,7 +191,7 @@ const Body = ({ identity, vault, page, onReview }: { readonly identity: Identity
           <p className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
             <span>Revision {page.revision}</span>
             <span>·</span>
-            {change === undefined ? <span>{page.creator}</span> : <ChangeAuthor vault={vault} changesetId={change.changesetId} fallback={change.creator} />}
+            <ActorName vault={vault} id={change?.creator ?? page.creator} />
             <span>{formatTime(change?.createdAt ?? page.updatedAt)}</span>
             {/* The page read doesn't say this for the current revision, and the revision's own row does. */}
             {(change?.restoredFrom ?? page.restoredFrom) !== null && <span>Restored from revision {change?.restoredFrom ?? page.restoredFrom}</span>}

@@ -28,6 +28,23 @@ pub struct JobWait {
     pub last_error: String,
 }
 
+/// What a person did to a job by hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JobActionKind {
+    Cancel,
+    Retry,
+}
+
+/// A person's action on a job, kept on the job so it can be shown later without reading the log. The log's event for the same change names the same actor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JobAction {
+    pub action: JobActionKind,
+    /// The principal's id.
+    pub actor: String,
+    pub time_ms: i64,
+}
+
 /// A durable unit of background work.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobRow {
@@ -47,7 +64,13 @@ pub struct JobRow {
     /// Set while the job is waiting, and cleared when it gets anywhere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wait: Option<JobWait>,
+    /// Cancels and retries by people, oldest first, at most `MAX_JOB_ACTIONS`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<JobAction>,
 }
+
+/// How many of a job's actions it keeps. The oldest go first.
+pub const MAX_JOB_ACTIONS: usize = 20;
 
 impl JobRow {
     /// Queued and due, or running with an expired lease because its worker died.
