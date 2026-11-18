@@ -72,8 +72,10 @@ fn fifty_labelled_anchors_round_trip_within_one_point() {
     assert_eq!(checked, 50);
     eprintln!("per file and side: {per:?}");
     // All sides of all anchors are within 1 pt, except one. On rotate270_crop, a non-embedded Helvetica, pdfium's ascent is 1.87 pt taller than poppler's. The text-direction edges match, so this is a difference in font metrics between the tools. See spec 015's Result.
+    // The font isn't embedded, so pdfium substitutes one from the host. On Linux the substitute's ascent is 2.27 pt off (spec 091).
+    let font_limit = if cfg!(target_os = "macos") { 2.0 } else { 2.5 };
     for ((file, side), diff) in &per {
-        let limit = if file == "rotate270_crop" && *side == "x0" { 2.0 } else { 1.0 };
+        let limit = if file == "rotate270_crop" && *side == "x0" { font_limit } else { 1.0 };
         assert!(*diff <= limit, "{file} {side}: {diff}");
     }
 }
