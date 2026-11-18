@@ -51,6 +51,8 @@ export const toolAnswerFromWire = (content: string): ChatToolAnswer => {
   }
   if (!isRecord(parsed)) return { kind: "other" };
   if (isRecord(parsed.error)) return { kind: "error", code: text(parsed.error.code), message: text(parsed.error.message) ?? "The tool failed." };
+  // The runner answers a tool the model wasn't offered, such as `propose` for a reader, with a bare message.
+  if (typeof parsed.error === "string") return { kind: "error", code: null, message: parsed.error };
   const data = parsed.data;
   if (!isRecord(data)) return { kind: "other" };
   try {

@@ -16,6 +16,8 @@ export class StandInChat {
   citeSegments: readonly string[] = [];
   /** What `basic`, `propose` and `hostile` search for. */
   query = "";
+  /** How many `propose` runs have proposed so far. */
+  private proposals = 0;
   /** For `hostile`: the reply, which the test writes with the canary's address in it. */
   hostileReply = "";
 
@@ -95,8 +97,10 @@ export class StandInChat {
         return this.send(res, [this.textChunks(this.citeSegments.map((id, i) => `Point ${String(i + 1)} is on its page [cite:${id}]. `))]);
       case "propose": {
         if (turn === 0) return this.send(res, [this.toolChunks([{ name: "search", args: { q: this.query } }], turn)]);
-        const first = found[0];
+        // Each proposal quotes another segment, as one that repeats a committed claim is refused as a duplicate.
+        const first = found[this.proposals % Math.max(found.length, 1)];
         if (turn === 1 && first !== undefined) {
+          this.proposals += 1;
           const quote = first.text.split(/\s+/).filter((w) => w !== "").slice(0, 6).join(" ");
           const op = { op: "add_assertion", id: `chat-claim-${String(Date.now())}`, subject: "the span", predicate: "is described as", value: quote, epistemic: "asserted", machine: false, confidence_permille: 800, valid_from_ms: null, valid_to_ms: null, evidence: [[`chat-ev-${String(Date.now())}`, { segment_id: first.id, quote, stance: "supports" }]] };
           return this.send(res, [this.toolChunks([{ name: "propose", args: { ops: [op], rationale: "the document says so" } }], turn)]);

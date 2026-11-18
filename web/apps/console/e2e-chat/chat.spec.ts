@@ -361,6 +361,7 @@ test("item 4: approving a card is approving in review, and those who can't decid
   await expect(panel(reader.page).getByRole("button", { name: "Approve" })).toHaveCount(0);
   const steps = await panel(reader.page).locator("[data-step]").evaluateAll((all) => all.map((el) => [el.getAttribute("data-step-name"), el.getAttribute("data-step-state")]));
   record("item 4: a reader's steps", steps);
+  expect(steps).toContainEqual(["propose", "failed"]);
   await reader.context.close();
   expect(problems).toEqual([]);
   await context.close();

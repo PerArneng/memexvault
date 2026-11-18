@@ -44,6 +44,7 @@ describe("tool answers", () => {
     expect(lineage).toMatchObject({ kind: "claim", lineage: { claimId: "c9", changesetId: "cs" } });
     expect(toolAnswerFromWire(answer({ proposal_id: "p1", state: "pending", refused_by_validators: [{ validator: "quote", message: "not in the source" }] }))).toEqual({ kind: "proposal", proposalId: "p1", state: "pending", refused: ["not in the source"] });
     expect(toolAnswerFromWire(JSON.stringify({ error: { code: "invalid", message: "no tool called fetch_url" } }))).toEqual({ kind: "error", code: "invalid", message: "no tool called fetch_url" });
+    expect(toolAnswerFromWire(JSON.stringify({ error: "Tool propose not found" }))).toEqual({ kind: "error", code: null, message: "Tool propose not found" });
     expect(toolAnswerFromWire(answer({ id: "p", slug: "s", title: "A page" }))).toEqual({ kind: "object", objectKind: "page", id: "p", title: "A page" });
   });
 
