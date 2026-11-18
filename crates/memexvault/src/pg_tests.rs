@@ -1047,6 +1047,7 @@ fn pg_restart_postgres_under_running_servers() {
     // Both servers write every 100 ms, as clients retrying would, until well after one of them is back.
     let (mut n, mut first) = (100u32, None::<(char, Duration)>);
     let (mut a_ok, mut b_ok, mut a_refused, mut b_refused) = (0, 0, 0, 0);
+    let (mut a_error, mut b_error) = (String::new(), String::new());
     loop {
         let now = restarted.elapsed();
         for (name, s, c) in [('a', &a, &caller_a), ('b', &b, &caller_b)] {
@@ -1057,14 +1058,23 @@ fn pg_restart_postgres_under_running_servers() {
                     first.get_or_insert((name, now));
                     if name == 'a' { a_ok += 1 } else { b_ok += 1 }
                 }
-                Err(_) if name == 'a' => a_refused += 1,
-                Err(_) => b_refused += 1,
+                Err(e) if name == 'a' => {
+                    a_refused += 1;
+                    a_error = e.to_string();
+                }
+                Err(e) => {
+                    b_refused += 1;
+                    b_error = e.to_string();
+                }
             }
         }
         if first.is_some_and(|(_, at)| now > at + Duration::from_secs(20)) {
             break;
         }
-        assert!(now < REGAINED_WITHIN, "no server wrote to the vault within {REGAINED_WITHIN:?} of the restart");
+        assert!(
+            first.is_some() || now < REGAINED_WITHIN,
+            "no server wrote to the vault within {REGAINED_WITHIN:?} of the restart: a was refused {a_refused} times, last with {a_error:?}, and b {b_refused} times, last with {b_error:?}"
+        );
         std::thread::sleep(Duration::from_millis(100));
     }
     let (winner, at) = first.expect("one wrote");
@@ -1096,7 +1106,7 @@ fn pg_restart_postgres_under_running_servers() {
     let missing: Vec<_> = acked.difference(&seen).collect();
     assert!(missing.is_empty(), "lost {} acknowledged writes: {missing:?}", missing.len());
     println!(
-        "postgres restart under two servers: load {} , {winner} wrote again {} ms after the restart returned, a wrote {a_ok} and was refused {a_refused} times, b wrote {b_ok} and was refused {b_refused} times, {holders} advisory locks held, {} acknowledged writes all there",
+        "postgres restart under two servers: load {}, {winner} wrote again {} ms after the restart returned, a wrote {a_ok} and was refused {a_refused} times, b wrote {b_ok} and was refused {b_refused} times, {holders} advisory locks held, {} acknowledged writes all there",
         load.trim(),
         at.as_millis(),
         acked.len()

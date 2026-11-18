@@ -45,6 +45,8 @@ impl Quiet {
 
 static LIST_QUIET: Quiet = Quiet::new();
 static CLAIM_QUIET: Quiet = Quiet::new();
+static AUDIT_QUIET: Quiet = Quiet::new();
+static STEP_QUIET: Quiet = Quiet::new();
 
 /// Why a job failed. `retryable: false` means trying again can't help.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -346,7 +348,10 @@ where
     std::thread::spawn(move || {
         while !stop.load(Ordering::Relaxed) {
             if let Err(e) = server.audit_tick_all() {
-                tracing::warn!(error = %e, "can't check the audit schedules");
+                use memex_core::Clock as _;
+                if let Some(held) = AUDIT_QUIET.allow(server.engine().clock().now_ms()) {
+                    tracing::warn!(error = %e, held_back = held, "can't check the audit schedules");
+                }
             }
             std::thread::sleep(Duration::from_secs(1));
         }
@@ -383,10 +388,14 @@ where
 
 /// Steps each vault once, and says how long to wait before the next round.
 fn step_all<E: ServerEdges>(server: &Server<E>, step: impl Fn(&Server<E>, &VaultId) -> Result<StepOutcome, memex_core::ProjectError>, what: &str) -> Duration {
+    use memex_core::Clock as _;
+    let now_ms = || server.engine().clock().now_ms();
     let vaults = match server.vault_ids() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!(error = %e, "can't list vaults");
+            if let Some(held) = LIST_QUIET.allow(now_ms()) {
+                tracing::warn!(error = %e, held_back = held, "can't list vaults");
+            }
             return Duration::from_secs(1);
         }
     };
@@ -396,7 +405,9 @@ fn step_all<E: ServerEdges>(server: &Server<E>, step: impl Fn(&Server<E>, &Vault
             Ok(StepOutcome::Progress) => busy = true,
             Ok(StepOutcome::Idle) => {}
             Err(e) => {
-                tracing::warn!(vault = %vault, error = %e, "{what} step failed, and will be retried");
+                if let Some(held) = STEP_QUIET.allow(now_ms()) {
+                    tracing::warn!(vault = %vault, error = %e, held_back = held, "{what} step failed, and will be retried");
+                }
                 failed = true;
             }
         }
@@ -413,6 +424,19 @@ fn step_all<E: ServerEdges>(server: &Server<E>, step: impl Fn(&Server<E>, &Vault
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quiet_lets_one_line_through_per_interval_and_counts_the_rest() {
+        let q = Quiet::new();
+        assert_eq!(q.allow(1_000), Some(0));
+        let held = (1..100).filter(|i| q.allow(1_000 + i * 100).is_some()).count();
+        assert_eq!(held, 0, "within 10 s of the first");
+        assert_eq!(q.allow(1_000 + QUIET_MS), Some(99));
+        // A minute of a thread failing ten times a second: 6 lines.
+        let q = Quiet::new();
+        let lines = (0..600).filter(|i| q.allow(i * 100).is_some()).count();
+        assert_eq!(lines, 6);
+    }
     use memex_core::testing::{ManualClock, MemBlobStore, MemRegistry, MemStore, SeededRandom};
     use memex_core::{Snapshot, Store, UploadLimits, UploadRequest};
     use memex_types::{Header, JobState, ObjectId, PageRow, Row, Status};

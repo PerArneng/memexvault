@@ -163,6 +163,11 @@ class Report(BaseModel):
     statuses_after_back: dict[str, int]
     log_lines_during_outage: int
     log_lines_by_message: dict[str, int]
+    request_lines: int
+    server_lines: int
+    server_line_limit: int
+    lease_lines_ok: bool
+    within_limit: bool
     acknowledged: int
     missing: int
     job_state: str | None
@@ -171,6 +176,22 @@ class Report(BaseModel):
 
 
 # --------------------------------------------------------------------------- pure core
+
+# Lines one failed client request writes. They grow with the requests sent, not with the outage.
+REQUEST_MESSAGES = ("request", "backend unavailable")
+LOST = "lost the vault's writer lease, so its writes fail until it's regained"
+REGAINED = "regained the vault's writer lease"
+
+
+def server_line_limit(outage_s: int, vaults: int, running_jobs: int) -> int:
+    """Spec 089 item 4's bound on the server's own lines in an outage, set before measuring.
+
+    Each vault logs the loss and the regain once. Four warnings (can't list vaults, can't claim a
+    job, can't check the audit schedules, an index step failed) are limited to one per 10 s each,
+    process wide, so at most outage_s // 10 + 1 each. A running job adds at most 4: its keeper's
+    failing and working-again lines, and two about recording its result.
+    """
+    return 2 * vaults + 4 * (outage_s // 10 + 1) + 4 * running_jobs
 
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -373,6 +394,13 @@ def run(args: argparse.Namespace) -> Report:
                     raise ScriptFailure("the rendition didn't end in time")
                 time.sleep(1)
         missing = acked - listed_sources(origin, token, vault)
+        by_message = count_messages(outage_lines)
+        request_lines = sum(n for m, n in by_message.items() if m in REQUEST_MESSAGES)
+        server_lines = sum(n for m, n in by_message.items() if m not in REQUEST_MESSAGES)
+        limit = server_line_limit(max(args.outage_s, 1), 1, 1 if pdf_source else 0)
+        lease_ok = by_message.get(LOST) == 1 and by_message.get(REGAINED) == 1
+        if server_lines > limit or not lease_ok:
+            log.warning("the log broke spec 089's bound %s", kv(server_lines=server_lines, limit=limit, lease_lines_ok=lease_ok))
         return Report(
             outage_s=args.outage_s,
             load_at_start=load_at_start,
@@ -382,7 +410,12 @@ def run(args: argparse.Namespace) -> Report:
             refused_after_back=sum(v for k, v in statuses.items() if k != "201"),
             statuses_after_back=statuses,
             log_lines_during_outage=len([line for line in outage_lines if line.strip()]),
-            log_lines_by_message=count_messages(outage_lines),
+            log_lines_by_message=by_message,
+            request_lines=request_lines,
+            server_lines=server_lines,
+            server_line_limit=limit,
+            lease_lines_ok=lease_ok,
+            within_limit=server_lines <= limit and lease_ok,
             acknowledged=len(acked),
             missing=len(missing),
             job_state=job_state,
