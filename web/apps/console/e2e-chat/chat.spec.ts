@@ -60,7 +60,9 @@ const segmentsOf = async (request: APIRequestContext, vault: string, source: str
   return found;
 };
 
-const SPAN = (n: number) => `Span ${String(n)} of the ${run} viaduct measures ${String(100 + n)} metres and its piers are painted colour number ${String(n)}.`;
+// A segment closes at 100 estimated tokens (75 words), so each page carries about 90 words to stand as a segment of its own.
+const SPAN_DETAIL = Array.from({ length: 7 }, (_, i) => `Survey note ${String(i + 1)} records that the deck, bearings and parapets of this span were inspected and found sound.`).join(" ");
+const SPAN = (n: number) => `Span ${String(n)} of the ${run} viaduct measures ${String(100 + n)} metres and its piers are painted colour number ${String(n)}. ${SPAN_DETAIL}`;
 
 test.beforeAll(async ({ request }) => {
   test.setTimeout(600_000);
