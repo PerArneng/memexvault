@@ -35,8 +35,8 @@ pub use chat::{
     AgUi, CHAT_SETTINGS_ID, ChatErasure, ChatMessage, ChatReservation, ChatRole, ChatSettingsRow, ChatStored, ChatThread, ChatThreadKey, ChatToolCall,
 };
 pub use entity::{
-    ALIAS_FIELD, ClaimedValue, ENTITY_SUBJECT_PREFIX, EntityField, EntityRow, EntityTypeRow, FieldFilter, FieldLookup, FieldOp, FieldValueRow, FilterValue,
-    SharedValue, ValueMatch, entity_of_subject, entity_subject, entity_type_row_id, type_of_row_id,
+    ALIAS_FIELD, ClaimedValue, ENTITY_SUBJECT_PREFIX, EntityField, EntityRow, EntityTypeRow, FieldFilter, FieldLookup, FieldOp, FieldSort, FieldValueRow,
+    FilterValue, SharedValue, SortAfter, SortColumn, ValueMatch, compare_values, entity_of_subject, entity_subject, entity_type_row_id, type_of_row_id,
 };
 pub use event::{Event, EventDraft};
 pub use extraction::{DerivationOutcome, DerivationRow, ExtractedItem, ExtractionRow, ExtractionStop, IdentityCandidate, RejectedItem};

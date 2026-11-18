@@ -40,7 +40,7 @@ export const fakeEntityApi = (seed: EntitiesSeed, answer: <T>(name: string, valu
     }),
     previewEntityType: () => answer("previewEntityType", () => ok({ problem: null, change: "additive", reasons: [], currentVersion: 1, nextVersion: 2, decision: "auto_commit" })),
     submitEntityType: (_vault, input) => answer("submitEntityType:" + input.idempotencyKey, () => ok(write(seed.typeWrite ?? "committed", `cs-type-${input.name}`))),
-    listEntities: (_vault, { type, filters, cursor }) => answer(`listEntities:${type}:${filters.join("&")}`, () => ok(pageFrom(rows.filter((r) => r.typeName === type), cursor, size))),
+    listEntities: (_vault, { type, filters, sort, cursor }) => answer(`listEntities:${type}:${filters.join("&")}${sort === null ? "" : `:sort=${sort}`}`, () => ok(pageFrom(rows.filter((r) => r.typeName === type), cursor, size))),
     getEntity: (_vault, id) => answer("getEntity", () => {
       const found = seed.details?.[id];
       return found === undefined ? failed(NOT_FOUND) : ok(found);

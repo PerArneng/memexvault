@@ -256,10 +256,10 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
         wikiWriteFromWire,
       ),
     // The generated client would write repeated filters its own way, so this names the API's form exactly.
-    listEntities: (vault, { type, filters, cursor }) =>
+    listEntities: (vault, { type, filters, sort, cursor }) =>
       attempt(
-        () => client.GET("/api/v1/vaults/{id}/entities", { params: { path: { id: vault }, query: { type, limit: 200, ...(cursor === null ? {} : { cursor }) } }, querySerializer: () => {
-          const query = new URLSearchParams({ type, limit: "200", ...(cursor === null ? {} : { cursor }) });
+        () => client.GET("/api/v1/vaults/{id}/entities", { params: { path: { id: vault }, query: { type, limit: 200, ...(sort === null ? {} : { sort }), ...(cursor === null ? {} : { cursor }) } }, querySerializer: () => {
+          const query = new URLSearchParams({ type, limit: "200", ...(sort === null ? {} : { sort }), ...(cursor === null ? {} : { cursor }) });
           for (const f of filters) query.append("filter", f);
           return query.toString();
         } }),

@@ -1190,3 +1190,22 @@ fn readers_can_read_and_not_write() {
         Err(ServerError::Forbidden)
     ));
 }
+
+/// Spec 087's items 1, 2 and 4 on the in-memory store. `memexvault`'s entity tests run the same suite on Postgres.
+#[test]
+fn a_sort_matches_an_independent_sort_of_the_same_rows() {
+    let w = world();
+    memex_core::testing::entity_sort::sort_matches_an_independent_sort(&w.s, &w.admin, &w.v);
+}
+
+#[test]
+fn walking_a_sorted_list_returns_each_row_once_while_rows_are_written() {
+    let w = world();
+    memex_core::testing::entity_sort::walking_returns_each_row_once_while_rows_are_written(&w.s, &w.admin, &w.v);
+}
+
+#[test]
+fn a_sort_that_cant_be_done_says_why() {
+    let w = world();
+    memex_core::testing::entity_sort::bad_sorts_are_refused(&w.s, &w.admin, &w.v);
+}
