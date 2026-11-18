@@ -32,9 +32,9 @@ use crate::{
 use crate::{ApplyError, BlobStore, BlobStoreError, Clock, Engine, Receipt, Registry, RegistryError, Seed, Store, StoreError, WriterLease};
 use crate::{EMBED_JOB, EmbedJobError, Embedder, LexicalIndex, LexicalProjector, ProjectError, StepOutcome, VectorIndex, VectorProjector};
 use memex_types::{
-    Audit, ChangeSetRow, ChangeSetState, Event, EventDraft, Grant, Header, JobRow, JobState, LexicalError, LexicalFilter, LexicalResults, Mutation, ObjectId,
-    Principal, PrincipalKind, Rect, RenditionRow, RiskDecision, Row, RowKey, SegmentRow, SessionRow, SourceRow, Status, Table, TokenRow, ValidatorResult,
-    VaultId, VaultRow,
+    ActorCard, Audit, ChangeSetRow, ChangeSetState, Event, EventDraft, Grant, Header, JobActionKind, JobRow, JobState, LexicalError, LexicalFilter,
+    LexicalResults, Mutation, ObjectId, Principal, PrincipalKind, Rect, RenditionRow, RiskDecision, Row, RowKey, SegmentRow, SessionRow, SourceRow, Status,
+    Table, TokenRow, ValidatorResult, VaultId, VaultRow,
 };
 use serde_json::Value;
 use serde_json::json;
@@ -961,6 +961,26 @@ impl<E: ServerEdges> Server<E> {
         Ok(self.registry.principals(after, limit)?)
     }
 
+    /// Who an actor in this vault is, for anyone who can read it: a name, person or agent, and whether it's disabled. Nothing about tokens, scopes or admin. An id that names no principal, such as a worker's or one whose principal is gone, says so rather than failing.
+    pub fn actor(&self, caller: &Caller, vault: &VaultId, id: &str) -> Result<ActorCard, ServerError> {
+        self.allow(caller, Operation::VaultContentRead(vault))?;
+        self.vault_exists(vault)?;
+        Ok(match self.registry.principal(id)? {
+            Some(p) => ActorCard {
+                id: p.id,
+                name: Some(p.name),
+                kind: Some(p.kind),
+                disabled: p.disabled,
+            },
+            None => ActorCard {
+                id: id.into(),
+                name: None,
+                kind: None,
+                disabled: false,
+            },
+        })
+    }
+
     pub fn disable_principal(&self, caller: &Caller, id: &str) -> Result<(), ServerError> {
         self.allow(caller, Operation::PrincipalDisable)?;
         if id == caller.principal.id {
@@ -1790,11 +1810,25 @@ impl<E: ServerEdges> Server<E> {
     }
 
     pub fn retry_job(&self, caller: &Caller, vault: &VaultId, id: &ObjectId) -> Result<JobRow, ServerError> {
-        self.change_job(caller, vault, id, jobs::retried, "only a dead or cancelled job can be retried")
+        self.change_job(
+            caller,
+            vault,
+            id,
+            JobActionKind::Retry,
+            jobs::retried,
+            "only a dead or cancelled job can be retried",
+        )
     }
 
     pub fn cancel_job(&self, caller: &Caller, vault: &VaultId, id: &ObjectId) -> Result<JobRow, ServerError> {
-        self.change_job(caller, vault, id, jobs::cancelled, "only unfinished work can be cancelled")
+        self.change_job(
+            caller,
+            vault,
+            id,
+            JobActionKind::Cancel,
+            jobs::cancelled,
+            "only unfinished work can be cancelled",
+        )
     }
 
     fn change_job(
@@ -1802,6 +1836,7 @@ impl<E: ServerEdges> Server<E> {
         caller: &Caller,
         vault: &VaultId,
         id: &ObjectId,
+        action: JobActionKind,
         change: impl FnOnce(JobRow, i64) -> Option<JobRow>,
         refused: &str,
     ) -> Result<JobRow, ServerError> {
@@ -1811,7 +1846,9 @@ impl<E: ServerEdges> Server<E> {
         let vault_lock = self.vault_lock(vault);
         let _one_at_a_time = vault_lock.lock().expect("lock");
         let job = self.job(vault, id)?;
-        let changed = change(job, self.now()).ok_or_else(|| ServerError::Conflict(refused.into()))?;
+        let now = self.now();
+        let changed = change(job, now).ok_or_else(|| ServerError::Conflict(refused.into()))?;
+        let changed = jobs::acted(changed, action, &caller.principal.id, now);
         self.state_event(&lease, &caller.principal.id, vec![Mutation::Put(Row::Job(changed.clone()))])?;
         Ok(changed)
     }

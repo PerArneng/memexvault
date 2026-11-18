@@ -42,6 +42,9 @@ export const parseEntityFilter = (raw: string): EntityFilter | null => {
 
 export const entityFilterText = (filter: EntityFilter): string => `${filter.field}:${filter.op}:${filter.value}`;
 
+/** `<field>:<asc|desc>`, the API's own form and the URL's. */
+export const entitySortText = (sort: EntitySort): string => `${sort.field}:${sort.direction}`;
+
 /** All filters in one query value, a line each. The router rewrites a repeated parameter as a JSON array, and a filter's input is a single line. */
 const FILTER_SEPARATOR = "\n";
 
@@ -112,7 +115,7 @@ export const entityPath = (vault: VaultId, route: Exclude<EntityRoute, { readonl
       return withQuery(typeRoot(route.type), [
         ...(route.filters.length === 0 ? [] : [["f", route.filters.map(entityFilterText).join(FILTER_SEPARATOR)] as [string, string]]),
         ...(route.columns === null ? [] : [["cols", route.columns.join(",")] as [string, string]]),
-        ...(route.sort === null ? [] : [["sort", `${route.sort.field}:${route.sort.direction}`] as [string, string]]),
+        ...(route.sort === null ? [] : [["sort", entitySortText(route.sort)] as [string, string]]),
         ...(route.find === "" ? [] : [["find", route.find] as [string, string]]),
       ]);
     case "type":

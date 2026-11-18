@@ -39,7 +39,7 @@ import {
   transcriptFromWire,
   vaultFromWire,
   vaultPageFromWire,
-  wikiAttributionFromWire,
+  actorFromWire,
   wikiBacklinkPageFromWire,
   wikiDiffFromWire,
   wikiOutgoingPageFromWire,
@@ -159,7 +159,7 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
       attempt(() => client.GET("/api/v1/vaults/{id}/pages/{pid}/revisions", { params: { path: { id: vault, pid: id }, query: page(cursor) } }), wikiRevisionPageFromWire),
     getWikiDiff: (vault, id, from, to) =>
       attempt(() => client.GET("/api/v1/vaults/{id}/pages/{pid}/diff", { params: { path: { id: vault, pid: id }, query: { from, to } } }), wikiDiffFromWire),
-    getWikiAttribution: (vault, changesetId) => attempt(() => client.GET("/api/v1/vaults/{id}/changesets/{cs}", { params: { path: { id: vault, cs: changesetId } } }), wikiAttributionFromWire),
+    getActor: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/principals/{pid}", { params: { path: { id: vault, pid: id } } }), actorFromWire),
     exportWikiPage: (vault, id) =>
       attempt(() => client.GET("/api/v1/vaults/{id}/pages/{pid}/export", { params: { path: { id: vault, pid: id } }, parseAs: "text" }), (text) => String(text)),
     createWikiPage: (vault, input) =>
@@ -259,10 +259,10 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
         wikiWriteFromWire,
       ),
     // The generated client would write repeated filters its own way, so this names the API's form exactly.
-    listEntities: (vault, { type, filters, cursor }) =>
+    listEntities: (vault, { type, filters, sort, cursor }) =>
       attempt(
-        () => client.GET("/api/v1/vaults/{id}/entities", { params: { path: { id: vault }, query: { type, limit: 200, ...(cursor === null ? {} : { cursor }) } }, querySerializer: () => {
-          const query = new URLSearchParams({ type, limit: "200", ...(cursor === null ? {} : { cursor }) });
+        () => client.GET("/api/v1/vaults/{id}/entities", { params: { path: { id: vault }, query: { type, limit: 200, ...(sort === null ? {} : { sort }), ...(cursor === null ? {} : { cursor }) } }, querySerializer: () => {
+          const query = new URLSearchParams({ type, limit: "200", ...(sort === null ? {} : { sort }), ...(cursor === null ? {} : { cursor }) });
           for (const f of filters) query.append("filter", f);
           return query.toString();
         } }),

@@ -34,6 +34,15 @@ pub struct Principal {
     pub created_at_ms: i64,
 }
 
+/// What anyone who can read a vault may know about one of its actors. `name` and `kind` are empty when the id names no principal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActorCard {
+    pub id: String,
+    pub name: Option<String>,
+    pub kind: Option<PrincipalKind>,
+    pub disabled: bool,
+}
+
 /// A token as stored. The token itself is never stored, only its hash.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenRow {

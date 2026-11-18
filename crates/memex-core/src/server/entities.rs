@@ -413,6 +413,34 @@ impl<E: ServerEdges> Server<E> {
         Ok(snap.entities_matching(type_name, &parsed, after, limit)?)
     }
 
+    /// Entities of a type in the order `sort` names, `<field>:<asc|desc>`, after `cursor` from `entity::sort_cursor`. Filters as in `list_entities`. Returns the parsed sort as well, for the next cursor.
+    #[allow(clippy::too_many_arguments)]
+    pub fn list_entities_sorted(
+        &self,
+        caller: &Caller,
+        vault: &VaultId,
+        type_name: &str,
+        filters: &[(String, String, String)],
+        sort: &str,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> Result<(Vec<EntityRow>, memex_types::FieldSort), ServerError> {
+        self.read_access(caller, vault)?;
+        let snap = self.engine.store().snapshot(vault)?;
+        let types = entity::latest_types(&snap, &[type_name.to_string()])?;
+        let t = types.get(type_name).ok_or(ServerError::NotFound)?;
+        let defs: Vec<FieldDef> = entity::fields_of(&t.schema);
+        let sort = entity::parse_sort(&defs, sort).map_err(ServerError::Invalid)?;
+        let after = cursor.map(|c| entity::parse_sort_cursor(&sort, c)).transpose().map_err(ServerError::Invalid)?;
+        let parsed = filters
+            .iter()
+            .map(|(f, op, value)| entity::parse_filter(&defs, f, op, value))
+            .collect::<Result<Vec<_>, String>>()
+            .map_err(ServerError::Invalid)?;
+        let rows = snap.entities_sorted(type_name, &parsed, &sort, after.as_ref(), limit)?;
+        Ok((rows, sort))
+    }
+
     /// Follows merges. An old id answers with the entity it leads to, and says so.
     pub fn get_entity(&self, caller: &Caller, vault: &VaultId, id: &ObjectId) -> Result<EntityView, ServerError> {
         self.read_access(caller, vault)?;

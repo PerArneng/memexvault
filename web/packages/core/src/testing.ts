@@ -300,7 +300,7 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
         });
       }),
     getWikiDiff: (_vault, _id, from, to) => answer("getWikiDiff", () => ok({ from, to, title: null, slug: null, blocks: [] })),
-    getWikiAttribution: (_vault, changesetId) => answer("getWikiAttribution", () => ok({ proposer: "pat", machine: changesetId.startsWith("agent"), extractor: null, rationale: "because", state: "committed" })),
+    getActor: (_vault, id) => answer("getActor", () => ok({ id, name: id.startsWith("gone") ? null : `name of ${id}`, kind: id.startsWith("gone") ? "unknown" : id.startsWith("agent") ? "agent" : "human", disabled: false })),
     exportWikiPage: (_vault, id) => answer("exportWikiPage", () => {
       const p = wiki.get(id);
       return p === undefined ? failed<string>(notFound) : ok(p.bodies.at(-1) ?? "");

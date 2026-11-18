@@ -126,6 +126,19 @@ impl Snapshot for PostgresSnapshot<'_> {
             .map_err(|e| translate(&self.vault, e))
     }
 
+    fn entities_sorted(
+        &self,
+        type_name: &str,
+        filters: &[memex_types::FieldFilter],
+        sort: &memex_types::FieldSort,
+        after: Option<&memex_types::SortAfter>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::EntityRow>, StoreError> {
+        self.inner
+            .entities_sorted(type_name, filters, sort, after, limit)
+            .map_err(|e| translate(&self.vault, e))
+    }
+
     fn entities_with_value(&self, text: &str, limit: usize) -> Result<Vec<memex_types::ValueMatch>, StoreError> {
         self.inner.entities_with_value(text, limit).map_err(|e| translate(&self.vault, e))
     }

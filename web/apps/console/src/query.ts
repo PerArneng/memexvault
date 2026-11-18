@@ -98,6 +98,6 @@ export const QUERY_KEYS = {
   chatThreads: (vault: string) => ["chat", vault, "threads"] as const,
   chatThread: (vault: string, id: string) => ["chat", vault, "thread", id] as const,
   reading: (vault: string, rendition: string) => ["documents", vault, "reading", rendition] as const,
-  // A changeset's author never changes, so this one can stay cached across writes.
-  wikiAttribution: (vault: string, changeset: string) => ["attribution", vault, changeset] as const,
+  /** Who an actor is. Outside the wiki's and the jobs' keys, so their refreshes don't ask again. */
+  actor: (vault: string, id: string) => ["actor", vault, id] as const,
 };

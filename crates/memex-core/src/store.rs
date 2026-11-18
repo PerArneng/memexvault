@@ -127,6 +127,15 @@ pub trait Snapshot {
     fn entities_of_type(&self, type_name: &str, after: Option<&ObjectId>, limit: usize) -> Result<Vec<EntityRow>, StoreError>;
     /// Current entities of a type passing every filter, in id order, after the given id. At least one filter. One store call.
     fn entities_matching(&self, type_name: &str, filters: &[FieldFilter], after: Option<&ObjectId>, limit: usize) -> Result<Vec<EntityRow>, StoreError>;
+    /// Current entities of a type passing every filter, none or more, in the sort's order (`FieldSort::compare`), after the given place. One snapshot, at most two store calls.
+    fn entities_sorted(
+        &self,
+        type_name: &str,
+        filters: &[FieldFilter],
+        sort: &memex_types::FieldSort,
+        after: Option<&memex_types::SortAfter>,
+        limit: usize,
+    ) -> Result<Vec<EntityRow>, StoreError>;
     /// Current entities with this folded text in any field or alias, in id order. One store call.
     fn entities_with_value(&self, text: &str, limit: usize) -> Result<Vec<ValueMatch>, StoreError>;
     /// Folded values held by more than one current entity of a type, in these fields, by field and value, after the given pair. At most `MAX_SHARED_IDS` ids each.
