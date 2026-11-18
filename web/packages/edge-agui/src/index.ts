@@ -1,5 +1,6 @@
 // The only package that names @ag-ui/client and rxjs. See docs/frontend-architecture.md. The console imports it lazily, so it loads when
 // someone first sends a chat message.
+import "./jitless";
 import { HttpAgent } from "@ag-ui/client";
 import type { HttpAgentFetchFn } from "@ag-ui/client";
 import { agentEventFromWire } from "@memex/api";

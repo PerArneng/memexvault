@@ -100,6 +100,11 @@ test.afterAll(async () => {
 
 const enableChat = (request: APIRequestContext, enabled: boolean) => send(request, api("/chat/settings"), { enabled }, 200, "PUT");
 
+// Each test starts with chat on, so one that fails can't leave the next with chat off. Item 1 turns it off first itself.
+test.beforeEach(async ({ request }) => {
+  await enableChat(request, true);
+});
+
 const signIn = async (page: Page, token: string) => {
   await page.goto("/login");
   await page.getByLabel("Access token").fill(token);
