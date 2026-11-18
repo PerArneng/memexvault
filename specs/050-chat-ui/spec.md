@@ -103,6 +103,11 @@ Done on `PerArneng/spec-50-chat-ui`. Every item except item 1's live-model run p
   - typecheck, lint, build, licenses (409 packages) and contrast (53 pairs, 0 failed) pass.
   - Initial JS is 148,842 B gzip of the 200,000 budget.
 
+**After merging main with specs #86 and #87.** The API types regenerated from the merged server with no diff. All 6 browser checks passed again in 1.8 min, at load 20.2–21.0, and Stop's timings stayed under the limit.
+- `cargo test --workspace`: 1,002 passed, 0 failed, 112 ignored. The Postgres chat suite passed 5 of 5, and fmt and clippy pass.
+- `pnpm test`: 762 tests in 46 files pass, with typecheck, lint (238 modules), build, licenses and contrast.
+- Initial JS is 148,751 B gzip.
+
 **Not run.**
 - Item 1's live-model run: it calls a provider and costs money. Spec 049's Result has the backend's command, and the console needs only `MEMEX_CHAT_MODEL` set to a real provider's model.
 - `cargo deny check licenses`: `cargo-deny` isn't installed on this machine.
