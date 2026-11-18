@@ -108,6 +108,11 @@ Done on `PerArneng/spec-50-chat-ui`. Every item except item 1's live-model run p
 - `pnpm test`: 762 tests in 46 files pass, with typecheck, lint (238 modules), build, licenses and contrast.
 - Initial JS is 148,751 B gzip.
 
+**After merging main with spec #85 (bounded Postgres connections).** The merge had no conflicts, and the API types regenerated from the merged server with no diff. All 6 browser checks passed in 1.2 min, at load 14.7–20.6. Stop showed in 7–11 ms, and the model's stream closed in 65–91 ms.
+- `cargo test --workspace`: the first run, at load 17–19, had 1 failure in `memex-http`'s activity-stream tests (spec 038's timing tests, not this spec's). Its output was filtered, so which test failed isn't known. The rerun, at load 4–13, had 1,003 passed, 0 failed and 118 ignored.
+- The Postgres chat suite passed 5 of 5. #85's pool suite (`pg_pool`, without the restart test) passed 5 of 5 on this spec's database. fmt, clippy, and the debug and release builds pass.
+- `pnpm test`: 762 tests in 46 files pass, with typecheck, lint, build, licenses and contrast. Initial JS is 148,751 B gzip.
+
 **Not run.**
 - Item 1's live-model run: it calls a provider and costs money. Spec 049's Result has the backend's command, and the console needs only `MEMEX_CHAT_MODEL` set to a real provider's model.
 - `cargo deny check licenses`: `cargo-deny` isn't installed on this machine.
