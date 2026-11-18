@@ -1,4 +1,5 @@
 import type {
+  Actor,
   ApiFailure,
   ChangeOrigin,
   CitingClaim,
@@ -37,7 +38,6 @@ import type {
   ReviewDetail,
   ReviewFilter,
   ReviewItem,
-  WikiAttribution,
   WikiBacklink,
   WikiClaim,
   WikiDiff,
@@ -185,8 +185,8 @@ export interface Api extends IngestApi {
   listWikiUnresolved(vault: VaultId, cursor: string | null): Promise<ApiResult<Page<WikiUnresolvedLink>>>;
   listWikiRevisions(vault: VaultId, id: string, cursor: string | null): Promise<ApiResult<Page<WikiRevision>>>;
   getWikiDiff(vault: VaultId, id: string, from: number, to: number): Promise<ApiResult<WikiDiff>>;
-  /** Who a revision's change came from. */
-  getWikiAttribution(vault: VaultId, changesetId: string): Promise<ApiResult<WikiAttribution>>;
+  /** Who an actor in this vault is: a name and person or agent, at read scope. An id naming no principal answers `unknown`. */
+  getActor(vault: VaultId, id: string): Promise<ApiResult<Actor>>;
   exportWikiPage(vault: VaultId, id: string): Promise<ApiResult<string>>;
   createWikiPage(vault: VaultId, input: NewWikiPage): Promise<ApiResult<{ readonly pageId: string; readonly write: WikiWrite }>>;
   editWikiPage(vault: VaultId, id: string, input: WikiEdit): Promise<ApiResult<WikiWrite>>;

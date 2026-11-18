@@ -1,5 +1,5 @@
 //! The job queue's rules, as pure functions on plain data.
-use memex_types::{Header, JobAttempt, JobRow, JobState, JobWait, ObjectId, Status};
+use memex_types::{Header, JobAction, JobActionKind, JobAttempt, JobRow, JobState, JobWait, MAX_JOB_ACTIONS, ObjectId, Status};
 use serde_json::Value;
 
 /// How long a worker may hold a job before it counts as dead.
@@ -37,6 +37,7 @@ pub fn new_job(id: ObjectId, creator: &str, kind: &str, input: Value, dedupe_key
         created_at_ms: now_ms,
         finished_at_ms: None,
         wait: None,
+        actions: vec![],
     }
 }
 
@@ -152,6 +153,18 @@ pub fn cancelled(mut job: JobRow, now_ms: i64) -> Option<JobRow> {
     Some(job)
 }
 
+/// Records who changed a job by hand, keeping the newest `MAX_JOB_ACTIONS`.
+pub fn acted(mut job: JobRow, action: JobActionKind, actor: &str, now_ms: i64) -> JobRow {
+    job.actions.push(JobAction {
+        action,
+        actor: actor.into(),
+        time_ms: now_ms,
+    });
+    let extra = job.actions.len().saturating_sub(MAX_JOB_ACTIONS);
+    job.actions.drain(..extra);
+    job
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,6 +271,42 @@ mod tests {
         assert_eq!(e.lease_until_ms, Some(500_000));
         assert!(!e.claimable(499_999));
         assert_eq!((e.state, e.lease_owner, e.attempts.len()), (j.state, j.lease_owner, j.attempts.len()));
+    }
+
+    #[test]
+    fn actions_are_kept_in_order_and_bounded() {
+        let j = acted(job(1), JobActionKind::Cancel, "pat", 5);
+        let j = acted(j, JobActionKind::Retry, "sam", 6);
+        assert_eq!(
+            j.actions,
+            vec![
+                JobAction {
+                    action: JobActionKind::Cancel,
+                    actor: "pat".into(),
+                    time_ms: 5
+                },
+                JobAction {
+                    action: JobActionKind::Retry,
+                    actor: "sam".into(),
+                    time_ms: 6
+                },
+            ]
+        );
+        let mut j = job(1);
+        for t in 0..(MAX_JOB_ACTIONS as i64 + 5) {
+            j = acted(j, JobActionKind::Retry, "pat", t);
+        }
+        assert_eq!(j.actions.len(), MAX_JOB_ACTIONS);
+        assert_eq!(j.actions[0].time_ms, 5);
+        assert_eq!(j.actions.last().map(|a| a.time_ms), Some(MAX_JOB_ACTIONS as i64 + 4));
+    }
+
+    #[test]
+    fn a_job_without_actions_serializes_as_before() {
+        let text = serde_json::to_string(&job(1)).unwrap();
+        assert!(!text.contains("actions"), "{text}");
+        let old: JobRow = serde_json::from_str(&text).unwrap();
+        assert!(old.actions.is_empty());
     }
 
     #[test]

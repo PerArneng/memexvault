@@ -1,10 +1,11 @@
-import { canChangeSource, documentPath, durationText, ingestPath, mediaKind, pipelineSteps, progressText, stageLabel, statusExplanation } from "@memex/core";
+import { canChangeSource, documentPath, jobActionText, durationText, ingestPath, mediaKind, pipelineSteps, progressText, stageLabel, statusExplanation } from "@memex/core";
 import type { ActivityWatch, BoardDocument, PipelineFacts } from "@memex/core";
 import type { Identity, Job, VaultId } from "@memex/types";
 import { Badge, Button, EmptyState } from "@memex/ui";
 import type { Tone } from "@memex/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { ActorName } from "../actor-name";
 import { useEngine } from "../engine-context";
 import { QUERY_KEYS, unwrap } from "../query";
 import { QueryView } from "../shell/query-view";
@@ -35,18 +36,18 @@ const JobCard = ({ vault, job, identity, onChanged }: { readonly vault: VaultId;
   const engine = useEngine();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ readonly tone: "info" | "danger"; readonly text: string } | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const allowed = canChangeSource(identity, vault);
   const canRetry = job.state === "dead" || job.state === "cancelled";
   const canCancel = job.state === "queued" || job.state === "running";
-  const who = identity.principal.name;
 
   const act = async (action: "retry" | "cancel") => {
     setBusy(true);
     const outcome = action === "retry" ? await engine.retryJob(vault, job.id) : await engine.cancelJob(vault, job.id);
     setBusy(false);
     setConfirming(false);
-    setResult(outcome.ok ? { tone: "info", text: action === "retry" ? `Retried by ${who}.` : `Cancelled by ${who}.` } : { tone: "danger", text: failureText(outcome.failure) });
+    // Who did it comes back on the job itself, so it reads the same after a reload.
+    setFailure(outcome.ok ? null : failureText(outcome.failure));
     onChanged();
   };
 
@@ -69,7 +70,18 @@ const JobCard = ({ vault, job, identity, onChanged }: { readonly vault: VaultId;
           ))}
         </ol>
       )}
-      {result !== null && <Callout tone={result.tone} title={result.text} />}
+      {job.actions.length > 0 && (
+        <ol aria-label="Actions" className="flex flex-col gap-1">
+          {job.actions.map((action, i) => (
+            <li key={`${String(action.timeMs)}-${String(i)}`} data-job-action={action.action} className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="text-text-muted">{jobActionText(action)}</span>
+              <ActorName vault={vault} id={action.actor} />
+              <time className="text-text-muted">{formatTime(action.timeMs)}</time>
+            </li>
+          ))}
+        </ol>
+      )}
+      {failure !== null && <Callout tone="danger" title={failure} />}
       {allowed && (canRetry || canCancel) && (
         confirming ? (
           <div role="group" aria-label={canRetry ? "Confirm retry" : "Confirm cancel"} className="flex flex-wrap items-center gap-2 rounded-md border border-border-strong p-2 text-sm">

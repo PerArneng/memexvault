@@ -1,7 +1,7 @@
 import type {
+  Actor,
   Page,
   VaultId,
-  WikiAttribution,
   WikiBacklink,
   WikiClaim,
   WikiClaimOption,
@@ -58,7 +58,8 @@ export interface WikiCases {
   listWikiUnresolved(vault: VaultId): Promise<ApiResult<readonly WikiUnresolvedLink[]>>;
   listWikiRevisions(vault: VaultId, id: string): Promise<ApiResult<readonly WikiRevision[]>>;
   getWikiDiff(vault: VaultId, id: string, from: number, to: number): Promise<ApiResult<WikiDiff>>;
-  getWikiAttribution(vault: VaultId, changesetId: string): Promise<ApiResult<WikiAttribution>>;
+  /** Who an actor is. Page history and job actions name people through this, one call per distinct actor. */
+  getActor(vault: VaultId, id: string): Promise<ApiResult<Actor>>;
   exportWikiPage(vault: VaultId, id: string): Promise<ApiResult<string>>;
 
   /** What a claim reference shows: following replacements to what stands, as the page route does. An id that leads nowhere is `missing`, not a failure. */
@@ -168,7 +169,7 @@ export const createWikiCases = ({ edges, watched, principal }: WikiDeps): WikiCa
     listWikiUnresolved: (vault) => itemsOf((cursor) => api.listWikiUnresolved(vault, cursor)),
     listWikiRevisions: (vault, id) => itemsOf((cursor) => api.listWikiRevisions(vault, id, cursor)),
     getWikiDiff: (vault, id, from, to) => watched(api.getWikiDiff(vault, id, from, to)),
-    getWikiAttribution: (vault, changesetId) => watched(api.getWikiAttribution(vault, changesetId)),
+    getActor: (vault, id) => watched(api.getActor(vault, id)),
     exportWikiPage: (vault, id) => watched(api.exportWikiPage(vault, id)),
 
     lookupClaim,

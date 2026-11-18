@@ -36,7 +36,7 @@ export const documentActivity = (sourceId: string, over: Partial<DocumentActivit
   ...over,
 });
 
-export const jobNamed = (id: string, over: Partial<Job> = {}): Job => ({ id, kind: "rendition", state: "queued", sourceId: null, maxAttempts: 3, nextRunAtMs: 0, attempts: [], createdAtMs: 0, finishedAtMs: null, waitingSinceMs: null, ...over });
+export const jobNamed = (id: string, over: Partial<Job> = {}): Job => ({ id, kind: "rendition", state: "queued", sourceId: null, maxAttempts: 3, nextRunAtMs: 0, attempts: [], createdAtMs: 0, finishedAtMs: null, waitingSinceMs: null, actions: [], ...over });
 
 export const fakeIngestApi = (seed: IngestSeed): IngestApi => {
   const jobs = new Map((seed.jobs ?? []).map((j) => [j.id, j]));

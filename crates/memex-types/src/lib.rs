@@ -42,12 +42,12 @@ pub use event::{Event, EventDraft};
 pub use extraction::{DerivationOutcome, DerivationRow, ExtractedItem, ExtractionRow, ExtractionStop, IdentityCandidate, RejectedItem};
 pub use governance::{ChangeSetState, Epistemic, EvidenceInput, MovedClaim, Op, OpKind, RiskDecision, Stance, ValidatorResult};
 pub use ids::{ObjectId, VaultId};
-pub use jobs::{JobAttempt, JobRow, JobState, JobWait};
+pub use jobs::{JobAction, JobActionKind, JobAttempt, JobRow, JobState, JobWait, MAX_JOB_ACTIONS};
 pub use lexical::{
     AttrScope, AttrValue, DocKind, Generation, IndexDoc, IndexHealth, IndexOp, LexicalError, LexicalFilter, LexicalHit, LexicalQuery, LexicalResults, QueryTerm,
 };
 pub use page::{BlockKind, BlockRow, CLAIM_REF, EdgeDirection, RevisionBlock, RevisionRow, SlugRow, WIKI_LINK, revision_id, slug_of_target, slug_target};
-pub use registry::{Audit, Grant, Principal, PrincipalKind, Scope, SessionRow, TokenRow, VaultRow};
+pub use registry::{ActorCard, Audit, Grant, Principal, PrincipalKind, Scope, SessionRow, TokenRow, VaultRow};
 pub use rendition::{
     Anchor, MediaFacts, MeetingMeta, PageClass, PageFacts, PageFlag, PageOutcome, PageRoute, ParsedDocument, Participant, Rect, RenditionRow, TimeSpan,
     TimedDocument, TimedWord, TranscribeUsage, Word,

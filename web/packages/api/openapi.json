@@ -28,6 +28,34 @@
         ],
         "type": "object"
       },
+      "ActorDto": {
+        "description": "Who an actor in a vault is, as anyone who can read the vault may see it. It holds nothing about tokens, scopes or admin.",
+        "properties": {
+          "disabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "description": "`human`, `agent`, or `unknown` when the id names no principal.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Absent when the id names no principal, such as a worker's or one that's gone.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "disabled"
+        ],
+        "type": "object"
+      },
       "AssertionList": {
         "properties": {
           "items": {
@@ -3545,8 +3573,37 @@
         ],
         "type": "object"
       },
+      "JobActionDto": {
+        "description": "A person's cancel or retry of a job.",
+        "properties": {
+          "action": {
+            "description": "`cancel` or `retry`.",
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "time_ms": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "actor",
+          "time_ms"
+        ],
+        "type": "object"
+      },
       "JobDto": {
         "properties": {
+          "actions": {
+            "description": "Cancels and retries by people, oldest first. The actor is a principal's id, which `GET /vaults/{id}/principals/{pid}` names.",
+            "items": {
+              "$ref": "#/components/schemas/JobActionDto"
+            },
+            "type": "array"
+          },
           "attempts": {
             "items": {
               "type": "object"
@@ -11965,6 +12022,53 @@
         "summary": "Oldest first. A deleted page's history is still here.",
         "tags": [
           "pages"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/principals/{pid}": {
+      "get": {
+        "operationId": "get_actor",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Who an actor in this vault is, at read scope: a name, `human`, `agent` or `unknown`, and whether it's disabled. No token, scope or admin flag.",
+        "tags": [
+          "principals"
         ]
       }
     },
