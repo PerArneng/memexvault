@@ -5,8 +5,8 @@ use crate::search::relevance::fold_text;
 use crate::{Snapshot, StoreError};
 use memex_types::{
     ALIAS_FIELD, AssertionRow, AttrValue, ClaimedValue, DocKind, EntityField, EntityRow, EntityTypeRow, Epistemic, EvidenceRow, FieldFilter, FieldLookup,
-    FieldOp, FilterValue, Header, IndexDoc, IndexOp, MovedClaim, Mutation, ObjectId, Op, OpKind, Row, RowKey, SegmentRow, SourceRow, Status, Table, ValueMatch,
-    entity_of_subject, entity_subject, entity_type_row_id,
+    FieldOp, FieldSort, FilterValue, Header, IndexDoc, IndexOp, MovedClaim, Mutation, ObjectId, Op, OpKind, Row, RowKey, SegmentRow, SortAfter, SortColumn,
+    SourceRow, Status, Table, ValueMatch, entity_of_subject, entity_subject, entity_type_row_id,
 };
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -520,6 +520,67 @@ pub fn parse_filter(defs: &[FieldDef], field: &str, op: &str, raw: &str) -> Resu
     })
 }
 
+/// Parses `<field>:<asc|desc>`. Any filterable field holding one text, number, boolean or time sorts. A list doesn't, as it has no one value to sort by.
+pub fn parse_sort(defs: &[FieldDef], raw: &str) -> Result<FieldSort, String> {
+    let (field, direction) = raw
+        .split_once(':')
+        .ok_or_else(|| format!("a sort is <field>:asc or <field>:desc, not '{raw}'"))?;
+    let descending = match direction {
+        "asc" => false,
+        "desc" => true,
+        _ => return Err(format!("a sort's direction is asc or desc, not '{direction}'")),
+    };
+    let def = defs.iter().find(|d| d.name == field).ok_or_else(|| format!("the type has no field {field}"))?;
+    if !def.filterable {
+        return Err(format!("the field {field} isn't filterable, so it can't be sorted"));
+    }
+    if def.is_array {
+        return Err(format!("the field {field} holds a list, so it can't be sorted"));
+    }
+    let column = match def.kind {
+        FieldKind::Text | FieldKind::Boolean => SortColumn::Text,
+        FieldKind::Number => SortColumn::Number,
+        FieldKind::Time => SortColumn::Time,
+        FieldKind::Other => return Err(format!("the field {field} can't be compared, so it can't be sorted")),
+    };
+    Ok(FieldSort {
+        field: field.to_string(),
+        column,
+        descending,
+    })
+}
+
+/// The cursor after a row in a sorted list: its id, a newline, and its value tagged with its kind, or `-` for none. Folded text holds no newline.
+pub fn sort_cursor(sort: &FieldSort, row: &EntityRow) -> String {
+    let value = match row.sort_value(sort) {
+        None => "-".to_string(),
+        Some(FilterValue::Text(t)) => format!("t{t}"),
+        Some(FilterValue::Number(n)) => format!("n{n}"),
+        Some(FilterValue::Time(t)) => format!("d{t}"),
+    };
+    format!("{}\n{value}", row.header.id.0)
+}
+
+/// Reads a cursor `sort_cursor` made for the same sort.
+pub fn parse_sort_cursor(sort: &FieldSort, cursor: &str) -> Result<SortAfter, String> {
+    let wrong = || "this cursor isn't from a list in this order: start again without one".to_string();
+    let (id, value) = cursor.split_once('\n').ok_or_else(wrong)?;
+    if id.is_empty() {
+        return Err(wrong());
+    }
+    let value = match (value.split_at_checked(1).ok_or_else(wrong)?, sort.column) {
+        (("-", ""), _) => None,
+        (("t", t), SortColumn::Text) => Some(FilterValue::Text(t.to_string())),
+        (("n", n), SortColumn::Number) => Some(FilterValue::Number(n.parse::<f64>().ok().filter(|n| n.is_finite()).ok_or_else(wrong)?)),
+        (("d", t), SortColumn::Time) => Some(FilterValue::Time(t.parse().map_err(|_| wrong())?)),
+        _ => return Err(wrong()),
+    };
+    Ok(SortAfter {
+        value,
+        id: ObjectId(id.to_string()),
+    })
+}
+
 /// Case, diacritics and runs of space don't count in an exact match.
 pub fn fold_key(text: &str) -> String {
     fold_text(text).split_whitespace().collect::<Vec<_>>().join(" ")
@@ -609,7 +670,7 @@ fn scalar_lookup(value: &Value, kind: FieldKind) -> Option<FieldLookup> {
     Some(FieldLookup { text, number, time_ms })
 }
 
-fn lookups_of(value: &Value, def: &FieldDef) -> Vec<FieldLookup> {
+pub(crate) fn lookups_of(value: &Value, def: &FieldDef) -> Vec<FieldLookup> {
     let mut out: Vec<FieldLookup> = vec![];
     let items: Vec<&Value> = match value {
         Value::Array(items) if def.is_array => items.iter().collect(),

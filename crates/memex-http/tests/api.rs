@@ -181,6 +181,20 @@ async fn the_scope_matrix_has_no_gaps_and_denials_change_nothing() {
         },
         Case {
             method: "GET",
+            path: format!("/api/v1/vaults/{ra}/principals/whoever"),
+            body: None,
+            expected: [S::OK, S::OK, S::OK, S::NOT_FOUND],
+            changes_state: false,
+        },
+        Case {
+            method: "GET",
+            path: format!("/api/v1/vaults/{rb}/principals/whoever"),
+            body: None,
+            expected: [S::NOT_FOUND; 4],
+            changes_state: false,
+        },
+        Case {
+            method: "GET",
             path: "/api/v1/tokens".into(),
             body: None,
             expected: [S::OK; 4],
@@ -982,6 +996,72 @@ async fn typed_filters_find_entities_and_bad_ones_say_why() {
     assert_eq!(call(&w.s, "GET", &format!("{base}/entities?type=Nope"), t, None).await.0, StatusCode::NOT_FOUND);
 }
 
+/// Spec 087: a sort across every row, paged by its own cursor, and a clear 400 for what can't be sorted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sort_orders_every_row_and_bad_ones_say_why() {
+    let w = world();
+    let (base, seg) = entity_setup(&w).await;
+    let t = Some(w.admin.as_str());
+    let cheap = new_widget(&w, &base, "w1", "Pump", &seg, 10.0).await;
+    let dear = new_widget(&w, &base, "w2", "Valve", &seg, 500.0).await;
+    let mid = new_widget(&w, &base, "w3", "Axle", &seg, 50.0).await;
+    let ids = |v: &Value| {
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["id"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    let (_, desc, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&sort=price:desc"), t, None).await;
+    assert_eq!(ids(&desc), [dear.clone(), mid.clone(), cheap.clone()]);
+    let (_, by_name, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&sort=name:asc&filter=price:gte:50"), t, None).await;
+    assert_eq!(ids(&by_name), [mid.clone(), dear.clone()]);
+    let mut walked = vec![];
+    let mut cursor: Option<String> = None;
+    loop {
+        let after = cursor.as_ref().map_or(String::new(), |c| format!("&cursor={}", urlencoding(c)));
+        let (status, page, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&sort=price:asc&limit=1{after}"), t, None).await;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        walked.extend(ids(&page));
+        match page["next_cursor"].as_str() {
+            Some(c) => cursor = Some(c.to_string()),
+            None => break,
+        }
+    }
+    assert_eq!(walked, [cheap, mid, dear]);
+    for (bad, says) in [
+        ("sort=nope:asc", "the type has no field nope"),
+        ("sort=notes:asc", "the field notes isn't filterable, so it can't be sorted"),
+        ("sort=price", "a sort is <field>:asc or <field>:desc, not 'price'"),
+        ("sort=price:up", "a sort's direction is asc or desc, not 'up'"),
+        (
+            "sort=price:asc&sort=name:asc",
+            "sort can only be given once: sorting by more than one field isn't supported",
+        ),
+        (
+            "sort=price:asc&cursor=abc",
+            "this cursor isn't from a list in this order: start again without one",
+        ),
+    ] {
+        let (status, body, _) = call(&w.s, "GET", &format!("{base}/entities?type=Widget&{bad}"), t, None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}: {body}");
+        assert_eq!(body["error"]["message"], says, "{bad}");
+    }
+}
+
+fn urlencoding(s: &str) -> String {
+    s.bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect()
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn the_preview_matches_what_a_submission_does() {
     let w = world();
@@ -1301,6 +1381,20 @@ async fn upload_jobs_and_sources_over_http() {
     assert_eq!(call(&w.s, "POST", &format!("{base}/jobs/{jid}/retry"), t, None).await.0, StatusCode::CONFLICT);
     assert_eq!(call(&w.s, "POST", &format!("{base}/jobs/{jid}/cancel"), t, None).await.1["state"], "cancelled");
     assert_eq!(call(&w.s, "POST", &format!("{base}/jobs/{jid}/retry"), t, None).await.1["state"], "queued");
+    // Spec 086: who cancelled and retried stays on the job, for a reader too.
+    let actor = w.s.authenticate(&w.admin).unwrap().principal.id;
+    let (_, job, _) = call(&w.s, "GET", &format!("{base}/jobs/{jid}"), Some(&reader), None).await;
+    let actions: Vec<(String, String)> = job["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| (a["action"].as_str().unwrap().to_string(), a["actor"].as_str().unwrap().to_string()))
+        .collect();
+    assert_eq!(actions, vec![("cancel".to_string(), actor.clone()), ("retry".to_string(), actor.clone())]);
+    let (status, named, _) = call(&w.s, "GET", &format!("{base}/principals/{actor}"), Some(&reader), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(named["id"], actor.as_str());
+    assert!(named["name"].is_string(), "{named}");
     // The other vault stays hidden.
     let b = w.b.0.clone();
     assert_eq!(
@@ -2143,4 +2237,53 @@ async fn the_review_routes_work_together_and_keep_to_their_scopes() {
     )
     .await;
     assert_eq!(code, StatusCode::NOT_FOUND);
+}
+
+/// Spec 086: a reader learns a name and a kind, and nothing about tokens, scopes or admin. No access to the vault is a refusal that doesn't say whether it exists.
+#[tokio::test]
+async fn a_reader_sees_an_actors_name_and_kind_and_nothing_else() {
+    let w = world();
+    let admin = w.s.authenticate(&w.admin).unwrap();
+    let person =
+        w.s.create_principal(&admin, "<b>Pat</b> & <img src=x onerror=alert(1)>", PrincipalKind::Human, false)
+            .unwrap();
+    let agent = w.s.create_principal(&admin, "indexer", PrincipalKind::Agent, false).unwrap();
+    let gone = w.s.create_principal(&admin, "gone", PrincipalKind::Human, false).unwrap();
+    w.s.disable_principal(&admin, &gone.id).unwrap();
+    let reader = token_with(&w, "reader", Some(Scope::Read));
+    let outsider = token_with(&w, "outsider", None);
+    let base = format!("/api/v1/vaults/{}", w.a.0);
+    let look = |id: &str| format!("{base}/principals/{id}");
+
+    let (status, body, _) = call(&w.s, "GET", &look(&person.id), Some(&reader), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body,
+        json!({"id": person.id, "name": "<b>Pat</b> & <img src=x onerror=alert(1)>", "kind": "human", "disabled": false})
+    );
+    let (_, body, _) = call(&w.s, "GET", &look(&agent.id), Some(&reader), None).await;
+    assert_eq!(body, json!({"id": agent.id, "name": "indexer", "kind": "agent", "disabled": false}));
+    // The server admin from bootstrap: being admin isn't shown.
+    let (_, body, _) = call(&w.s, "GET", &look(&admin.principal.id), Some(&reader), None).await;
+    assert_eq!(body, json!({"id": admin.principal.id, "name": "root", "kind": "human", "disabled": false}));
+    let text = body.to_string();
+    for word in ["token", "scope", "grant", "admin", "hash", "created_by"] {
+        assert!(!text.contains(word), "{word} in {text}");
+    }
+    // Disabled, and an id that names no principal, both answer rather than fail.
+    let (_, body, _) = call(&w.s, "GET", &look(&gone.id), Some(&reader), None).await;
+    assert_eq!(body, json!({"id": gone.id, "name": "gone", "kind": "human", "disabled": true}));
+    let (status, body, _) = call(&w.s, "GET", &look("worker-7"), Some(&reader), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, json!({"id": "worker-7", "name": null, "kind": "unknown", "disabled": false}));
+
+    // No grant on the vault, or a vault that doesn't exist: the same refusal.
+    let (status, hidden, _) = call(&w.s, "GET", &look(&person.id), Some(&outsider), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(!hidden.to_string().contains("Pat"), "{hidden}");
+    let (status, _, _) = call(&w.s, "GET", &format!("/api/v1/vaults/{}/principals/{}", w.b.0, person.id), Some(&reader), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _, _) = call(&w.s, "GET", &format!("/api/v1/vaults/nope/principals/{}", person.id), Some(&reader), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(call(&w.s, "GET", &look(&person.id), None, None).await.0, StatusCode::UNAUTHORIZED);
 }

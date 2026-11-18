@@ -710,6 +710,37 @@ impl Snapshot for MemSnapshot<'_> {
             .collect())
     }
 
+    fn entities_sorted(
+        &self,
+        type_name: &str,
+        filters: &[memex_types::FieldFilter],
+        sort: &memex_types::FieldSort,
+        after: Option<&memex_types::SortAfter>,
+        limit: usize,
+    ) -> Result<Vec<memex_types::EntityRow>, StoreError> {
+        self.count();
+        let mut keyed: Vec<(Option<memex_types::FilterValue>, memex_types::EntityRow)> = self
+            .state
+            .rows
+            .values()
+            .filter_map(|r| match r {
+                Row::Entity(e)
+                    if e.is_current()
+                        && e.type_name == type_name
+                        && filters
+                            .iter()
+                            .all(|f| e.field(&f.field).is_some_and(|x| x.lookups.iter().any(|l| l.passes(f.op, &f.value)))) =>
+                {
+                    Some((e.sort_value(sort), e.clone()))
+                }
+                _ => None,
+            })
+            .filter(|(v, e)| after.is_none_or(|a| sort.compare((v.as_ref(), &e.header.id), (a.value.as_ref(), &a.id)).is_gt()))
+            .collect();
+        keyed.sort_by(|a, b| sort.compare((a.0.as_ref(), &a.1.header.id), (b.0.as_ref(), &b.1.header.id)));
+        Ok(keyed.into_iter().take(limit).map(|(_, e)| e).collect())
+    }
+
     fn entities_with_value(&self, text: &str, limit: usize) -> Result<Vec<memex_types::ValueMatch>, StoreError> {
         self.count();
         let mut out = vec![];

@@ -53,6 +53,7 @@ pub(crate) type App<E> = Arc<Server<E>>;
         create_principal,
         list_principals,
         disable_principal,
+        get_actor,
         create_token,
         list_tokens,
         revoke_token,
@@ -135,7 +136,9 @@ pub(crate) type App<E> = Arc<Server<E>>;
         memex_api::UploadResult,
         memex_api::UploadLimitsDto,
         memex_api::JobDto,
+        memex_api::JobActionDto,
         memex_api::JobPage,
+        memex_api::ActorDto,
         memex_api::RenditionDto,
         memex_api::RenditionList,
         memex_api::RenditionDetail,
@@ -254,6 +257,7 @@ where
         .route("/vaults/{id}/changes", get(list_changes::<E>))
         .route("/vaults/{id}/assertions/as-of", get(assertions_as_of::<E>))
         .route("/vaults/{id}/contradictions", get(list_contradictions::<E>))
+        .route("/vaults/{id}/principals/{pid}", get(get_actor::<E>))
         .route("/principals", get(list_principals::<E>).post(create_principal::<E>))
         .route("/principals/{id}/disable", post(disable_principal::<E>))
         .route("/tokens", get(list_tokens::<E>).post(create_token::<E>))
@@ -512,6 +516,22 @@ where
         items: items.into_iter().map(Into::into).collect(),
         next_cursor,
     }))
+}
+
+/// Who an actor in this vault is, at read scope: a name, `human`, `agent` or `unknown`, and whether it's disabled. No token, scope or admin flag.
+#[utoipa::path(get, path = "/api/v1/vaults/{id}/principals/{pid}", tag = "principals", params(("id" = String, Path), ("pid" = String, Path)), responses((status = 200, body = memex_api::ActorDto), (status = 404, body = ErrorBody)))]
+async fn get_actor<E>(
+    State(server): State<App<E>>,
+    Extension(rid): Extension<RequestId>,
+    headers: HeaderMap,
+    Path((id, pid)): Path<(String, String)>,
+) -> Result<Json<memex_api::ActorDto>, ApiError>
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
+    let a = authed(server, headers, &rid, move |s, c| s.actor(c, &VaultId(id), &pid)).await?;
+    Ok(Json(a.into()))
 }
 
 #[utoipa::path(post, path = "/api/v1/principals/{id}/disable", tag = "principals", params(("id" = String, Path)), responses((status = 204), (status = 403, body = ErrorBody), (status = 404, body = ErrorBody)))]

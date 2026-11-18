@@ -421,8 +421,11 @@ pub struct EntityListParams {
     pub type_name: String,
     /// `<field>:<op>:<value>`, where op is `eq`, `lt`, `lte`, `gt` or `gte`. Repeat it to require several. The field must be filterable.
     pub filter: Option<String>,
+    /// From `next_cursor` of the previous page, in the same order.
     pub cursor: Option<String>,
+    /// 1 to 200. The default is 50.
     pub limit: Option<u32>,
+    /// `<field>:asc` or `<field>:desc`, across every row that passes the filters. The field must be filterable and hold one text, number, boolean or date, not a list. Text sorts folded, in byte order, and `false` before `true`. Ties go by id, in the same direction. Rows with no value in the field, or text over 512 bytes, come last in both directions. Without it, or with `created`, rows are in id order.
     pub sort: Option<String>,
 }
 
@@ -431,6 +434,8 @@ pub struct EntityListParams {
 pub struct EntityListRequest {
     pub type_name: String,
     pub filters: Vec<(String, String, String)>,
+    /// `<field>:<direction>`, which only the type's schema can check. None is id order.
+    pub sort: Option<String>,
     pub list: ListRequest,
 }
 
@@ -438,6 +443,7 @@ pub struct EntityListRequest {
 pub fn entity_list_request(pairs: Vec<(String, String)>) -> Result<EntityListRequest, String> {
     let mut type_name = None;
     let mut filters = vec![];
+    let mut sort = None;
     let mut params = ListParams {
         cursor: None,
         limit: None,
@@ -447,7 +453,8 @@ pub fn entity_list_request(pairs: Vec<(String, String)>) -> Result<EntityListReq
         match k.as_str() {
             "type" => type_name = Some(v),
             "cursor" => params.cursor = Some(v),
-            "sort" => params.sort = Some(v),
+            "sort" if sort.is_some() => return Err("sort can only be given once: sorting by more than one field isn't supported".into()),
+            "sort" => sort = Some(v),
             "limit" => params.limit = Some(v.parse().map_err(|_| format!("limit must be a number, not {v}"))?),
             "filter" => {
                 let mut parts = v.splitn(3, ':');
@@ -462,6 +469,7 @@ pub fn entity_list_request(pairs: Vec<(String, String)>) -> Result<EntityListReq
     Ok(EntityListRequest {
         type_name: type_name.ok_or("type is required")?,
         filters,
+        sort: sort.filter(|s| s != "created"),
         list: params.validated()?,
     })
 }

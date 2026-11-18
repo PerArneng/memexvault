@@ -807,7 +807,11 @@ fn pg_job_lease_renewal_cancel_and_takeover() {
         eventually("the handler hears", &|| hold.lost());
     });
     assert!(crate::workers::run_one(&s, &cancelled, kind, "first"));
-    assert_eq!(jobs(memex_types::JobState::Cancelled).len(), 1);
+    let stopped = jobs(memex_types::JobState::Cancelled);
+    assert_eq!(stopped.len(), 1);
+    // Spec 086: who cancelled it is read back from Postgres, with the row.
+    let acts: Vec<(memex_types::JobActionKind, &str)> = stopped[0].actions.iter().map(|a| (a.action, a.actor.as_str())).collect();
+    assert_eq!(acts, vec![(memex_types::JobActionKind::Cancel, caller.principal.id.as_str())]);
     assert_eq!(jobs(memex_types::JobState::Done).len(), 1, "it wasn't recorded as done");
 
     // Taken: the new holder keeps it, whatever the old one says.

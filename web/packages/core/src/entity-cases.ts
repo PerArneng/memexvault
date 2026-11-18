@@ -2,8 +2,8 @@ import type { EntityDetail, EntityRedirect, EntityResolution, EntitySummary, Ent
 import { failed, ok } from "./api";
 import type { Api, ApiFailure, ApiResult, EntityFieldInput } from "./api";
 import { graphClaims } from "./entity-draft";
-import { entityFilterText } from "./entity-routes";
-import type { EntityFilter } from "./entity-schema";
+import { entityFilterText, entitySortText } from "./entity-routes";
+import type { EntityFilter, EntitySort } from "./entity-schema";
 import type { IdSource } from "./wiki-cases";
 
 /** What a proposal about types or entities became. The API's word is the only source: nothing here assumes a write landed. */
@@ -35,7 +35,8 @@ export interface EntityCases {
   listEntityTypeVersions(vault: VaultId, name: string): Promise<ApiResult<readonly EntityType[]>>;
   previewEntityType(vault: VaultId, name: string, schema: unknown): Promise<ApiResult<EntityTypePreview>>;
   submitEntityType(vault: VaultId, input: { readonly name: string; readonly baseVersion: number | null; readonly schema: unknown; readonly rationale: string }): Promise<EntityProposal>;
-  listEntities(vault: VaultId, type: string, filters: readonly EntityFilter[], cursor: string | null): Promise<ApiResult<Page<EntitySummary>>>;
+  /** Filters and the sort both run on the server, across every row. */
+  listEntities(vault: VaultId, type: string, filters: readonly EntityFilter[], sort: EntitySort | null, cursor: string | null): Promise<ApiResult<Page<EntitySummary>>>;
   getEntity(vault: VaultId, id: string): Promise<ApiResult<EntityDetail>>;
   getEntityRedirect(vault: VaultId, id: string): Promise<ApiResult<EntityRedirect>>;
   resolveEntities(vault: VaultId, mention: string, type: string | null): Promise<ApiResult<EntityResolution>>;
@@ -105,7 +106,7 @@ export const createEntityCases = ({ edges, watched }: EntityDeps): EntityCases =
       const result = await keyed(`type/${vault}/${name}/${String(baseVersion)}/${JSON.stringify(schema)}`, (idempotencyKey) => api.submitEntityType(vault, { name, baseVersion, schema, rationale, idempotencyKey }));
       return result.ok ? outcome(result.value) : failure(result.failure);
     },
-    listEntities: (vault, type, filters, cursor) => watched(api.listEntities(vault, { type, filters: filters.map(entityFilterText), cursor })),
+    listEntities: (vault, type, filters, sort, cursor) => watched(api.listEntities(vault, { type, filters: filters.map(entityFilterText), sort: sort === null ? null : entitySortText(sort), cursor })),
     getEntity: (vault, id) => watched(api.getEntity(vault, id)),
     getEntityRedirect: (vault, id) => watched(api.getEntityRedirect(vault, id)),
     resolveEntities: (vault, mention, type) => watched(api.resolveEntities(vault, mention, type)),
