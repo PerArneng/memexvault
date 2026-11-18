@@ -1,4 +1,4 @@
-//! Edge: PDF text and word coordinates on a statically linked pdfium. Callers run this in a child process, because it's a C++ parser reading untrusted files. See spec 002.
+//! Edge: PDF text and word coordinates on pinned pdfium, linked statically on macOS and loaded from libpdfium.so elsewhere (spec 091). Callers run this in a child process, because it's a C++ parser reading untrusted files. See spec 002.
 use memex_types::{PageClass, PageFacts, ParsedDocument, Rect, Word};
 use pdfium_render::prelude::*;
 use std::fmt;
@@ -14,6 +14,8 @@ pub enum PdfError {
     Malformed(String),
     /// It's readable but holds no pages.
     NoPages,
+    /// The pdfium library couldn't be loaded, so no PDF can be read.
+    Library(String),
 }
 
 impl fmt::Display for PdfError {
@@ -22,6 +24,7 @@ impl fmt::Display for PdfError {
             Self::Encrypted => f.write_str("the PDF is encrypted with a password"),
             Self::Malformed(m) => write!(f, "not a readable PDF: {m}"),
             Self::NoPages => f.write_str("the PDF has no pages"),
+            Self::Library(m) => write!(f, "pdfium couldn't be loaded: {m}"),
         }
     }
 }
@@ -124,6 +127,41 @@ fn page_words(page: &PdfPage<'_>, index: u32, out: &mut Vec<Word>) {
     flush(&mut current, &mut bounds, out);
 }
 
+#[cfg(target_os = "macos")]
+fn bind() -> Result<Box<dyn PdfiumLibraryBindings>, PdfError> {
+    Pdfium::bind_to_statically_linked_library().map_err(|e| PdfError::Library(e.to_string()))
+}
+
+/// Loads libpdfium.so from `MEMEX_PDFIUM_LIB` if set, else beside the running executable, else from the build's
+/// `vendor/pdfium/release/lib`, so tests and `cargo run` need no setup.
+#[cfg(not(target_os = "macos"))]
+#[allow(clippy::disallowed_methods)] // Edge: reads one setting, at start-up of a parser.
+fn bind() -> Result<Box<dyn PdfiumLibraryBindings>, PdfError> {
+    use std::path::PathBuf;
+    let candidates: Vec<PathBuf> = match std::env::var_os("MEMEX_PDFIUM_LIB") {
+        Some(path) => vec![PathBuf::from(path)],
+        None => {
+            let name = Pdfium::pdfium_platform_library_name();
+            let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join(&name)));
+            let vendor = option_env!("MEMEX_PDFIUM_VENDOR_DIR").map(|dir| PathBuf::from(dir).join(&name));
+            beside.into_iter().chain(vendor).collect()
+        }
+    };
+    let mut tried = Vec::new();
+    for path in &candidates {
+        match Pdfium::bind_to_library(path) {
+            Ok(bindings) => return Ok(bindings),
+            // pdfium-render prints its load errors across lines, so keep one line per path.
+            Err(e) => tried.push(format!(
+                "{} ({})",
+                path.display(),
+                e.to_string().split_whitespace().collect::<Vec<_>>().join(" ")
+            )),
+        }
+    }
+    Err(PdfError::Library(format!("no usable libpdfium; tried {}", tried.join(", "))))
+}
+
 /// The parser. Pdfium's library can be initialized once per process, so make one of these and share it.
 pub struct PdfiumParser {
     pdfium: Pdfium,
@@ -131,8 +169,7 @@ pub struct PdfiumParser {
 
 impl PdfiumParser {
     pub fn new() -> Result<Self, PdfError> {
-        let bindings = Pdfium::bind_to_statically_linked_library().map_err(|e| PdfError::Malformed(e.to_string()))?;
-        Ok(Self { pdfium: Pdfium::new(bindings) })
+        Ok(Self { pdfium: Pdfium::new(bind()?) })
     }
 
     /// Parses a PDF from its bytes. A PDF encrypted with an empty password opens as usual.

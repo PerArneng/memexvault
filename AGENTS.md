@@ -64,7 +64,7 @@ place in a wave. `wave-manager.py dot | dot -Tsvg -o waves.svg` draws the graph.
 Each spec's Verification section states its own concrete check. Backend commands, from
 the repository root:
 
-- First time: `scripts/fetch-pdfium.sh`, which puts the pinned static pdfium in `vendor/`.
+- First time: `scripts/fetch-pdfium.sh`, which puts the pinned pdfium in `vendor/`: a static library on macOS arm64, and `libpdfium.so` on Linux x86_64. On Linux the binary loads it from `MEMEX_PDFIUM_LIB`, else beside the executable, else the build's `vendor/`, so ship it next to the binary.
 - `cargo build --workspace`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo fmt --check` and `cargo deny check licenses`.
 - `migrate` upgrades every vault in the database, and a binary refuses a schema newer than it knows, so a branch that adds a migration should run these against a database of its own.
