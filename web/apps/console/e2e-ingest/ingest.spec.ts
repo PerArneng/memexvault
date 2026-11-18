@@ -373,7 +373,8 @@ test("item 4: retry and cancel from the UI, attributed to the signed-in principa
   await card.getByRole("button", { name: "Cancel job" }).click();
   await card.getByRole("button", { name: "Yes, cancel the job" }).click();
   await expect(page.locator(`[data-job="${jobId}"]`)).toHaveAttribute("data-job-state", "cancelled");
-  await expect(page.locator(`[data-job="${jobId}"]`)).toContainText(`Cancelled by ${who}`);
+  await expect(page.locator(`[data-job="${jobId}"] [data-job-action="cancel"]`)).toContainText("Cancelled by");
+  await expect(page.locator(`[data-job="${jobId}"] [data-job-action="cancel"] [data-actor-name]`)).toHaveText(new RegExp(`^${who}`));
   await expect(view).toHaveAttribute("data-status", "failed");
   const cancelledAt = Date.now();
 
@@ -387,7 +388,8 @@ test("item 4: retry and cancel from the UI, attributed to the signed-in principa
   // A cancelled job can be retried, and then it finishes.
   await page.locator(`[data-job="${jobId}"]`).getByRole("button", { name: "Retry job" }).click();
   await page.locator(`[data-job="${jobId}"]`).getByRole("button", { name: "Yes, retry" }).click();
-  await expect(page.locator(`[data-job="${jobId}"]`)).toContainText(`Retried by ${who}`);
+  await expect(page.locator(`[data-job="${jobId}"] [data-job-action="retry"]`)).toContainText("Retried by");
+  await expect(page.locator(`[data-job="${jobId}"] [data-job-action="retry"] [data-actor-name]`)).toHaveText(new RegExp(`^${who}`));
   await until("the retried job to finish", 5, async () => ((await get<{ state: string }>(request, `/jobs/${jobId}`)).state === "done" ? true : null));
 
   // Spec 086 item 1: after a reload, both actors still show by name, from the server, with no SQL.
@@ -415,7 +417,8 @@ test("item 4: retry and cancel from the UI, attributed to the signed-in principa
   const attemptsBefore = await dead.locator("[data-attempt]").count();
   await dead.getByRole("button", { name: "Retry job" }).click();
   await dead.getByRole("button", { name: "Yes, retry" }).click();
-  await expect(dead).toContainText(`Retried by ${who}`);
+  await expect(dead.locator('[data-job-action="retry"]')).toContainText("Retried by");
+  await expect(dead.locator('[data-job-action="retry"] [data-actor-name]')).toHaveText(new RegExp(`^${who}`));
   await until("the second try to fail", 5, async () => ((await get<{ state: string; attempts: unknown[] }>(request, `/jobs/${deadJob}`)).attempts.length > attemptsBefore ? true : null));
   await until("it to be dead again", 5, async () => ((await get<{ state: string }>(request, `/jobs/${deadJob}`)).state === "dead" ? true : null));
 

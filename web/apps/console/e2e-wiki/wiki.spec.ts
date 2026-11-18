@@ -760,11 +760,13 @@ test("spec 086: history names a person and an agent for a read token, a disabled
   await page.goto(`${pagesUrl()}/${made.page_id}/history`);
   const rows = page.getByRole("region", { name: "History" }).getByRole("listitem");
   await expect(rows).toHaveCount(6);
-  const nameOf = (revision: number) => rows.filter({ hasText: new RegExp(`Revision ${String(revision)}\\b`) }).locator("[data-actor-name]");
+  // A row's text runs its link into the title ("Revision 1Named"), so rows are found by their link.
+  const row = (revision: number) => rows.filter({ has: page.getByRole("link", { name: `Revision ${String(revision)}`, exact: true }) });
+  const nameOf = (revision: number) => row(revision).locator("[data-actor-name]");
   await expect(nameOf(1)).toHaveText(hostile);
   await expect(nameOf(2)).toHaveText(`agent-${run}`);
-  await expect(rows.filter({ hasText: /Revision 2\b/ }).locator('[data-actor-kind="Agent"]')).toBeVisible();
-  await expect(rows.filter({ hasText: /Revision 1\b/ }).locator('[data-actor-kind="Person"]')).toBeVisible();
+  await expect(row(2).locator('[data-actor-kind="Agent"]')).toBeVisible();
+  await expect(row(1).locator('[data-actor-kind="Person"]')).toBeVisible();
   await expect(page.locator("[data-actor-kind=loading]")).toHaveCount(0);
   // Item 5: the name is text. Nothing it holds became an element or ran.
   const history = page.getByRole("region", { name: "History" });
@@ -780,7 +782,7 @@ test("spec 086: history names a person and an agent for a read token, a disabled
   expect((await request.post(`/api/v1/principals/${pat.id}/disable`, { headers: bearer })).status()).toBe(204);
   await page.reload();
   await expect(nameOf(1)).toHaveText(hostile);
-  await expect(rows.filter({ hasText: /Revision 1\b/ })).toContainText("(disabled)");
+  await expect(row(1)).toContainText("(disabled)");
   expect(problems).toEqual([]);
 });
 

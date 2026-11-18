@@ -32,7 +32,7 @@ Two console screens found the same gap. Spec 041's "Cancelled by" and "Retried b
 A full audit log screen and editing names.
 
 ## Result
-Built: a job keeps who cancelled or retried it, and a read-scope route names any actor in a vault. The job screen and page history show names from these, and they survive a reload. **The browser checks (items 1, 2 and the e2e half of 6) and the Postgres test haven't run yet.** They need the `memexvault` binary, and `pdfium-render` doesn't compile on this machine yet ("library kind `framework` is only supported on Apple targets"; no static Linux pdfium is pinned). That question is open with the coordinator.
+A job now keeps who cancelled or retried it, and a read-scope route names any actor in a vault. The job screen and page history show names from these, and they survive a reload. Keep. Measured on a debug server at 127.0.0.1:18186 on its own database, on a machine shared with five other workers, at load averages of 10 to 21.
 
 **Built**
 - `memex-types`: `JobRow.actions`, a list of `JobAction { action: cancel | retry, actor, time_ms }`, oldest first, capped at `MAX_JOB_ACTIONS` = 20. It's `serde(default)` and left out when empty, so stored rows and their JSON are unchanged until someone acts: no migration, and no scan of the event log. `ActorCard { id, name, kind, disabled }`.
@@ -47,21 +47,45 @@ Built: a job keeps who cancelled or retried it, and a read-scope route names any
 - `e2e:ingest` item 4 now reads actors from the job route and the screen after a reload, with no `psql`. `e2e:wiki` has a new test for items 2, 3, 4 and 5.
 - API types regenerated (`pnpm api:gen`) from `memex_http::openapi()`, the same document the server serves at `/api/v1/openapi.json`, through a throwaway example that isn't committed. The diff holds only the two schemas, `JobDto.actions` and the one path.
 
-**Requests per history screen.** Before: 1 for history, plus 1 changeset per row, at most 50. After: 1 for history, plus 1 per distinct actor, cached across screens. That's 0 changeset reads, and 2 principal reads for a page of 6 revisions by a person and an agent. This comes from the code. The browser count in `e2e:wiki` asserts it but hasn't run yet.
+**Requests per history screen** (`e2e:wiki`, read token, 6 revisions by a person and an agent): 8 API requests in all.
+- 1 for the revisions.
+- 2 for names, one per distinct actor.
+- 0 for changesets.
+- The other 5 are sign-in and shell requests: `whoami`, `health` twice, the vault, and the vault list.
+
+Before this, each row read its changeset: 6 here, and up to 50 for a full screen. Names are cached for 5 minutes, so other screens showing the same actors don't fetch them again.
 
 **Verification**
-1. Not run, as it needs the binary. `e2e:ingest` item 4 reloads after cancel and retry and expects both names as Person, with the API giving `[cancel, retry]` by the operator. In memory, `memex-core/tests/jobs.rs` passed: actions cancel, retry, cancel by the writer, in time order, and the log's events name the same actor. `memex-http/tests/api.rs` passed: the job's actions over HTTP, and the actor named.
-2. Not run in the browser, as it needs the binary. The fake API and unit tests cover the names.
-3. Passed over HTTP in `a_reader_sees_an_actors_name_and_kind_and_nothing_else`. A read token gets the name and kind. For the admin, no admin flag is given, and the body has no `token`, `scope`, `grant`, `admin`, `hash` or `created_by`. A principal with no grant on the vault gets 404, as do another vault and a vault that doesn't exist. No token gets 401. The scope matrix gives OK for read, write and admin, and 404 with no access. The browser half is in `e2e:wiki`, not run.
-4. Passed over HTTP: an unknown id answers 200 with `name: null, kind: "unknown"`. In `core`, `actorText` shows it as "Unknown principal <id>", "no longer exists, or never was a principal", with a warning badge. The API has no way to delete a principal, so "gone" is an id that names none. Disabled is a real case, and shows "(disabled)" (browser check not run).
-5. Passed over HTTP: a name holding `<img onerror>` and `<b>` comes back as the exact string. React renders it as a text node. The browser check, which expects no `img` or `b`, no `window.__pwned` and the literal text, is in `e2e:wiki` and not run.
-6. API types regenerated. `pnpm typecheck` passed (types match the document), as did `lint`, `test` (725 in 42 files), `build`, and `budget` (140,029 bytes gzip against 200,000). `e2e:ingest` and `e2e:wiki` not run.
+1. Passed, in `e2e:ingest` item 4 against a real server, with no SQL. The test cancels a running scan from the console and retries it. After a reload, the job shows "Cancelled by" and "Retried by", each with the operator's name and a Person badge. The job route gives `[cancel, retry]` by the operator for the scan, and `[retry, retry]` for a dead job retried twice. That job's page shows 2 "Retried by" rows. The Postgres test `pg_job_lease_renewal_cancel_and_takeover` passed: the cancel's actor reads back from the stored row.
+2. Passed, in `e2e:wiki` (the "spec 086" test), with a read token. History names the person and the agent, with Person and Agent badges, and no name is still loading. It made 8 requests, as above.
+3. Passed, over HTTP in `a_reader_sees_an_actors_name_and_kind_and_nothing_else` and on the real server in `e2e:wiki`.
+   - The read token's lookup returns exactly `{id, name, kind: "human", disabled: false}`.
+   - For the admin, no admin flag is given, and the body has no `token`, `scope`, `grant`, `admin`, `hash` or `created_by`.
+   - A token with no grant on the vault gets 404, and the body doesn't hold the name. So do another vault and a vault that doesn't exist.
+   - No token gets 401.
+4. Passed. An id that names no principal answers 200 with `name: null, kind: "unknown"`, on the real server and over HTTP. The console shows it as "Unknown principal <id>", with "no longer exists, or never was a principal" and a warning badge (unit tests in `core/actors.test.ts`). The API can't delete a principal, so a gone principal is an id that names none. A disabled principal was disabled during `e2e:wiki`, and after a reload its rows say "(disabled)".
+5. Passed, in `e2e:wiki`. The name `<img src=x onerror="window.__pwned=1"><b>Pat …</b>` shows as that literal text. History holds no `img` or `b` element, and `window.__pwned` is undefined.
+6. Passed.
+   - `e2e:ingest`: 5 passed and 2 skipped, in 1.9 minutes. The skipped ones are opt-in: item 1's recording (`MEMEX_E2E_RECORDING`) and the 5-minute load test (`MEMEX_E2E_LOAD`).
+   - `e2e:wiki`: 18 passed, in 2.7 minutes.
+   - The API types are regenerated with `pnpm api:gen` from `memex_http::openapi()`, the document the server serves. The diff holds only `ActorDto`, `JobActionDto`, `JobDto.actions` and the one path.
 
-**Rust checks**
-- `cargo fmt --check` passed.
-- `cargo clippy --all-targets -D warnings` and `cargo test` passed on the workspace without `memex-pdf` and `memexvault`: 877 passed, 0 failed, 5 ignored. Those two crates don't compile here because of pdfium.
-- The Postgres check in `pg_job_lease_renewal_cancel_and_takeover`, that the cancel's actor reads back from Postgres, isn't run.
+**First runs, and what changed.** No limit was changed.
+- `e2e:wiki`: the new test failed once because of the test, not the screen. A row's text runs its link into the title ("Revision 1Named …"), so `/Revision 1\b/` matched nothing. It now finds rows by their exact link.
+- `e2e:ingest` item 4: an older assertion expected "Cancelled by operator-…" as one string, but the Person badge now sits between the two. It now checks the action's `[data-actor-name]`.
+
+**Other checks**
+- Passed:
+  - `cargo build --workspace`.
+  - `cargo fmt --check`.
+  - `cargo clippy --workspace --all-targets -- -D warnings`.
+  - `cargo test --workspace`: 996 passed, 0 failed, 108 ignored, in 80 suites.
+  - `pg_job_lease_` on Postgres: 2 passed, in 124 s.
+  - `pnpm typecheck`, `lint` and `build`.
+  - `pnpm test`: 725 tests in 42 files.
+  - `pnpm budget`: 140,029 bytes gzip, against the limit of 200,000.
+- Not run: `cargo deny check licenses`, as `cargo-deny` isn't installed here. This spec adds no dependency.
 
 **Limits and follow-ups**
 - Cancels and retries made before this change have no recorded actor, though their log events still name one.
-- Only cancel and retry are kept. Other object actions are already named by `RevisionDto.creator` and changesets.
+- Only cancel and retry are kept on a job. Other object actions are already named by `RevisionDto.creator` and changesets.
