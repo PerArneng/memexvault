@@ -28,7 +28,7 @@ stack, and the numbers here are our own targets to measure.
 | AI location | OCR, embeddings and reranking default to in-process from local model files. Extraction and review agents call an LLM over HTTP (Gemini or a local OpenAI-compatible server). Transcription has local and API options. Every AI edge is a trait, so any of them can call a remote service. |
 | Agent runtime | ADK-Rust `=2.3.0`, confined to one edge crate behind our own trait. Schema-only output reached 100/100 valid on Gemini and local vLLM. Extraction turns model thinking off. See spec 007. |
 | Access | One server, several isolated vaults, tokens with per-vault read/propose/admin scopes, all writes attributed. No per-object ACLs, but a nullable `acl_id` leaves room. |
-| PDF | `pdfium-render` on a statically linked pdfium, for text, word boxes and page images. We group characters into words. It runs in child worker processes that contain crashes and hangs. See spec 002, and specs 052 and 053 for assumptions under review. |
+| PDF | `pdfium-render` on pinned pdfium, linked statically on macOS and loaded from `libpdfium.so` on Linux x86_64 (spec 091), for text, word boxes and page images. We group characters into words. It runs in child worker processes that contain crashes and hangs. See spec 002, and specs 052 and 053 for assumptions under review. |
 | OCR | `oar-ocr` with the PP-OCRv6 small detector and PP-OCRv5 Latin recognizer, 17 MB. One child process per page at 2 threads, two at a time, about 21 pages/min, with reads unaffected. Word boxes are grouped from its character boxes, and we order columns ourselves. See specs 003 and 016, 054 for old prints, and 060 for hidden-text sampling. |
 | Embeddings | `multilingual-e5-small`, 384 dimensions, MIT, on ONNX Runtime through `ort` on CPU, shared with OCR. Query p95 9.4 ms on 4 threads, 40 passages/s. nDCG@10 on a 434-topic Wikipedia set: en 0.936, sv 0.897, de 0.913, es 0.911, cross-language 0.832. See spec 005. |
 | Reranking | Opt-in. `mmarco-mMiniLMv2-L12-H384-v1` int8, Apache-2.0, on the top 20 at 128 tokens, p95 133 ms alone. No local model met the rerank-50 target. The server starts without its files, and a search asking for it then reports it as degraded. See specs 005, 020 and 055. |
@@ -53,7 +53,7 @@ crates/
   memex-blob-fs/      edge: content-addressed blob folders
   memex-lexical/      edge: tantivy
   memex-vector/       edge: vector index on pgvector (spec 004)
-  memex-pdf/          edge: PDF text, coordinates, rasterizing on statically linked pdfium, in worker processes (specs 002, 015)
+  memex-pdf/          edge: PDF text, coordinates, rasterizing on pinned pdfium, in worker processes (specs 002, 015, 091)
   memex-ocr/          edge: oar-ocr on statically linked ONNX Runtime, in worker processes (specs 003, 016)
   memex-inference/    edge: embeddings and reranking on ONNX Runtime through ort (spec 005)
   memex-asr/          edge: whisper.cpp in worker processes, Gemini transcription, media decoding (specs 027, 028)
