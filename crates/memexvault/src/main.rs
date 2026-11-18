@@ -89,6 +89,18 @@ fn pdf_worker() -> ExitCode {
     }
 }
 
+/// Loads pdfium and exits, in a child process like the parser. On Linux it's a shared library that can be missing, and a
+/// worker that can't load it would fail every PDF for good, so `serve` and `mcp` run this first (spec 091).
+fn pdf_check() -> ExitCode {
+    match memex_pdf::PdfiumParser::new() {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::from(1)
+        }
+    }
+}
+
 /// Reads one PDF page by OCR: the PDF on stdin, then JSON on stdout. Threads and priority keep reads fast while this runs.
 fn ocr_worker(args: &[String]) -> ExitCode {
     use std::io::{Read, Write};
@@ -220,6 +232,7 @@ fn models_command(args: &[String], settings: &Settings) -> ExitCode {
 fn main() -> ExitCode {
     match std::env::args().nth(1).as_deref() {
         Some("pdf-worker") => return pdf_worker(),
+        Some("pdf-check") => return pdf_check(),
         Some("ocr-worker") => return ocr_worker(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("render-worker") => return render_worker(&std::env::args().skip(2).collect::<Vec<_>>()),
         Some("transcribe-worker") => return transcribe_worker(&std::env::args().skip(2).collect::<Vec<_>>()),
@@ -298,6 +311,11 @@ fn main() -> ExitCode {
                 Ok(p) => p,
                 Err(e) => return fail(e),
             };
+            match std::process::Command::new(&program).arg("pdf-check").output() {
+                Ok(out) if out.status.success() => {}
+                Ok(out) => return fail(String::from_utf8_lossy(&out.stderr).trim()),
+                Err(e) => return fail(format!("can't run the pdfium check: {e}")),
+            }
             if let Err(e) = memexvault::models::check_present(&settings.models_dir, &memexvault::models::OCR_MODELS) {
                 return fail(e);
             }
