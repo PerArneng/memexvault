@@ -22,6 +22,8 @@ const engine = createEngine({
   queueFeed: createSseQueueFeed({ apiBaseUrl: settings.settings.apiBaseUrl }),
   activity: createSseActivityFeed({ apiBaseUrl: settings.settings.apiBaseUrl }),
   uploader: createXhrUploader({ apiBaseUrl: settings.settings.apiBaseUrl }),
+  // A separate chunk, so @ag-ui/client and rxjs load only when someone first sends a chat message.
+  agentChannel: () => import("@memex/edge-agui").then((m) => m.createAgUiAgentChannel({ apiBaseUrl: settings.settings.apiBaseUrl })),
 });
 void engine.restoreSession();
 

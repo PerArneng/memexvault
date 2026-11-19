@@ -344,7 +344,11 @@ impl AdkAgent {
                     }
                     let mapped = runner_event(&event);
                     if !mapped.parts.is_empty() {
-                        host.event(mapped);
+                        // The host may write to a blocking store, which can't run on this runtime's threads. Awaited, so events keep their order.
+                        let host = host.clone();
+                        if let Err(e) = tokio::task::spawn_blocking(move || host.event(mapped)).await {
+                            return failed(adk_core::AdkError::model(e.to_string()));
+                        }
                     }
                 }
             }
@@ -396,6 +400,8 @@ mod tests {
         }
 
         fn event(&self, event: RunnerEvent) {
+            // As the Postgres store does: a blocking client runs a runtime of its own, which panics on a runtime's thread.
+            tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {});
             self.events.lock().unwrap().push(event);
         }
 

@@ -152,16 +152,19 @@ async fn chat_run_doc() {}
 fn settings_dto<E: ServerEdges>(s: &Server<E>, c: &memex_core::Caller, v: &VaultId) -> Result<ChatSettingsDto, ServerError> {
     let (enabled, thread_token_budget, day_token_budget) = s.chat_settings(c, v)?;
     let (day_tokens_used, day_tokens_limit) = s.chat_day_spend(c, v)?;
+    let (model, endpoint) = s.chat_model_info(c, v)?;
     Ok(ChatSettingsDto {
         enabled,
         thread_token_budget,
         day_token_budget,
         day_tokens_used,
         day_tokens_limit,
+        model,
+        endpoint,
     })
 }
 
-/// Whether chat is on, what it may spend and what it has spent today.
+/// Whether chat is on, what it may spend and what it has spent today, and the model that answers. Only an admin of the vault is told the model's endpoint, and anyone else gets it as null.
 #[utoipa::path(get, path = "/api/v1/vaults/{id}/chat/settings", tag = "chat", params(("id" = String, Path)), responses((status = 200, body = memex_api::ChatSettingsDto), (status = 404, body = ErrorBody)))]
 async fn get_settings<E>(
     State(server): State<App<E>>,

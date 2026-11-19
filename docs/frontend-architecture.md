@@ -71,6 +71,10 @@ virtualized.
 
 Spec 041 built this for Ingest. `ActivityWatch` in `core` holds the picture and no timer: the view calls `tick` five times a second, which applies whatever arrived in one batch and is the only thing that notifies. A frame says what's so, not what changed, so going over one twice is harmless, and frames that arrive during a snapshot are replayed on it. The stage model stays on the server: a frame moves a document only where it can't be wrong, up to the end of parsing, and anything it can't place, such as an embedding job, which isn't tied to one document, marks the picture for a new snapshot, at most once a second and at most a fifth of the time. `SseActivityFeed` uses `fetch` rather than `EventSource`, which hides a refusal's status and can't notice a connection that died silently, and it resumes by itself from the last position. Anything else that wants the stream calls `follow`.
 
+## Chat
+
+Spec 050. `AgentChannel` in `core` runs one turn, and `AgUiAgentChannel` in `edge-agui` is it on `HttpAgent.run`, not `runAgent`, since the transcript reducer in `core` keeps the state and judges order itself. It sends only the newest message, as the server keeps the thread. Stop aborts the request, which the server takes as the cancel, and says the stop at once. The reducer takes events out of order, ignores what it doesn't know and anything about a run that has ended, and marks a reply that didn't finish with why: stopped, cut, budget, failed or dropped. The panel opens beside any screen from the shell and is the Chat section too. The current screen's object reaches the chat only if the person ticks the box, as a line naming it in the message. A proposal card reads the review API and decides through it with the review screen's reason, and its buttons show only where `decisionAccess` allows.
+
 ## Security
 
 All vault content is untrusted, including document text, OCR output, entity fields, page bodies and model replies.
@@ -83,6 +87,7 @@ All vault content is untrusted, including document text, OCR output, entity fiel
 - A search citation names its passage with `segment=` in the viewer's URL. Offsets become rectangles in `segmentRegion`, from the word table, read only when someone opens one. See spec 043.
 - Page images, thumbnails and media are same-origin addresses in `src`, so the cookie and the policy apply, and nothing needs `blob:` or `data:`. Positions go through `element.style`, which the policy allows. See spec 042.
 - The console signs in through `POST /api/v1/session`, and sends `x-memex-csrf` on every state-changing request. Page script can't read the session cookie.
+- Chat replies go through `SafeMarkdown`, and each `[cite:ID]` becomes a chip through its placeholders, after any placeholder characters in the reply are replaced. A citation opens only what a tool in that thread returned, and anything else is marked as not resolving. Tool answers show as text. See spec 050.
 - External links are visibly marked and open with `noopener`.
 - Trust tier and epistemic status are shown wherever claims appear.
 
@@ -109,7 +114,7 @@ GPL are denied, as in spec 008.
 | `typescript`, `vite` | 6.0, 8.3 | Apache-2.0, MIT | Build. TypeScript stays on 6.0 because `typescript-eslint` 8.72 requires below 6.1, so 7.0 isn't possible yet. |
 | `@tanstack/react-router`, `react-query`, `react-table`, `react-virtual` | 1.170, 5.106, 9.3, 3.14 | MIT | Routes, server state, tables, long lists |
 | `tailwindcss`, `@radix-ui/*`, `lucide-react` | 4.3, 1.x, 1.69 | MIT, MIT, ISC | Styling, accessible primitives, icons |
-| `@ag-ui/client` | 1.0.4 | MIT | Chat protocol, in `edge-agui` only |
+| `@ag-ui/client`, `rxjs`, `zod` | 1.0.4, 7.8.1, 3.25.76 | MIT, Apache-2.0, MIT | Chat protocol, in `edge-agui` only. `rxjs` is the version the client pins, and `zod` is its peer. Loaded on the first chat message, in its own chunk |
 | `@ag-ui/core` | 1.0.4 | MIT | Dev only for now: spec 049's check of the backend's streams against its schemas, in `edge-agui`, with its peer `zod` 3.25.76 (MIT) |
 | `@codemirror/*`, `@lezer/highlight` | 6.x, 1.2 | MIT | Page editor |
 | `react-markdown`, `rehype-sanitize`, `remark-gfm` | 10.1, 6.0, 4.0 | MIT | Rendering Markdown |

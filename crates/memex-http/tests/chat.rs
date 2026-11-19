@@ -322,6 +322,47 @@ async fn chat_is_off_until_an_admin_turns_it_on_and_nothing_reaches_the_llm_befo
     assert_eq!(agent.requests().len(), before);
 }
 
+// ---- Spec 050: the console's banner names the model, and only a vault admin is told where it's served. ----
+
+#[tokio::test]
+async fn the_settings_name_the_model_to_readers_and_the_endpoint_only_to_admins() {
+    let w = world();
+    let url = format!("{}/settings", w.base());
+    let reader = w.token("reader", PrincipalKind::Human, Scope::Read);
+    let proposer = w.token("proposer", PrincipalKind::Human, Scope::Propose);
+    let vault_admin = w.token("vadmin", PrincipalKind::Human, Scope::Admin);
+
+    // No chat model: nothing to name, for anyone.
+    for t in [&reader, &vault_admin, &w.root] {
+        let (status, got) = w.call("GET", &url, t, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!((&got["model"], &got["endpoint"]), (&Value::Null, &Value::Null), "{got}");
+    }
+
+    w.s.set_chat_model(Some(memex_core::chat::ChatModel {
+        model: "qwen-chat".into(),
+        endpoint: memex_core::chat::endpoint_origin("http://user:secret@llm.internal:8000/v1?key=k").unwrap(),
+    }));
+    for t in [&reader, &proposer] {
+        let (status, got) = w.call("GET", &url, t, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(got["model"], json!("qwen-chat"));
+        assert_eq!(got["endpoint"], Value::Null, "a non-admin never receives the endpoint: {got}");
+        assert!(!got.to_string().contains("llm.internal"), "{got}");
+    }
+    for t in [&vault_admin, &w.root] {
+        let (status, got) = w.call("GET", &url, t, None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(got["model"], json!("qwen-chat"));
+        assert_eq!(got["endpoint"], json!("http://llm.internal:8000"), "{got}");
+    }
+    // A PUT answers with the same DTO, so it has to hold to the same rule. Only an admin can PUT.
+    let (status, got) = w.call("PUT", &url, &vault_admin, Some(json!({"enabled": true}))).await;
+    assert_eq!((status, &got["endpoint"]), (StatusCode::OK, &json!("http://llm.internal:8000")));
+    let reader_caller = w.s.authenticate(&reader).unwrap();
+    assert_eq!(w.s.chat_model_info(&reader_caller, &w.v).unwrap(), (Some("qwen-chat".into()), None));
+}
+
 #[tokio::test]
 async fn a_budget_of_zero_is_refused_and_a_server_with_no_model_says_so() {
     let w = world();

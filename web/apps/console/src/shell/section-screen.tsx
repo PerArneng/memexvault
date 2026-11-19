@@ -20,6 +20,8 @@ const EntitiesScreen = lazy(() => import("../entities/entities-screen"));
 // Lazy, as nothing before a signed-in user watches ingest needs the live board.
 const IngestScreen = lazy(() => import("../ingest/ingest-screen"));
 const SearchScreen = lazy(() => import("../search/search-screen"));
+// Lazy, as the chat brings in Markdown and, on its first message, the AG-UI client.
+const ChatPanel = lazy(() => import("../chat/chat-panel"));
 
 interface SectionScreenProps {
   readonly identity: Identity;
@@ -37,7 +39,7 @@ const Allowed = ({ identity, vault, section, rest }: { readonly identity: Identi
         <div className="flex flex-col gap-4">
           <p className="text-sm text-text-muted">
             In vault <span className="text-text">{data.name}</span>
-            {section.id !== "pages" && section.id !== "documents" && section.id !== "review" && section.id !== "entities" && section.id !== "search" && section.id !== "ingest" && rest[0] !== undefined && <> · <span className="font-mono text-text">{rest[0]}</span></>}
+            {section.id !== "pages" && section.id !== "documents" && section.id !== "review" && section.id !== "entities" && section.id !== "search" && section.id !== "ingest" && section.id !== "chat" && rest[0] !== undefined && <> · <span className="font-mono text-text">{rest[0]}</span></>}
           </p>
           {section.id === "pages" ? (
             <Suspense fallback={<Skeleton className="h-24 w-full" />}>
@@ -62,6 +64,12 @@ const Allowed = ({ identity, vault, section, rest }: { readonly identity: Identi
           ) : section.id === "search" ? (
             <Suspense fallback={<Skeleton className="h-24 w-full" />}>
               <SearchScreen vault={vault} rest={rest} />
+            </Suspense>
+          ) : section.id === "chat" ? (
+            <Suspense fallback={<Skeleton className="h-24 w-full" />}>
+              <div className="flex h-[calc(100vh-10rem)] min-h-96 flex-col overflow-hidden rounded-lg border border-border">
+                <ChatPanel identity={identity} vault={vault} attachable={null} />
+              </div>
             </Suspense>
           ) : (
             /* Each feature screen replaces this in its own spec. */

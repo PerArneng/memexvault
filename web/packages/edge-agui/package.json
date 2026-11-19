@@ -7,11 +7,14 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@ag-ui/client": "1.0.4",
+    "@memex/api": "workspace:*",
     "@memex/core": "workspace:*",
-    "@memex/types": "workspace:*"
+    "@memex/types": "workspace:*",
+    "rxjs": "7.8.1",
+    "zod": "3.25.76"
   },
   "devDependencies": {
-    "@ag-ui/core": "1.0.4",
-    "zod": "3.25.76"
+    "@ag-ui/core": "1.0.4"
   }
 }

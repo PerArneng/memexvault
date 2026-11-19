@@ -150,6 +150,22 @@ impl<E: ServerEdges> Server<E> {
         *self.chat_limits.lock().expect("lock") = limits;
     }
 
+    /// Names the model and where it's served, for the console's banner. Set by the composition root beside `set_chat`.
+    pub fn set_chat_model(&self, model: Option<chat::ChatModel>) {
+        *self.chat_model.lock().expect("lock") = model;
+    }
+
+    /// The chat model's name, for anyone who can read the vault, and its endpoint only for an admin of the vault, as an address says where vault content goes and can name an internal host. Both are None with no chat model.
+    pub fn chat_model_info(&self, caller: &Caller, vault: &VaultId) -> Result<(Option<String>, Option<String>), ServerError> {
+        self.allow(caller, Operation::VaultContentRead(vault))?;
+        self.vault_exists(vault)?;
+        let Some(m) = self.chat_model.lock().expect("lock").clone() else {
+            return Ok((None, None));
+        };
+        let admin = self.allow(caller, Operation::VaultChatSettings(vault)).is_ok();
+        Ok((Some(m.model), if admin { Some(m.endpoint) } else { None }))
+    }
+
     fn chat_settings_row(&self, vault: &VaultId) -> Result<Option<ChatSettingsRow>, ServerError> {
         Ok(match self.engine.store().snapshot(vault)?.get(&settings_key())? {
             Some(Row::ChatSettings(r)) => Some(r),

@@ -2029,7 +2029,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Whether chat is on, what it may spend and what it has spent today. */
+        /** Whether chat is on, what it may spend and what it has spent today, and the model that answers. Only an admin of the vault is told the model's endpoint, and anyone else gets it as null. */
         get: {
             parameters: {
                 query?: never;
@@ -7045,6 +7045,10 @@ export interface components {
              */
             day_tokens_used: number;
             enabled: boolean;
+            /** @description Where the model is served, as `scheme://host[:port]` with no path, query or credentials. Only an admin of this vault receives it, and anyone else gets null, as it says where vault content goes and can name an internal host. Null too with no chat model. */
+            endpoint?: string | null;
+            /** @description The model that answers, or null when this server has no chat model. Anyone who can read the vault sees it. */
+            model?: string | null;
             /** Format: int64 */
             thread_token_budget?: number | null;
         };

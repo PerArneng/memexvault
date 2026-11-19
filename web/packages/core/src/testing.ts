@@ -1,5 +1,5 @@
 import { epochMs, vaultId } from "@memex/types";
-import type { ChangeOrigin, EvidencePackage, RenditionReading, ClaimLineage, Derivation, DocumentSource, EpochMs, FlaggedPage, Grant, Identity, MediaFacts, ObjectSummary, Page, PageList, PageWord, Rendition, Segment, Transcript, Vault, VaultId, WikiClaim, WikiPage, WikiPageSummary, WikiRevision, WikiWrite } from "@memex/types";
+import type { ChatSettings, ChatThreadDetail, ChangeOrigin, EvidencePackage, RenditionReading, ClaimLineage, Derivation, DocumentSource, EpochMs, FlaggedPage, Grant, Identity, MediaFacts, ObjectSummary, Page, PageList, PageWord, Rendition, Segment, Transcript, Vault, VaultId, WikiClaim, WikiPage, WikiPageSummary, WikiRevision, WikiWrite } from "@memex/types";
 import { failed, ok } from "./api";
 import type { Api, ApiFailure, ApiResult } from "./api";
 import type { Clock } from "./clock";
@@ -13,6 +13,8 @@ import { createReviewFake } from "./testing-review";
 import type { ReviewSeed } from "./testing-review";
 
 export { changesetWith, combinationWith, createReviewFake, detailWith } from "./testing-review";
+export { scriptedAgentChannel } from "./testing-chat";
+export type { ScriptedAgentChannel, ScriptedRun } from "./testing-chat";
 export type { ReviewSeed } from "./testing-review";
 import { fakeIngestApi } from "./ingest-testing";
 import type { IngestSeed } from "./ingest-testing";
@@ -85,6 +87,7 @@ export const UNREACHABLE: ApiFailure = { kind: "unreachable", message: "no answe
 
 export interface FakeApiSeed {
   readonly ingest?: IngestSeed;
+  readonly chat?: { readonly settings?: ChatSettings; readonly threads?: readonly ChatThreadDetail[] };
   /** Which token signs in as whom. */
   readonly tokens?: Readonly<Record<string, Identity>>;
   readonly vaults?: readonly Vault[];
@@ -207,6 +210,18 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
 
   const api: FakeApi = {
     ...fakeIngestApi(seed.ingest ?? {}),
+    getChatSettings: () => answer("getChatSettings", () => ok(seed.chat?.settings ?? { enabled: false, threadTokenBudget: null, dayTokenBudget: null, dayTokensUsed: 0, dayTokensLimit: 0, model: null, endpoint: null })),
+    listChatThreads: () => answer("listChatThreads", () => ok({ items: (seed.chat?.threads ?? []).map((t) => t.thread), nextCursor: null })),
+    getChatThread: (_vault, id, cursor) =>
+      answer(`getChatThread:${id}:${cursor ?? ""}`, () => {
+        const detail = (seed.chat?.threads ?? []).find((t) => t.thread.id === id);
+        if (detail === undefined) return failed<ChatThreadDetail>(httpFailure(404, "not_found"));
+        // Two messages a page, so paging is exercised.
+        const start = cursor === null ? 0 : Number(cursor);
+        const end = start + 2;
+        return ok({ thread: detail.thread, messages: detail.messages.slice(start, end), nextCursor: end < detail.messages.length ? String(end) : null });
+      }),
+    deleteChatThread: (_vault, id) => answer(`deleteChatThread:${id}`, () => ok(null)),
     down: false,
     calls,
     failNext: (failure) => {
