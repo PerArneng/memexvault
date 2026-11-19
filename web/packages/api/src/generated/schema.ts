@@ -92,6 +92,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The status as Prometheus text, for a scraper holding a server admin's token. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": string;
+                    };
+                };
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/principals": {
         parameters: {
             query?: never;
@@ -315,6 +366,57 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every vault's index lag, job queues, review backlog and sizes, and the caches. Server admins only. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["StatusDto"];
+                    };
+                };
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3082,6 +3184,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vaults/{id}/erasures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Erasures in the order they happened: what each removed, and the claims and pages each left flagged. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number;
+                    /** @description `created`, the default. */
+                    sort?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErasurePage"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/vaults/{id}/flagged-pages": {
         parameters: {
             query?: never;
@@ -4465,6 +4619,129 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vaults/{id}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compares the log, the tables, the blobs and the indexes, with counts and hashes. With `repair`, rebuilds an index that differs. A vault admin's. It replays the log in memory, so on a large vault it takes a while. */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description Also replay the log up to this event, to compare with a backup taken there. */
+                    at?: number | null;
+                    /** @description Re-hash every blob, which reads all of them. */
+                    deep?: boolean | null;
+                    /** @description Rebuild an index that differs, which is derived data. The log and tables are never changed. */
+                    repair?: boolean | null;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReconcileDto"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/reindex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Builds new index generations from the tables. The current ones keep serving until they're ready, and the status shows the build. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReindexBody"];
+                };
+            };
+            responses: {
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/vaults/{id}/renditions/{rid}": {
         parameters: {
             query?: never;
@@ -5611,6 +5888,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vaults/{id}/sources/{sid}/erasure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What erasing this document would remove, rewrite and flag, read now. The erasure's record lists the same once approved, unless the vault changed in between. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    sid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErasureImpactDto"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Proposes erasing the document and every version of it. It always waits for a person, whoever proposes it, and only a person can approve it. Approving runs the erasure, which can't be undone. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    sid: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["EraseBody"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProposalResult"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/vaults/{id}/sources/{sid}/extraction": {
         parameters: {
             query?: never;
@@ -6476,6 +6841,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/vaults/{id}/sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Removes blobs no row refers to that are older than the grace period. The server also does this on its own schedule. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SweepBody"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SweepDto"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/vaults/{id}/upload-limits": {
         parameters: {
             query?: never;
@@ -7178,6 +7600,11 @@ export interface components {
             items: components["schemas"]["DerivationDto"][];
             next_cursor?: string | null;
         };
+        DigestDto: {
+            /** Format: int64 */
+            count: number;
+            hash: string;
+        };
         DisableBody: {
             reason: string;
         };
@@ -7339,6 +7766,42 @@ export interface components {
         EntityTypeVersions: {
             /** @description Oldest first. */
             items: components["schemas"]["EntityTypeDto"][];
+        };
+        EraseBody: {
+            /** @description Why, for the person who decides. */
+            rationale: string;
+        };
+        ErasureDto: {
+            /** @description Who approved it. */
+            actor: string;
+            /** @description The proposal it came from. */
+            changeset_id: string;
+            impact: components["schemas"]["ErasureImpactDto"];
+            /**
+             * Format: int64
+             * @description The `source.erased` event.
+             */
+            seq: number;
+            /** Format: int64 */
+            time_ms: number;
+        };
+        /** @description What an erasure removes, rewrites and flags. A preview and the record of a done erasure have the same shape, so they can be compared. */
+        ErasureImpactDto: {
+            /** @description Claims that stand on other evidence too, and lost what they had from this document. */
+            flagged_claims: string[];
+            /** @description Pages that link to the document or refer to a claim that goes. Their text isn't changed. */
+            flagged_pages: string[];
+            /** @description The document. Every version of it goes. */
+            logical_id: string;
+            /** @description Rows that go, in key order. */
+            removed: components["schemas"]["RowKeyDto"][];
+            /** @description Rows that stay, with what came from the document taken out. */
+            rewritten: components["schemas"]["RowKeyDto"][];
+            sources: string[];
+        };
+        ErasurePage: {
+            items: components["schemas"]["ErasureDto"][];
+            next_cursor?: string | null;
         };
         /** @description The one error format. */
         ErrorBody: {
@@ -7613,6 +8076,29 @@ export interface components {
              */
             t_start_ms?: number | null;
         };
+        IndexCheckDto: {
+            behind: boolean;
+            /** @description `keyword` or `vector`. */
+            index: string;
+            index_digest?: components["schemas"]["DigestDto"] | null;
+            /** @description `segment` or `claim`. */
+            kind: string;
+            matches: boolean;
+            store: components["schemas"]["DigestDto"];
+            /** Format: int64 */
+            watermark?: number | null;
+        };
+        IndexStatusDto: {
+            building: boolean;
+            /**
+             * Format: int64
+             * @description Events not applied yet.
+             */
+            lag: number;
+            ready: boolean;
+            /** Format: int64 */
+            watermark?: number | null;
+        };
         InversePreview: {
             blocked_because?: string | null;
             mutations: Record<string, never>[];
@@ -7625,6 +8111,11 @@ export interface components {
             actor: string;
             /** Format: int64 */
             time_ms: number;
+        };
+        JobCountDto: {
+            /** Format: int64 */
+            count: number;
+            kind: string;
         };
         JobDto: {
             /** @description Cancels and retries by people, oldest first. The actor is a principal's id, which `GET /vaults/{id}/principals/{pid}` names. */
@@ -8160,6 +8651,40 @@ export interface components {
             /** @description Too few planted errors to trust the figure. */
             too_small: boolean;
         };
+        ReconcileDto: {
+            /**
+             * Format: int64
+             * @description The replayed state at `at`, when asked for.
+             */
+            at_seq?: number | null;
+            at_sha256?: string | null;
+            /** Format: int64 */
+            blob_bytes: number;
+            /** Format: int64 */
+            blob_orphans: number;
+            blobs_corrupt: string[];
+            blobs_missing: string[];
+            /** Format: int64 */
+            blobs_referenced: number;
+            /** Format: int64 */
+            blobs_stored: number;
+            /** @description No difference anywhere, an index that's only behind not counting. */
+            clean: boolean;
+            differing: components["schemas"]["RowKeyDto"][];
+            /** Format: int64 */
+            differing_count: number;
+            /** Format: int64 */
+            events: number;
+            /** Format: int64 */
+            head?: number | null;
+            indexes: components["schemas"]["IndexCheckDto"][];
+            repaired: string[];
+            replay_error?: string | null;
+            replayed_sha256: string;
+            /** Format: int64 */
+            rows: number;
+            tables_sha256: string;
+        };
         RectDto: {
             /** Format: int32 */
             page: number;
@@ -8178,6 +8703,10 @@ export interface components {
             /** @description The entity this id leads to now, which is itself unless it has been merged. */
             current_id: string;
             id: string;
+        };
+        ReindexBody: {
+            /** @description `keyword`, `vector` or `all`. */
+            index: string;
         };
         RejectedItemDto: {
             quote: string;
@@ -8311,6 +8840,11 @@ export interface components {
         RevisionPage: {
             items: components["schemas"]["RevisionDto"][];
             next_cursor?: string | null;
+        };
+        RowKeyDto: {
+            id: string;
+            /** @description The table: `source`, `rendition`, `segment`, `evidence`, `assertion`, `entity`, `edge`, `change_set`, `job`, `derivation` and so on. */
+            table: string;
         };
         /** @description AG-UI's `RunAgentInput`. Only the newest user message is read: a thread's history is what the server stored, so a client can't put words in the agent's mouth, and `tools`, `context` and `state` are accepted and ignored. */
         RunAgentBody: {
@@ -8447,6 +8981,27 @@ export interface components {
             ms: number;
             stage: string;
         };
+        StatusDto: {
+            caches: components["schemas"]["CacheTierDto"][];
+            vaults: components["schemas"]["VaultStatusDto"][];
+        };
+        SweepBody: {
+            /**
+             * Format: int64
+             * @description How old an unreferenced blob must be to go. The server's `MEMEX_SWEEP_GRACE_S` when absent.
+             */
+            grace_s?: number | null;
+        };
+        SweepDto: {
+            /** Format: int64 */
+            checked: number;
+            /** Format: int64 */
+            kept_young: number;
+            /** Format: int64 */
+            removed: number;
+            /** Format: int64 */
+            removed_bytes: number;
+        };
         /** @description A token's details. The token itself and its hash never appear here. */
         TokenDto: {
             /** Format: int64 */
@@ -8577,6 +9132,26 @@ export interface components {
         VaultPage: {
             items: components["schemas"]["VaultDto"][];
             next_cursor?: string | null;
+        };
+        VaultStatusDto: {
+            /** Format: int64 */
+            blob_bytes: number;
+            /** Format: int64 */
+            blobs: number;
+            /** Format: int64 */
+            cache_generation: number;
+            /** Format: int64 */
+            dead_jobs: number;
+            /** Format: int64 */
+            head?: number | null;
+            id: string;
+            keyword: components["schemas"]["IndexStatusDto"];
+            name: string;
+            /** @description Queued or running jobs by kind. */
+            open_jobs: components["schemas"]["JobCountDto"][];
+            /** Format: int64 */
+            review_pending: number;
+            vector: components["schemas"]["IndexStatusDto"];
         };
         VersionDto: {
             version: string;

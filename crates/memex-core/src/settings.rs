@@ -100,6 +100,23 @@ pub struct Settings {
     pub transcribe: TranscribeSettings,
     pub activity: crate::ActivityLimits,
     pub job_ceilings: JobCeilings,
+    pub sweep: SweepSettings,
+}
+
+/// The orphan blob sweep (spec 030): how often it runs, and how old an unreferenced blob must be before it goes, as an upload's blob is stored before the row that refers to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SweepSettings {
+    pub interval_s: u64,
+    pub grace_s: u64,
+}
+
+impl Default for SweepSettings {
+    fn default() -> Self {
+        Self {
+            interval_s: 6 * HOUR_S,
+            grace_s: 24 * HOUR_S,
+        }
+    }
 }
 
 /// The longest one attempt at a job of each kind may run, in seconds, counted from its claim. Past it the worker stops renewing the lease, fails the attempt with a reason that names the ceiling, and goes back to work. A handler that's still running is left to finish on its own thread, as a thread can't be killed, and whatever it returns is thrown away. Spec 084 has each default's reasons.
@@ -276,6 +293,7 @@ impl Default for Settings {
             transcribe: TranscribeSettings::default(),
             activity: crate::ActivityLimits::default(),
             job_ceilings: JobCeilings::default(),
+            sweep: SweepSettings::default(),
         }
     }
 }
@@ -549,6 +567,9 @@ impl Settings {
         j.extract_s = ceiling("MEMEX_EXTRACT_CEILING_S", j.extract_s)?;
         j.review_s = ceiling("MEMEX_REVIEW_CEILING_S", j.review_s)?;
         j.audit_s = ceiling("MEMEX_AUDIT_CEILING_S", j.audit_s)?;
+        let w = &mut s.sweep;
+        w.interval_s = ceiling("MEMEX_SWEEP_INTERVAL_S", w.interval_s)?;
+        w.grace_s = ceiling("MEMEX_SWEEP_GRACE_S", w.grace_s)?;
         let a = &mut s.activity;
         a.max_streams = count("MEMEX_ACTIVITY_MAX_STREAMS", text("MEMEX_ACTIVITY_MAX_STREAMS")?, a.max_streams)?;
         a.buffer.max_frames = count("MEMEX_ACTIVITY_BUFFER_FRAMES", text("MEMEX_ACTIVITY_BUFFER_FRAMES")?, a.buffer.max_frames)?;

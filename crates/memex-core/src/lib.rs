@@ -3,6 +3,7 @@ pub mod activity;
 mod agent;
 pub mod audit;
 mod auth;
+pub mod backup;
 mod batch;
 mod blob;
 pub mod cache;
@@ -11,6 +12,7 @@ mod clock;
 mod dump;
 mod engine;
 pub mod entity;
+pub mod erasure;
 pub mod extraction;
 pub mod governance;
 pub mod jobs;
@@ -62,16 +64,18 @@ pub use review::{REVIEW_JOB, ReviewLimits};
 pub use search::Reranker;
 pub use seed::Seed;
 pub use server::{
-    ActivitySnapshot, AuditBudget, AuditRunDetail, AutoCommitEntry, AutoCommitTable, BacklinkView, BatchDecision, ChatInput, ChatLimits, ChatSettingsUpdate,
-    ChatToolAnswer, ChatToolContext, ChatView, ClaimEvidence, ClaimRef, ClaimRefStatus, ClaimReference, CreatedSession, CreatedToken, DocumentActivity,
-    EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, EvidenceLineage, ExtractJobError, ExtractionReport, FieldInput, ImportedPage,
-    LEASE_REGAINING, Lineage, MediaInfo, MeetingView, NeighborView, NewEntity, NewPage, NewToken, OutgoingLink, PIPELINE_VERSION, PageChange, PageDiff,
-    PageList, PageRedirect, PageRevisionView, PageView, ParticipantLink, ParticipantView, PreparedChat, Proposal, ProposalOutcome, REGAIN_FIRST_MS,
-    REGAIN_MAX_MS, RENDITION_JOB, RESULT_LIMIT, Redirect, RenditionInput, ReviewDetail, ReviewEvidence, ReviewItem, SearchEdges, Server, ServerEdges,
-    ServerError, SplitRequest, TRANSCRIBE_JOB, TranscriptPage, TranscriptWindow, TriggerAudit, TypeDecision, UnresolvedLink, new_chat_cancel, regain_delay_ms,
+    ActivitySnapshot, AuditBudget, AuditRunDetail, AutoCommitEntry, AutoCommitTable, BacklinkView, BatchDecision, BlobCheck, CascadeStep, ChatInput,
+    ChatLimits, ChatSettingsUpdate, ChatToolAnswer, ChatToolContext, ChatView, ClaimEvidence, ClaimRef, ClaimRefStatus, ClaimReference, CreatedSession,
+    CreatedToken, DocumentActivity, ERASE_CASCADE, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, ErasureView, EvidenceLineage,
+    ExtractJobError, ExtractionReport, FieldInput, ImportedPage, IndexCheck, IndexStatus, LEASE_REGAINING, Lineage, LogCheck, MediaInfo, MeetingView,
+    NeighborView, NewEntity, NewPage, NewToken, OutgoingLink, PIPELINE_VERSION, PageChange, PageDiff, PageList, PageRedirect, PageRevisionView, PageView,
+    ParticipantLink, ParticipantView, PreparedChat, Proposal, ProposalOutcome, REGAIN_FIRST_MS, REGAIN_MAX_MS, RENDITION_JOB, RESULT_LIMIT, ReconcileReport,
+    Redirect, ReindexTarget, RenditionInput, RestoreTarget, ReviewDetail, ReviewEvidence, ReviewItem, SearchEdges, Server, ServerEdges, ServerError,
+    ServerStatus, SplitRequest, SweepReport, TRANSCRIBE_JOB, TranscriptPage, TranscriptWindow, TriggerAudit, TypeDecision, UnresolvedLink, VAULT_CASCADE,
+    VaultStatus, metrics_text, new_chat_cancel, regain_delay_ms,
 };
 pub use session::{LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, SESSION_TTL_MS};
-pub use settings::{Backends, CacheSettings, JobCeilings, LlmSettings, Settings, SettingsError, TranscribeApi, TranscribeSettings};
+pub use settings::{Backends, CacheSettings, JobCeilings, LlmSettings, Settings, SettingsError, SweepSettings, TranscribeApi, TranscribeSettings};
 pub use sources::{ALLOWED_MEDIA_TYPES, UNTRUSTED, UploadLimits, UploadOutcome, UploadRequest, sniff_media_type};
 pub use store::{CommitItem, MAX_SHARED_IDS, PAGE_LIMIT, Receipt, Snapshot, Store, StoreError, WriterLease};
 pub use upcast::{CURRENT_VERSIONS, UpcastError, upcast};

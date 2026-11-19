@@ -6,6 +6,7 @@ mod convert;
 mod entities;
 mod extraction;
 mod meeting;
+mod ops;
 mod pages;
 mod review;
 pub use activity::*;
@@ -20,6 +21,7 @@ use memex_types::{
     JobAction, JobActionKind, JobRow, LexicalFilter, LexicalResults, ObjectId, Op, Principal, PrincipalKind, RenditionRow, Scope, SearchDebug, SearchMode,
     SearchRequest, SegmentRow, SignalScores, SourceRow, TokenRow, VaultId, VaultRow,
 };
+pub use ops::*;
 pub use pages::*;
 pub use review::*;
 use serde::{Deserialize, Serialize};

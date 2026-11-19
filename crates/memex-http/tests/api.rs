@@ -1240,8 +1240,8 @@ fn every_list_route_in_the_openapi_document_has_cursor_limit_and_sort() {
         }
     }
     assert_eq!(
-        lists, 29,
-        "the live board, vaults, principals, tokens, changesets, changes, contradictions, sources, jobs, segments, re-anchor failures, flagged pages, two claim lists, entity types, entities, same-as suggestions, pages, revisions, backlinks, outgoing links, unresolved links, derivations, neighborhoods, the review queue, the auto-commit table, audit runs, audit checks and chat threads"
+        lists, 30,
+        "the live board, vaults, principals, tokens, changesets, changes, contradictions, sources, jobs, segments, re-anchor failures, flagged pages, two claim lists, entity types, entities, same-as suggestions, pages, revisions, backlinks, outgoing links, unresolved links, derivations, neighborhoods, the review queue, the auto-commit table, audit runs, audit checks, chat threads and erasures"
     );
     // Every route the router serves is documented.
     for p in [
@@ -1281,9 +1281,95 @@ fn every_list_route_in_the_openapi_document_has_cursor_limit_and_sort() {
         "/api/v1/principals/{id}/disable",
         "/api/v1/tokens",
         "/api/v1/tokens/{id}",
+        "/api/v1/vaults/{id}/sources/{sid}/erasure",
+        "/api/v1/vaults/{id}/erasures",
+        "/api/v1/vaults/{id}/reconcile",
+        "/api/v1/vaults/{id}/reindex",
+        "/api/v1/vaults/{id}/sweep",
+        "/api/v1/status",
+        "/api/v1/metrics",
     ] {
         assert!(paths.contains_key(p), "{p}");
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn operations_routes_erase_by_proposal_and_report_to_admins_only() {
+    let w = world();
+    let a = w.a.0.clone();
+    let (status, up) = upload_raw(&w.s, &a, Some(&w.admin), "name=notes.txt", b"Plain words to erase later.".to_vec()).await;
+    assert_eq!(status, StatusCode::CREATED, "{up}");
+    let sid = up["source"]["id"].as_str().unwrap().to_string();
+    let (status, preview, _) = call(&w.s, "GET", &format!("/api/v1/vaults/{a}/sources/{sid}/erasure"), Some(&w.admin), None).await;
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    assert_eq!(preview["sources"], json!([sid]));
+    assert!(
+        preview["removed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|k| k["table"] == "source" && k["id"] == sid.as_str())
+    );
+    let (status, proposed, _) = call(
+        &w.s,
+        "POST",
+        &format!("/api/v1/vaults/{a}/sources/{sid}/erasure"),
+        Some(&w.admin),
+        Some(json!({"rationale": "asked to"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{proposed}");
+    assert_eq!(proposed["risk"], "review", "even an admin's erasure waits for a decision");
+    let (_, erasures, _) = call(&w.s, "GET", &format!("/api/v1/vaults/{a}/erasures"), Some(&w.admin), None).await;
+    assert_eq!(erasures["items"], json!([]));
+    let (status, report, _) = call(&w.s, "POST", &format!("/api/v1/vaults/{a}/reconcile?deep=true"), Some(&w.admin), None).await;
+    assert_eq!(status, StatusCode::OK, "{report}");
+    assert_eq!(report["tables_sha256"], report["replayed_sha256"]);
+    assert_eq!(report["blobs_missing"], json!([]));
+    let bad = call(
+        &w.s,
+        "POST",
+        &format!("/api/v1/vaults/{a}/reindex"),
+        Some(&w.admin),
+        Some(json!({"index": "both"})),
+    )
+    .await;
+    assert_eq!(bad.0, StatusCode::BAD_REQUEST);
+    let ok = call(
+        &w.s,
+        "POST",
+        &format!("/api/v1/vaults/{a}/reindex"),
+        Some(&w.admin),
+        Some(json!({"index": "all"})),
+    )
+    .await;
+    assert_eq!(ok.0, StatusCode::ACCEPTED);
+    let (status, swept, _) = call(&w.s, "POST", &format!("/api/v1/vaults/{a}/sweep"), Some(&w.admin), Some(json!({}))).await;
+    assert_eq!((status, swept["removed"].as_u64()), (StatusCode::OK, Some(0)));
+    // A vault admin operates their vault, and only a server admin sees every vault's status.
+    let vault_admin = token_with(&w, "ops-admin", Some(Scope::Admin));
+    let proposer = token_with(&w, "ops-proposer", Some(Scope::Propose));
+    assert_eq!(
+        call(&w.s, "POST", &format!("/api/v1/vaults/{a}/reconcile"), Some(&vault_admin), None).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&w.s, "POST", &format!("/api/v1/vaults/{a}/reconcile"), Some(&proposer), None).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(call(&w.s, "GET", "/api/v1/status", Some(&vault_admin), None).await.0, StatusCode::FORBIDDEN);
+    let (status, body, _) = call(&w.s, "GET", "/api/v1/status", Some(&w.admin), None).await;
+    assert_eq!((status, body["vaults"].as_array().map(Vec::len)), (StatusCode::OK, Some(2)));
+    let req = Request::builder()
+        .uri("/api/v1/metrics")
+        .header("authorization", format!("Bearer {}", w.admin))
+        .body(Body::empty())
+        .unwrap();
+    let res = router(w.s.clone()).oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(res.headers()["content-type"].to_str().unwrap().starts_with("text/plain"));
+    let text = String::from_utf8(to_bytes(res.into_body(), 1 << 20).await.unwrap().to_vec()).unwrap();
+    assert!(text.contains("# TYPE memex_open_jobs gauge"), "{text}");
 }
 
 async fn upload_raw(s: &Arc<Server<Fakes>>, vault: &str, token: Option<&str>, query: &str, bytes: Vec<u8>) -> (StatusCode, Value) {

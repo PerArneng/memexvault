@@ -36,6 +36,7 @@ fn kind_name(kind: &str) -> &'static str {
         "page.deleted" => "page.deleted",
         "edge.linked" => "edge.linked",
         "edge.unlinked" => "edge.unlinked",
+        memex_types::SOURCE_ERASED => memex_types::SOURCE_ERASED,
         _ => "other",
     }
 }
@@ -455,6 +456,14 @@ pub fn frame_of(event: &Event) -> DurableFrame {
                     size: p.size,
                 });
                 push(&mut frame.sources, &mut frame.omitted, fact);
+            }
+        }
+        // How many rows of each kind went, which is all a frame says about an erasure.
+        memex_types::SOURCE_ERASED => {
+            if let Ok(r) = serde_json::from_value::<memex_types::ErasureRecord>(current.payload) {
+                for k in &r.removed {
+                    frame.count(k.table);
+                }
             }
         }
         // Their kind says what happened. What they're about can be asked for by anyone allowed to read it.

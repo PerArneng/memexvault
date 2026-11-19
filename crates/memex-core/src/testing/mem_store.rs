@@ -1018,6 +1018,10 @@ impl Store for MemStore {
     }
 
     fn commit_batch(&self, lease: &WriterLease, batch: &[CommitItem<'_>]) -> Result<Receipt, StoreError> {
+        self.commit_rewriting(lease, &[], batch)
+    }
+
+    fn commit_rewriting(&self, lease: &WriterLease, rewrites: &[(u64, serde_json::Value)], batch: &[CommitItem<'_>]) -> Result<Receipt, StoreError> {
         self.counts.commits.fetch_add(1, Ordering::Relaxed);
         self.check_lease(lease)?;
         if let Some(e) = self.fail_next_commit.lock().expect("lock").take() {
@@ -1037,6 +1041,11 @@ impl Store for MemStore {
             }
             head = Some(item.event.seq);
         }
+        for (seq, _) in rewrites {
+            if !slot.events.contains_key(seq) {
+                return Err(StoreError::Backend(format!("there's no event {seq} to rewrite")));
+            }
+        }
         let mut exists: HashMap<RowKey, bool> = HashMap::new();
         for item in batch {
             for m in item.mutations {
@@ -1055,6 +1064,11 @@ impl Store for MemStore {
             }
         }
         let state = Arc::make_mut(slot);
+        for (seq, payload) in rewrites {
+            if let Some(e) = state.events.get_mut(seq) {
+                e.payload = payload.clone();
+            }
+        }
         for item in batch {
             for m in item.mutations {
                 match m {

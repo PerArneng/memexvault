@@ -647,9 +647,13 @@ fn pg_activity_marker_scan() {
             seen.push(seq_of(&f));
         }
     }
-    let mut live_seen = 0;
+    // Live, the whole log, or up to the resync the erasure at the end of the fixture sends, past which the replay covers it.
+    let (mut live_seen, last) = (0, *log.last().unwrap());
     while live_seen < log.len() {
         let f = live.next(WAIT).expect("the whole log, live");
+        if f.event == "resync" && seq_of(&f) >= last {
+            break;
+        }
         live_seen += usize::from(f.event == "durable");
     }
     assert_eq!(seen, log);

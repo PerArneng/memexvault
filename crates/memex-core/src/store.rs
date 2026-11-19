@@ -253,6 +253,50 @@ pub trait Snapshot {
         out.truncate(limit);
         Ok(out)
     }
+    /// Segments that name this source directly, whatever rendition they're on, in id order. Erasure reads it. A real backend answers from an index.
+    fn segments_of_source(&self, source: &ObjectId) -> Result<Vec<ObjectId>, StoreError> {
+        let (mut out, mut after) = (vec![], None::<ObjectId>);
+        loop {
+            let page = self.rows(Table::Segment, after.as_ref())?;
+            let Some(last) = page.last() else { return Ok(out) };
+            after = Some(last.header().id.clone());
+            out.extend(page.into_iter().filter_map(|r| match r {
+                Row::Segment(s) if &s.source_id == source => Some(s.header.id),
+                _ => None,
+            }));
+        }
+    }
+    /// Active edges of any kind that start or end at any of these ids, in id order. One store call in a real backend.
+    fn edges_of(&self, ids: &[ObjectId]) -> Result<Vec<EdgeRow>, StoreError> {
+        let wanted: std::collections::HashSet<&ObjectId> = ids.iter().collect();
+        let (mut out, mut after) = (vec![], None::<ObjectId>);
+        loop {
+            let page = self.rows(Table::Edge, after.as_ref())?;
+            let Some(last) = page.last() else { return Ok(out) };
+            after = Some(last.header().id.clone());
+            out.extend(page.into_iter().filter_map(|r| match r {
+                Row::Edge(e) if wanted.contains(&e.from) || wanted.contains(&e.to) => Some(e),
+                _ => None,
+            }));
+        }
+    }
+    /// Events of one kind, in sequence order, above `after`, at most `limit`. A real backend needn't read the others.
+    fn events_of_kind(&self, kind: &str, after: Option<u64>, limit: usize) -> Result<Vec<Event>, StoreError> {
+        let (mut out, mut cursor) = (vec![], after);
+        loop {
+            let page = self.events(cursor)?;
+            let Some(last) = page.last() else { return Ok(out) };
+            cursor = Some(last.seq);
+            for e in page {
+                if e.kind == kind {
+                    out.push(e);
+                    if out.len() == limit {
+                        return Ok(out);
+                    }
+                }
+            }
+        }
+    }
     /// When this event was written, if the log holds it.
     fn event_time(&self, seq: u64) -> Result<Option<i64>, StoreError> {
         let after = seq.checked_sub(1);
@@ -319,8 +363,10 @@ pub trait Store {
     fn bump_cache_generation(&self, lease: &WriterLease) -> Result<u64, StoreError>;
     /// Removes the vault and all its data. The lease ends with it.
     fn delete_vault(&self, lease: &WriterLease) -> Result<(), StoreError>;
-    /// Physically removes deleted data, for erasure. Reads don't change. Deleted chat content has to be gone from the bytes on disk afterwards, not just unreachable.
+    /// Physically removes deleted data, for erasure. Reads don't change. Deleted chat content has to be gone from the bytes on disk afterwards, not just unreachable, and so does every row and event payload an erasure removed or rewrote, in every table the vault has.
     fn compact(&self, lease: &WriterLease) -> Result<(), StoreError>;
+    /// Erasure's commit (spec 030): replaces these events' payloads, keeping their envelopes, and commits the batch, in one transaction. The rewritten payloads must leave the log replaying to the state the batch leaves. Each sequence must already be in the log.
+    fn commit_rewriting(&self, lease: &WriterLease, rewrites: &[(u64, serde_json::Value)], batch: &[CommitItem<'_>]) -> Result<Receipt, StoreError>;
 
     // Chat threads stay out of the log, as a copy of a conversation there would outlive its deletion. So these commit on their own, need no lease, and hold nothing between calls: a model call or an open stream keeps no connection.
     /// Makes the thread if it's new, and says whether it did. An existing one keeps its title.

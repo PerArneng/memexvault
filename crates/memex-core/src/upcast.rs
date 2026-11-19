@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::fmt;
 
 /// The current schema version of each event kind.
-pub const CURRENT_VERSIONS: [(&str, u32); 9] = [
+pub const CURRENT_VERSIONS: [(&str, u32); 10] = [
     ("state.recorded", 1),
     ("changeset.recorded", 1),
     ("segment.recorded", 1),
@@ -13,6 +13,7 @@ pub const CURRENT_VERSIONS: [(&str, u32); 9] = [
     ("page.deleted", 1),
     ("edge.linked", 1),
     ("edge.unlinked", 1),
+    (memex_types::SOURCE_ERASED, 1),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +51,10 @@ pub fn upcast(event: &Event) -> Result<Event, UpcastError> {
             kind: event.kind.clone(),
             version: event.schema_version,
         });
+    }
+    // What an erasure left is already in the form the reducer reads, whatever version the event was (spec 030).
+    if crate::erasure::is_erased_form(&event.payload) {
+        return Ok(event.clone());
     }
     let mut out = event.clone();
     while out.schema_version < current {

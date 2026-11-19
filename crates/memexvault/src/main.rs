@@ -13,7 +13,7 @@ use memexvault::pg_edge::PostgresStore;
 use memexvault::registry_edge::PostgresRegistry;
 use memexvault::rendition_job::{ChildRasterizer, EXIT_UNPARSEABLE, RenditionHandler, WorkerCommand};
 use memexvault::transcribe_job::{TranscribeCommand, TranscribeHandler};
-use memexvault::workers::{self, AuditHandler, EmbedHandler, ExtractHandler, Pool, ReviewHandler};
+use memexvault::workers::{self, AuditHandler, EmbedHandler, EraseHandler, ExtractHandler, Pool, ReviewHandler};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -234,6 +234,145 @@ fn models_command(args: &[String], settings: &Settings) -> ExitCode {
     }
 }
 
+/// `backup`, `restore` and `reconcile`, which need nothing but the server's own edges. Backup and reconcile take no lease, so they run beside `serve`. Restore takes the new vault's lease, which a serving server doesn't hold yet.
+fn ops_command(server: &Server<Production>, command: &str, args: &[String]) -> ExitCode {
+    let flag = |name: &str| args.iter().any(|a| a == name);
+    let value = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
+    let positional: Vec<&String> = {
+        let mut out = vec![];
+        let mut skip = false;
+        for a in args {
+            if skip {
+                skip = false;
+            } else if a == "--name" || a == "--at" {
+                skip = true;
+            } else if !a.starts_with("--") {
+                out.push(a);
+            }
+        }
+        out
+    };
+    match command {
+        "backup" => {
+            let (Some(vault), Some(path)) = (positional.first(), positional.get(1)) else {
+                return fail("usage: memexvault backup <vault> <file>");
+            };
+            let path = std::path::Path::new(path.as_str());
+            if path.exists() {
+                return fail(format!("{} exists, and a backup never overwrites a file", path.display()));
+            }
+            // Written beside its final name and renamed when whole, so a file under that name is always a complete backup.
+            let partial = path.with_extension("partial");
+            let written = (|| -> Result<_, String> {
+                let file = std::fs::File::create_new(&partial).map_err(|e| format!("{}: {e}", partial.display()))?;
+                let mut out = std::io::BufWriter::new(file);
+                let result = server
+                    .backup_vault(&memex_types::VaultId(vault.to_string()), &mut out)
+                    .map_err(|e| e.to_string())?;
+                let file = out.into_inner().map_err(|e| e.to_string())?;
+                file.sync_all().map_err(|e| e.to_string())?;
+                std::fs::rename(&partial, path).map_err(|e| e.to_string())?;
+                Ok(result)
+            })();
+            match written {
+                Ok((header, summary)) => {
+                    println!(
+                        "backed up vault {} at event {}: {} events, {} blobs ({} bytes), {} embeddings, {} bytes, sha256 {}, tables {}",
+                        header.vault_id,
+                        header.head.map_or("none".into(), |h| h.to_string()),
+                        summary.events,
+                        summary.blobs,
+                        summary.blob_bytes,
+                        summary.embeddings,
+                        summary.bytes,
+                        summary.sha256,
+                        header.dump_sha256
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    let _ = std::fs::remove_file(&partial);
+                    fail(e)
+                }
+            }
+        }
+        "restore" => {
+            let Some(path) = positional.first().map(|p| std::path::PathBuf::from(p.as_str())) else {
+                return fail("usage: memexvault restore <file> [--new-id | --replace] [--name <name>]");
+            };
+            let target = match (flag("--new-id"), flag("--replace")) {
+                (true, true) => return fail("--new-id and --replace can't go together"),
+                (true, false) => memex_core::RestoreTarget::NewId,
+                (false, true) => memex_core::RestoreTarget::Replace,
+                (false, false) => memex_core::RestoreTarget::Original,
+            };
+            let name = value("--name");
+            let mut open = || -> std::io::Result<Box<dyn std::io::Read>> { Ok(Box::new(std::fs::File::open(&path)?)) };
+            match server.restore_vault("operator", &mut open, target, name.as_deref()) {
+                Ok((row, summary)) => {
+                    println!(
+                        "restored vault {} ({}): {} events, {} blobs, {} embeddings, tables {}. Its indexes build when `serve` next starts",
+                        row.id, row.name, summary.events, summary.blobs, summary.embeddings, summary.sha256
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail(e),
+            }
+        }
+        _ => {
+            let Some(vault) = positional.first() else {
+                return fail("usage: memexvault reconcile <vault> [--at <seq>] [--deep]");
+            };
+            let at = match value("--at").map(|a| a.parse::<u64>()) {
+                None => None,
+                Some(Ok(a)) => Some(a),
+                Some(Err(_)) => return fail("--at takes an event's sequence number"),
+            };
+            match server.reconcile_store(&memex_types::VaultId(vault.to_string()), at, flag("--deep")) {
+                Ok(r) => {
+                    let log = &r.log;
+                    println!("head {}", log.head.map_or("none".into(), |h| h.to_string()));
+                    println!("events {} rows {}", log.events, log.rows);
+                    println!("tables {}", log.tables_sha256);
+                    println!("replayed {}", log.replayed_sha256);
+                    if let Some((seq, sha)) = &log.at {
+                        println!("at {seq} {sha}");
+                    }
+                    if let Some(e) = &log.replay_error {
+                        println!("replay failed: {e}");
+                    }
+                    println!("differing rows {}", log.differing_count);
+                    for k in &log.differing {
+                        println!("  {:?} {}", k.table, k.id);
+                    }
+                    let b = &r.blobs;
+                    println!(
+                        "blobs referenced {} stored {} ({} bytes) missing {} orphans {} corrupt {}",
+                        b.referenced,
+                        b.stored,
+                        b.stored_bytes,
+                        b.missing.len(),
+                        b.orphans,
+                        b.corrupt.len()
+                    );
+                    for h in b.missing.iter().chain(&b.corrupt) {
+                        println!("  {h}");
+                    }
+                    println!("indexes: ask the server, at POST /api/v1/vaults/{vault}/reconcile");
+                    if r.clean() {
+                        println!("no differences");
+                        ExitCode::SUCCESS
+                    } else {
+                        println!("differences found");
+                        ExitCode::from(1)
+                    }
+                }
+                Err(e) => fail(e),
+            }
+        }
+    }
+}
+
 fn main() -> ExitCode {
     match std::env::args().nth(1).as_deref() {
         Some("pdf-worker") => return pdf_worker(),
@@ -257,8 +396,10 @@ fn main() -> ExitCode {
     if command == "models" {
         return models_command(&args[1..], &settings);
     }
-    if !matches!(command, "migrate" | "bootstrap" | "serve" | "mcp") {
-        return fail("usage: memexvault migrate | bootstrap <name> | serve | mcp | models fetch | models check | --version");
+    if !matches!(command, "migrate" | "bootstrap" | "serve" | "mcp" | "backup" | "restore" | "reconcile") {
+        return fail(
+            "usage: memexvault migrate | bootstrap <name> | serve | mcp | backup <vault> <file> | restore <file> [--new-id | --replace] [--name <name>] | reconcile <vault> [--at <seq>] [--deep] | models fetch | models check | --version",
+        );
     }
     let (pg, server) = match build(&settings) {
         Ok(b) => b,
@@ -272,6 +413,12 @@ fn main() -> ExitCode {
             }
             Err(e) => fail(e),
         },
+        "backup" | "restore" | "reconcile" => {
+            if let Err(e) = pg.check_server() {
+                return fail(e);
+            }
+            ops_command(&server, command, &args[1..])
+        }
         "bootstrap" => {
             let name = args.get(1).map_or("admin", String::as_str);
             if let Err(e) = pg.check_server() {
@@ -357,6 +504,7 @@ fn main() -> ExitCode {
             };
             server.set_auto_commit_threshold(f64::from(settings.auto_commit_threshold_permille) / 1000.0);
             server.set_activity_limits(settings.activity);
+            server.set_sweep(settings.sweep);
             let stop = Arc::new(AtomicBool::new(false));
             let transcribe = TranscribeHandler {
                 server: server.clone(),
@@ -402,6 +550,13 @@ fn main() -> ExitCode {
                     ceiling: settings.job_ceilings.for_kind(memex_core::EMBED_JOB),
                 },
             ];
+            // One at a time, as each compacts the vault's whole store.
+            pools.push(Pool {
+                kind: memex_types::ERASE_JOB.into(),
+                workers: 1,
+                handler: Arc::new(EraseHandler { server: server.clone() }),
+                ceiling: settings.job_ceilings.for_kind(memex_types::ERASE_JOB),
+            });
             // Audits run with no LLM too, doing what costs no tokens. Their LLM checks are asked for by name, as each sampled claim is two calls.
             let auditor = match (&settings.llm, &settings.audit_model) {
                 (Some(llm), Some(model)) => {
@@ -492,6 +647,7 @@ fn main() -> ExitCode {
             };
             let mut threads = workers::start(server.clone(), pools, stop.clone());
             threads.push(workers::start_audit_scheduler(server.clone(), stop.clone()));
+            threads.push(workers::start_sweeper(server.clone(), stop.clone(), settings.sweep));
             threads.push(workers::start_projector(server.clone(), stop.clone()));
             threads.push(workers::start_vector_projector(server.clone(), stop.clone()));
             let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {

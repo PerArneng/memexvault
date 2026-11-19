@@ -58,6 +58,18 @@ impl Snapshot for PostgresSnapshot<'_> {
         self.inner.evidence_citing(segment_ids).map_err(|e| translate(&self.vault, e))
     }
 
+    fn segments_of_source(&self, source: &ObjectId) -> Result<Vec<ObjectId>, StoreError> {
+        self.inner.segments_of_source(source).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn edges_of(&self, ids: &[ObjectId]) -> Result<Vec<memex_types::EdgeRow>, StoreError> {
+        self.inner.edges_of(ids).map_err(|e| translate(&self.vault, e))
+    }
+
+    fn events_of_kind(&self, kind: &str, after: Option<u64>, limit: usize) -> Result<Vec<Event>, StoreError> {
+        self.inner.events_of_kind(kind, after, limit).map_err(|e| translate(&self.vault, e))
+    }
+
     fn broken_anchors(&self, after: Option<&ObjectId>, limit: usize) -> Result<Vec<EvidenceRow>, StoreError> {
         self.inner.broken_anchors(after, limit).map_err(|e| translate(&self.vault, e))
     }
@@ -283,6 +295,15 @@ impl Store for PostgresStore {
     fn commit_batch(&self, lease: &WriterLease, batch: &[CommitItem<'_>]) -> Result<Receipt, StoreError> {
         let items: Vec<(&Event, &[Mutation])> = batch.iter().map(|i| (i.event, i.mutations)).collect();
         let seq = self.0.commit_batch(&lease_of(lease), &items).map_err(|e| translate(&lease.vault, e))?;
+        Ok(Receipt { seq })
+    }
+
+    fn commit_rewriting(&self, lease: &WriterLease, rewrites: &[(u64, serde_json::Value)], batch: &[CommitItem<'_>]) -> Result<Receipt, StoreError> {
+        let items: Vec<(&Event, &[Mutation])> = batch.iter().map(|i| (i.event, i.mutations)).collect();
+        let seq = self
+            .0
+            .commit_rewriting(&lease_of(lease), rewrites, &items)
+            .map_err(|e| translate(&lease.vault, e))?;
         Ok(Receipt { seq })
     }
 

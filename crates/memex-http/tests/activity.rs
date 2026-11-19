@@ -205,7 +205,8 @@ fn read_up_to(sse: &mut Sse, seq: i64) -> Vec<Frame> {
     let deadline = Instant::now() + WAIT;
     let mut out = vec![];
     loop {
-        if durable(&out).last().is_some_and(|s| *s >= seq) {
+        // A resync at the head ends it too, as a client then reads the snapshot. An erasure sends one, as it bumps the cache generation.
+        if durable(&out).last().is_some_and(|s| *s >= seq) || out.iter().any(|f| f.event == "resync" && seq_of(f) >= seq) {
             return out;
         }
         match sse.next(deadline.saturating_duration_since(Instant::now())) {
@@ -935,7 +936,11 @@ fn a_marker_in_a_document_never_appears_in_any_frame() {
         assert!(statuses.contains(needed), "no job was {needed}: {statuses:?}");
     }
     // The scan: every byte both ways, and however the marker might be spelt.
-    assert_eq!(durable(&live_frames).len(), events.len());
+    // Live, every event in order, up to the resync the erasure at the end sends, which the replay covers past.
+    let live_seqs = durable(&live_frames);
+    assert_eq!(live_seqs, (0..live_seqs.len() as i64).collect::<Vec<_>>());
+    assert!(live_seqs.len() == events.len() || live_frames.iter().any(|f| f.event == "resync"));
+    assert_eq!(durable(&replay_frames).len(), events.len());
     for bytes in [&replayed, &live.recorded] {
         let text = String::from_utf8_lossy(bytes).to_ascii_lowercase();
         assert!(!text.contains(&MARKER.to_ascii_lowercase()), "the marker is in a frame");

@@ -113,11 +113,11 @@ contract suite per trait runs against the fake and every implementation, and pas
 
 - **`Store`:** typed reads on a consistent snapshot, batched lookups, and `commit(event, mutations)`, which is atomic and
   durable when it returns. `open_vault` takes an exclusive writer lease and refuses a second writer. `compact` physically
-  removes deleted data for erasure.
+  removes deleted data for erasure: on Postgres, `VACUUM FULL` and `ANALYZE` of every table in the vault's schema, as plain `VACUUM` leaves a dead row's bytes in its page. `commit_rewriting` replaces old events' payloads in the same transaction as a commit, which only erasure uses.
 - **`BlobStore`:** the default layout is `<data>/vaults/<vault-id>/blobs/ab/cd/<sha256>`, with `indexes/<kind>/gen-<n>/`, `cache/` and `tmp/` beside it. Streaming put that's durable and atomically visible on return, streaming and range reads, delete, and
   listing with age for the sweep.
 - **`LexicalIndex`, `VectorIndex`:** typed queries and filters instead of engine syntax, idempotent upsert and delete by
-  object id, a durable watermark, and building a new generation to flip to.
+  object id, a durable watermark, and building a new generation to flip to. `erase` removes documents physically: tantivy merges the live generation into one segment and collects its files, and drops every other generation, so an erasure can't be rolled back to. pgvector deletes from every generation and the stored embeddings, and the store's compaction rewrites them.
 
 **Rules for a networked store:**
 
@@ -127,9 +127,7 @@ contract suite per trait runs against the fake and every implementation, and pas
 - Reads never loop over single lookups. The fake counts store calls, so an N+1 pattern fails a test without a database.
 - Parsers and OCR take bytes or streams, never paths, so they work the same with a remote blob store.
 
-**Export and import.** The log and blobs go through the traits into a portable archive. Replay into an empty vault gives the
-same canonical dump hash, and indexes rebuild from there. Events record results, so no LLM is called. This is the backup
-format and the route between store implementations.
+**Export and import (spec 030).** `memexvault backup <vault> <file>` writes the log, every blob a row refers to, and the stored embeddings, from one snapshot, beside a running server, as it takes no lease. The archive is a stream of length-prefixed records with a header holding the head and the canonical dump hash there, and a SHA-256 trailer over everything before it. `memexvault restore <file>` reads it twice: once whole, checking the trailer, each blob against its name and the events' order, so a damaged file is refused before anything is written, and then into a new vault, replaying the events 500 to a transaction and refusing unless the tables come out at the header's dump hash. It restores under the vault's own id, which must be free, or with `--new-id`, and overwrites a vault only with `--replace`. A failed restore removes what it made. Indexes rebuild from the tables when the server starts, and embeddings come with the archive, so nothing is embedded again. Events record results, so no LLM is called. Chat threads stay out, as they're off the log. Postgres's own backup tools work too, and this format works without them and moves a vault between store implementations.
 
 **Limits.** One server process per vault, enforced by the writer lease, which is a Postgres advisory lock. Losing the
 connection loses the lease, so the writer stops until it regains it (spec 089). The server notices when a write or a job
@@ -240,7 +238,9 @@ the store.
 - **Rebuilds** go into a new generation directory and then flip a pointer. The old generation stays for rollback.
   They page through tables with a fresh snapshot per page and catch up from the starting head, so no snapshot stays open for long.
 - **Readers** fence every hit against store status. Writes return a sequence number, and `min_seq` gives read-your-writes.
-- **Erasure** removes payloads and blobs, compacts the affected tables, keeps the event envelope and appends an `Erased` event.
+- **Erasure** (spec 030) is a ChangeSet with one `EraseSource` op, which always waits for a person, whoever proposes it, and can't be reverted. `GET /vaults/{id}/sources/{sid}/erasure` previews it. It takes every version of the document: its renditions, segments, Derivations and extraction rows, the evidence citing it, claims with no other evidence, entities left with no claim, edges to what goes (a page's own links stay and show as broken), jobs about it, and audit checks and verdicts of what goes. ChangeSets, entities, embedding jobs and chat runs' Derivations lose what came from it and keep the rest. Claims that stand on other evidence too and pages citing what went are flagged in the record, which `GET /vaults/{id}/erasures` lists.
+- **How the log stays replayable.** The plan is ids only, and pure functions of the removed ids rewrite rows. Approval rewrites every event's payload with the same functions, keeping its envelope, and appends a `source.erased` event, whose payload holds ids and no content, in one transaction. Its reducer removes what's still there and applies the same rewrites, so the live tables and a replay of the rewritten log arrive at the same state. An event whose kind can't hold what's left becomes `{"erased": true, "mutations": [...]}`, which every reader takes as is.
+- **The physical cascade** is an `erase` job, as a list of steps that whole-vault deletion shares: chat threads the content reached, each index's `erase` once both projectors have applied the event, blobs nothing else refers to, the cache generation, and the store's compaction. Each step can run again. The job's input holds the erased blobs' and texts' hashes, which can confirm a known file was there and can't give it back. Postgres's WAL, and backups taken before, keep what they kept.
 - **Event evolution** uses upcasters, pinned by golden replay fixtures.
 
 ## Governance
@@ -411,7 +411,7 @@ One server-sent event stream per vault feeds the console's live views, at `GET /
 - **A slow client never slows ingest.** Nothing here touches the writer. Each client's buffer is bounded (1,024 frames, 1 MiB), and overflow drops what's waiting and sends a resync frame at the current position, which makes the client fetch a new snapshot. A pure policy decides, and progress and heartbeats are dropped first.
 - **A client that never reads can't hear a resync,** and hyper stops polling a response while a write is stuck, so the connection itself is watched: writes refused for 30 s close it. Only a stream's connection is watched, so a paused download isn't touched.
 - **Scope.** Checked at open, then each distinct credential every second by the same reader, one after another, so a token revoked, a session ended, a principal disabled, a grant removed or a token expiring ends the stream with an `end` frame and a reason, and nothing follows it. What's waiting in its buffer is dropped too. Frames can still go out until the next check, so for at most a second after the change. If the store can't answer, a stream goes on for up to 10 s and then ends.
-- **A position that can't be resumed from gets a resync, not an error:** one ahead of the log, one that isn't a number, or one the log no longer holds, which is any gap in the sequence. A new cache generation does the same for every open stream and empties the frames in memory, which is how erasure (spec 030) reaches this: **it must call `bump_cache_generation`,** as it already has to for the caches. It can keep or remove envelopes, since either reads correctly: an emptied payload gives a frame with no details, and missing rows give a resync.
+- **A position that can't be resumed from gets a resync, not an error:** one ahead of the log, one that isn't a number, or one the log no longer holds, which is any gap in the sequence. A new cache generation does the same for every open stream and empties the frames in memory, which is how erasure (spec 030) reaches this: it calls `bump_cache_generation` when it commits and again when its files are gone. It can keep or remove envelopes, since either reads correctly: an emptied payload gives a frame with no details, and missing rows give a resync.
 - **A limit per principal** of 16 streams over all vaults. The next is refused with 429 and the code `too_many_streams`.
 - **Shutdown** ends every stream, as graceful shutdown would otherwise wait for them for ever.
 
@@ -424,7 +424,7 @@ A separate, opt-in surface (spec 049). It's off per vault until an admin enables
 - **Changes** go to the normal review queue, attributed to `chat-agent` with the person in `requested_by`, and only a person approves them. Runs don't pause for approval, and AG-UI interrupts aren't used. **A chat proposal never auto-commits, whatever the combination has earned, and neither a decision on one nor an audit of its claim counts as a sample.** A chat answers one person's question, which isn't the kind of output a combination's record is about.
 - **Threads** are `(owner, id)`, so the same id under another principal is another thread and nobody can reach another's, server admins included. They live in the vault's schema, **off the event log**, as a copy in the log would outlive their deletion, so they aren't in an export. They aren't indexed for search, and no index holds their content. A thread's history is what the server stored: a client's `messages` other than the newest user message are ignored.
 - **The log holds only ids and counts.** The vault's setting and each run's Derivation (kind `chat_run`, with the model, prompt hash, tokens and the segments it read) are events. A run's Derivation holds no text, so it can outlive its thread.
-- **Erasure.** `Server::erase_chat_threads_citing` deletes every thread a source's content reached, through any tool, whether or not a reply cited it, because a reply may paraphrase in ways a byte scan can't find. A source is recorded before a tool's answer goes anywhere, and then checked to be still there. `Store::compact` rewrites the chat tables, as plain `VACUUM` leaves a dead row's bytes on its page. Spec 030 still has to call this. Postgres's WAL and backups keep what they kept.
+- **Erasure.** `Server::erase_chat_threads_citing` deletes every thread a source's content reached, through any tool, whether or not a reply cited it, because a reply may paraphrase in ways a byte scan can't find. A source is recorded before a tool's answer goes anywhere, and then checked to be still there. `Store::compact` rewrites the chat tables, as plain `VACUUM` leaves a dead row's bytes on its page. Erasure's cascade calls this for every version of the document. Postgres's WAL and backups keep what they kept.
 - **Budgets.** Per thread and per vault per UTC day, set per vault or by server default. Each call reserves its estimated input and its output limit before it's made, in one transaction on the thread and the day, so concurrent runs can't both take what's left, and a call that can't fit isn't made. What the provider reports replaces the reservation. A provider that doesn't report, or a cancelled call, is charged an estimate that errs high and is never zero: input at 3 characters per token, and output from what was seen. A crash leaves the reservation charged. Deleting a thread gives no budget back.
 - **Ending a run.** A client going away cancels it, and it can't be resumed. A budget, a cancel, a call limit or a reply cut at its limit is a `RUN_FINISHED` whose `result.stop` says why. A provider's failure, or a model that finishes having said nothing, is a `RUN_ERROR` with a fixed message and a code, and the provider's text stays in the server's log. What was said before the end is kept, marked with why.
 - **Connections.** A run holds no connection, transaction or lock while the model works, and a run takes a slot of `MEMEX_CHAT_MAX_RUNS`, beyond which it's refused with 429.
@@ -454,6 +454,15 @@ measurement: only spec 033 proves the 1M goal.
 | Lexical rebuild | ≤15 min |
 | memexvault RSS excluding models (Postgres recorded separately) | ≤4 GB |
 | Machine claims with resolvable anchors | 100% |
+
+## Operations
+
+Spec 030. An operator needs nothing but the server.
+
+- **Reconcile.** `POST /vaults/{id}/reconcile` and `memexvault reconcile <vault>` compare the tables with the log replayed into memory by canonical dump hash, naming differing rows, the blobs rows refer to with what's stored (`deep` re-hashes them), and, through the route, each index's count and id digest with the store's. `at` also replays up to an event, to compare with a backup taken there. `repair` rebuilds an index that differs, as derived data, and never changes the log or the tables. Replaying holds the vault twice in memory.
+- **Reindex.** `POST /vaults/{id}/reindex` builds new keyword or vector generations, and the current ones serve until they flip.
+- **The orphan sweep** removes blobs no row refers to once they're older than `MEMEX_SWEEP_GRACE_S` (a day), every `MEMEX_SWEEP_INTERVAL_S` (6 hours), and on `POST /vaults/{id}/sweep`. It reads the references again just before deleting.
+- **Status and metrics.** `GET /api/v1/status` and Prometheus text at `GET /api/v1/metrics`, for server admins: each vault's head, index lag and builds, open jobs by kind, dead jobs, review backlog, blob count and bytes, and the cache tiers. Vault names stay out of the metrics.
 
 ## Caches
 

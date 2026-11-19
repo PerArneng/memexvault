@@ -77,6 +77,8 @@ fn pg_contract() {
         "many",
         "page",
         "compact",
+        "rewrite",
+        "erasereads",
         "chat",
         "chat-a",
         "chat-b",

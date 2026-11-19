@@ -106,6 +106,10 @@ pub fn validate_schema(ops: &[Op], rationale: &str, idempotency_key: &str) -> Va
     if idempotency_key.trim().is_empty() || idempotency_key.len() > 200 {
         return fail(name, "an idempotency key of 1 to 200 characters is required".into());
     }
+    // An erasure runs a cascade of its own, which can't share a commit with anything, and can't be reverted.
+    if ops.len() > 1 && ops.iter().any(|op| matches!(op, Op::EraseSource { .. })) {
+        return fail(name, "an erasure must be its ChangeSet's only op".into());
+    }
     for op in ops {
         if let Op::SupersedeAssertion { replacement, .. } = op
             && !matches!(replacement.as_ref(), Op::AddAssertion { .. })
@@ -468,6 +472,8 @@ pub fn plan<S: Snapshot>(
             // Planned together below, since they depend on each other and on the claims above.
             Op::CreatePage { .. } | Op::EditPage { .. } | Op::DeletePage { .. } | Op::RenamePage { .. } | Op::RevertPage { .. } => {}
             Op::DefineEntityType { .. } | Op::CreateEntity { .. } | Op::SetEntityAliases { .. } | Op::MergeEntities { .. } | Op::SplitEntity { .. } => {}
+            // Erasure isn't rows a ChangeSet writes: the server runs its cascade on approval (spec 030).
+            Op::EraseSource { .. } => {}
         }
     }
     let entities = crate::entity::plan_entities(snap, ops, &out, creator, changeset, now_ms, edge_id)?;
@@ -524,10 +530,15 @@ pub enum NotReversible {
     ChangedSince {
         key: RowKey,
     },
+    /// An erasure, which removed what it would have to bring back.
+    Erasure,
 }
 
 /// Pure given the snapshot. Safe only while every touched row is still exactly as this ChangeSet left it.
 pub fn check_reversible<S: Snapshot>(snap: &S, cs: &memex_types::ChangeSetRow) -> Result<Result<(), NotReversible>, StoreError> {
+    if cs.ops.iter().any(|op| matches!(op, Op::EraseSource { .. })) {
+        return Ok(Err(NotReversible::Erasure));
+    }
     if cs.reverted_by.is_some() {
         return Ok(Err(NotReversible::AlreadyReverted));
     }
@@ -588,6 +599,8 @@ pub fn kinds_of<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Vec<OpKind>, StoreE
             Op::SetEntityAliases { .. } => OpKind::EditEntity,
             Op::MergeEntities { .. } => OpKind::MergeEntities,
             Op::SplitEntity { .. } => OpKind::SplitEntity,
+            // Removing a document and everything made from it is the strongest delete there is.
+            Op::EraseSource { .. } => OpKind::Delete,
         });
         let claim = match op {
             Op::SupersedeAssertion { replacement, .. } => replacement.as_ref(),

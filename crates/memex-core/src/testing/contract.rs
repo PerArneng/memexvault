@@ -51,6 +51,8 @@ pub fn run_all<S: Store>(store: &S, prefix: &str) {
     get_many_keeps_key_order(store, &name("many"));
     paging_returns_everything_once(store, &name("page"));
     compact_changes_no_reads(store, &name("compact"));
+    rewriting_replaces_payloads_with_the_commit(store, &name("rewrite"));
+    erasure_reads_find_what_names_a_source(store, &name("erasereads"));
     chat_threads(store, &name("chat"));
     chat_stays_in_its_vault(store, &name("chat-a"), &name("chat-b"));
     edges_and_sections_read_in_batches(store, &name("sections"));
@@ -611,6 +613,100 @@ fn compact_changes_no_reads<S: Store>(store: &S, v: &VaultId) {
     store.compact(&lease).expect("compact");
     assert_eq!(dump_store(&store.snapshot(v).expect("snap")).expect("dump"), before);
     assert_eq!(store.snapshot(v).expect("snap").get(&page_key("a")).expect("get"), None);
+    store.close_vault(&lease).expect("close");
+}
+
+/// Erasure's commit: old payloads are replaced and the batch commits, together, and a rewrite of an event the log doesn't hold refuses the lot.
+fn rewriting_replaces_payloads_with_the_commit<S: Store>(store: &S, v: &VaultId) {
+    let lease = store.open_vault(v).expect("open");
+    apply_all(store, &lease, vec![page("a", "secret words"), page("b", "kept")]);
+    let events = crate::all_events(&store.snapshot(v).expect("snap")).expect("events");
+    let blank = json!({"erased": true, "mutations": []});
+    let next = Event { seq: 2, ..raw_event(v, 2) };
+    let gone = [Mutation::Delete(page_key("a"))];
+    let missing = store.commit_rewriting(
+        &lease,
+        &[(0, blank.clone()), (9, blank.clone())],
+        &[CommitItem {
+            event: &next,
+            mutations: &gone,
+        }],
+    );
+    assert!(missing.is_err(), "event 9 isn't in the log");
+    let snap = store.snapshot(v).expect("snap");
+    assert_eq!(crate::all_events(&snap).expect("events"), events, "a refused rewrite changes nothing");
+    assert!(snap.get(&page_key("a")).expect("get").is_some());
+    drop(snap);
+    let next = Event {
+        payload: json!({"id": "a"}),
+        ..next
+    };
+    store
+        .commit_rewriting(
+            &lease,
+            &[(0, blank.clone())],
+            &[CommitItem {
+                event: &next,
+                mutations: &gone,
+            }],
+        )
+        .expect("rewrite");
+    let after = crate::all_events(&store.snapshot(v).expect("snap")).expect("events");
+    assert_eq!(after.len(), 3);
+    assert_eq!(after[0].payload, blank);
+    assert_eq!(
+        (&after[0].kind, after[0].seq, &after[0].actor),
+        (&events[0].kind, 0, &events[0].actor),
+        "the envelope stays"
+    );
+    assert_eq!(after[1], events[1]);
+    assert_eq!(store.snapshot(v).expect("snap").get(&page_key("a")).expect("get"), None);
+    store.close_vault(&lease).expect("close");
+}
+
+/// The reads erasure plans with: a source's segments whatever their rendition, edges of any kind, and events of one kind.
+fn erasure_reads_find_what_names_a_source<S: Store>(store: &S, v: &VaultId) {
+    let lease = store.open_vault(v).expect("open");
+    let seg = |id: &str, source: &str| EventDraft {
+        actor: "t".into(),
+        kind: "segment.recorded".into(),
+        schema_version: 1,
+        payload: json!({"id": id, "source_id": source, "language": null, "text": "t"}),
+    };
+    let edge = |id: &str, from: &str, to: &str, kind: &str| EventDraft {
+        actor: "t".into(),
+        kind: "edge.linked".into(),
+        schema_version: 1,
+        payload: json!({"id": id, "from": from, "to": to, "kind": kind}),
+    };
+    apply_all(
+        store,
+        &lease,
+        vec![
+            seg("s1", "src"),
+            seg("s2", "other"),
+            seg("s3", "src"),
+            edge("e1", "s1", "x", "one"),
+            edge("e2", "y", "s3", "two"),
+            edge("e3", "y", "z", "one"),
+        ],
+    );
+    let snap = store.snapshot(v).expect("snap");
+    assert_eq!(
+        snap.segments_of_source(&ObjectId("src".into())).expect("segments"),
+        vec![ObjectId("s1".into()), ObjectId("s3".into())]
+    );
+    let edges: Vec<String> = snap
+        .edges_of(&[ObjectId("s1".into()), ObjectId("s3".into())])
+        .expect("edges")
+        .into_iter()
+        .map(|e| e.header.id.0)
+        .collect();
+    assert_eq!(edges, vec!["e1", "e2"]);
+    let linked: Vec<u64> = snap.events_of_kind("edge.linked", Some(3), 10).expect("events").iter().map(|e| e.seq).collect();
+    assert_eq!(linked, vec![4, 5]);
+    assert_eq!(snap.events_of_kind("edge.linked", None, 1).expect("events").len(), 1);
+    drop(snap);
     store.close_vault(&lease).expect("close");
 }
 

@@ -149,6 +149,10 @@ pub enum Op {
         moved: Vec<MovedClaim>,
         aliases: Vec<String>,
     },
+    /// Removes a document, every version of it, and everything made from it, everywhere it spread (spec 030). It must be a ChangeSet's only op, always waits for a person, and can't be reverted.
+    EraseSource {
+        id: ObjectId,
+    },
 }
 
 /// What kind of change it is, for the risk table. It includes kinds whose ops arrive with later specs, so the always-review rules are in one place from the start.

@@ -179,6 +179,10 @@ impl memex_core::LexicalIndex for TantivyIndex {
         self.0.delete_vault(vault)
     }
 
+    fn erase(&self, vault: &memex_types::VaultId, ids: &[memex_types::ObjectId]) -> Result<(), memex_types::LexicalError> {
+        self.0.erase(vault, ids)
+    }
+
     fn reconcile(
         &self,
         vault: &memex_types::VaultId,
@@ -250,6 +254,19 @@ impl memex_core::VectorIndex for PgVectorIndex {
 
     fn store_embeddings(&self, vault: &memex_types::VaultId, model: &str, rows: &[(String, Vec<f32>)]) -> Result<(), memex_types::VectorError> {
         self.0.store_embeddings(vault, model, rows)
+    }
+
+    fn erase(&self, vault: &memex_types::VaultId, ids: &[memex_types::ObjectId], hashes: &[String]) -> Result<(), memex_types::VectorError> {
+        self.0.erase(vault, ids, hashes)
+    }
+
+    fn stored_embeddings(
+        &self,
+        vault: &memex_types::VaultId,
+        after: Option<(&str, &str)>,
+        limit: usize,
+    ) -> Result<Vec<(String, String, Vec<f32>)>, memex_types::VectorError> {
+        self.0.stored_embeddings(vault, after, limit)
     }
 
     /// The vectors live in the vault's schema, which deleting the vault in the store has already dropped.

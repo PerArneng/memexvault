@@ -135,7 +135,15 @@ fn must_exist<S: Snapshot>(snap: &S, key: &RowKey) -> Result<Row, ReduceError> {
 /// Turns one current-version event into typed row mutations. Pure: it reads through the trait and writes nothing.
 pub fn reduce<S: Snapshot>(snap: &S, e: &Event) -> Result<Vec<Mutation>, ReduceError> {
     let key = |table, id: &ObjectId| RowKey { table, id: id.clone() };
+    // An erasure left only the rows this event still writes (spec 030), whatever its kind.
+    if crate::erasure::is_erased_form(&e.payload) {
+        return crate::erasure::erased_form_mutations(&e.payload).map_err(|err| ReduceError::Corrupt {
+            seq: e.seq,
+            detail: err.to_string(),
+        });
+    }
     match e.kind.as_str() {
+        memex_types::SOURCE_ERASED => crate::erasure::reduce_erased(snap, e),
         "source.recorded" => {
             let p: SourceRecorded = parse(e)?;
             must_not_exist(snap, &key(Table::Source, &p.id))?;

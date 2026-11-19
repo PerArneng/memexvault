@@ -25,6 +25,8 @@ pub trait LexicalIndex {
     fn rollback(&self, vault: &VaultId) -> Result<(), LexicalError>;
     fn search(&self, vault: &VaultId, query: &LexicalQuery) -> Result<LexicalResults, LexicalError>;
     fn delete_vault(&self, vault: &VaultId) -> Result<(), LexicalError>;
+    /// Erasure (spec 030): removes these documents from the live generation and rewrites what it stores, so none of their bytes are left in it, keeping its watermark. Every other generation, kept for rollback or half built, goes. A document that isn't there is fine.
+    fn erase(&self, vault: &VaultId, ids: &[ObjectId]) -> Result<(), LexicalError>;
     /// A count and digest of the live generation's documents of this kind, and which of `wanted` it holds, for an audit to compare with the store. None if this backend can't say.
     fn reconcile(&self, _vault: &VaultId, _kind: DocKind, _wanted: &[ObjectId]) -> Result<Option<IndexContents>, LexicalError> {
         Ok(None)
@@ -165,7 +167,28 @@ impl Touched {
     /// Reads an event's result. It reads no store: the projector looks up the current rows afterwards, which is what makes it idempotent.
     pub fn add_event(&mut self, event: &Event) -> Result<(), UpcastError> {
         let current = upcast(event)?;
+        if crate::erasure::is_erased_form(&current.payload) {
+            for m in crate::erasure::erased_form_mutations(&current.payload).unwrap_or_default() {
+                self.add_mutation(m);
+            }
+            return Ok(());
+        }
         let mutations: Option<Vec<Mutation>> = match current.kind.as_str() {
+            // What an erasure removed leaves every index, and what it rewrote is indexed again. Claims that lost evidence lose its quotes.
+            memex_types::SOURCE_ERASED => {
+                if let Ok(record) = serde_json::from_value::<memex_types::ErasureRecord>(current.payload) {
+                    for k in record.removed {
+                        self.add_mutation(Mutation::Delete(k));
+                    }
+                    for k in record.rewritten {
+                        if k.table == Table::Entity {
+                            self.entities.insert(k.id);
+                        }
+                    }
+                    self.assertions.extend(record.flagged_claims);
+                }
+                None
+            }
             "segment.recorded" => {
                 if let Some(id) = current.payload.get("id").and_then(|v| v.as_str()) {
                     self.segments.insert(ObjectId(id.into()));

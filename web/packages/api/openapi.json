@@ -1993,6 +1993,23 @@
         ],
         "type": "object"
       },
+      "DigestDto": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "hash"
+        ],
+        "type": "object"
+      },
       "DisableBody": {
         "properties": {
           "reason": {
@@ -2580,6 +2597,123 @@
               "$ref": "#/components/schemas/EntityTypeDto"
             },
             "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "EraseBody": {
+        "properties": {
+          "rationale": {
+            "description": "Why, for the person who decides.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rationale"
+        ],
+        "type": "object"
+      },
+      "ErasureDto": {
+        "properties": {
+          "actor": {
+            "description": "Who approved it.",
+            "type": "string"
+          },
+          "changeset_id": {
+            "description": "The proposal it came from.",
+            "type": "string"
+          },
+          "impact": {
+            "$ref": "#/components/schemas/ErasureImpactDto"
+          },
+          "seq": {
+            "description": "The `source.erased` event.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "time_ms": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "time_ms",
+          "actor",
+          "changeset_id",
+          "impact"
+        ],
+        "type": "object"
+      },
+      "ErasureImpactDto": {
+        "description": "What an erasure removes, rewrites and flags. A preview and the record of a done erasure have the same shape, so they can be compared.",
+        "properties": {
+          "flagged_claims": {
+            "description": "Claims that stand on other evidence too, and lost what they had from this document.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "flagged_pages": {
+            "description": "Pages that link to the document or refer to a claim that goes. Their text isn't changed.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "logical_id": {
+            "description": "The document. Every version of it goes.",
+            "type": "string"
+          },
+          "removed": {
+            "description": "Rows that go, in key order.",
+            "items": {
+              "$ref": "#/components/schemas/RowKeyDto"
+            },
+            "type": "array"
+          },
+          "rewritten": {
+            "description": "Rows that stay, with what came from the document taken out.",
+            "items": {
+              "$ref": "#/components/schemas/RowKeyDto"
+            },
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "logical_id",
+          "sources",
+          "removed",
+          "rewritten",
+          "flagged_claims",
+          "flagged_pages"
+        ],
+        "type": "object"
+      },
+      "ErasurePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ErasureDto"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -3563,6 +3697,83 @@
         ],
         "type": "object"
       },
+      "IndexCheckDto": {
+        "properties": {
+          "behind": {
+            "type": "boolean"
+          },
+          "index": {
+            "description": "`keyword` or `vector`.",
+            "type": "string"
+          },
+          "index_digest": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DigestDto"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "description": "`segment` or `claim`.",
+            "type": "string"
+          },
+          "matches": {
+            "type": "boolean"
+          },
+          "store": {
+            "$ref": "#/components/schemas/DigestDto"
+          },
+          "watermark": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "index",
+          "kind",
+          "store",
+          "behind",
+          "matches"
+        ],
+        "type": "object"
+      },
+      "IndexStatusDto": {
+        "properties": {
+          "building": {
+            "type": "boolean"
+          },
+          "lag": {
+            "description": "Events not applied yet.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "watermark": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ready",
+          "lag",
+          "building"
+        ],
+        "type": "object"
+      },
       "InversePreview": {
         "properties": {
           "blocked_because": {
@@ -3606,6 +3817,23 @@
           "action",
           "actor",
           "time_ms"
+        ],
+        "type": "object"
+      },
+      "JobCountDto": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "count"
         ],
         "type": "object"
       },
@@ -5428,6 +5656,132 @@
         ],
         "type": "object"
       },
+      "ReconcileDto": {
+        "properties": {
+          "at_seq": {
+            "description": "The replayed state at `at`, when asked for.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "at_sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blob_bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "blob_orphans": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "blobs_corrupt": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "blobs_missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "blobs_referenced": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "blobs_stored": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "clean": {
+            "description": "No difference anywhere, an index that's only behind not counting.",
+            "type": "boolean"
+          },
+          "differing": {
+            "items": {
+              "$ref": "#/components/schemas/RowKeyDto"
+            },
+            "type": "array"
+          },
+          "differing_count": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "events": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "head": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "indexes": {
+            "items": {
+              "$ref": "#/components/schemas/IndexCheckDto"
+            },
+            "type": "array"
+          },
+          "repaired": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "replay_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replayed_sha256": {
+            "type": "string"
+          },
+          "rows": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tables_sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clean",
+          "events",
+          "rows",
+          "tables_sha256",
+          "replayed_sha256",
+          "differing",
+          "differing_count",
+          "blobs_referenced",
+          "blobs_stored",
+          "blob_bytes",
+          "blobs_missing",
+          "blob_orphans",
+          "blobs_corrupt",
+          "indexes",
+          "repaired"
+        ],
+        "type": "object"
+      },
       "RectDto": {
         "properties": {
           "page": {
@@ -5482,6 +5836,18 @@
           "id",
           "current_id",
           "chain"
+        ],
+        "type": "object"
+      },
+      "ReindexBody": {
+        "properties": {
+          "index": {
+            "description": "`keyword`, `vector` or `all`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index"
         ],
         "type": "object"
       },
@@ -5960,6 +6326,22 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "RowKeyDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "table": {
+            "description": "The table: `source`, `rendition`, `segment`, `evidence`, `assertion`, `entity`, `edge`, `change_set`, `job`, `derivation` and so on.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "id"
         ],
         "type": "object"
       },
@@ -6468,6 +6850,72 @@
         ],
         "type": "object"
       },
+      "StatusDto": {
+        "properties": {
+          "caches": {
+            "items": {
+              "$ref": "#/components/schemas/CacheTierDto"
+            },
+            "type": "array"
+          },
+          "vaults": {
+            "items": {
+              "$ref": "#/components/schemas/VaultStatusDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "vaults",
+          "caches"
+        ],
+        "type": "object"
+      },
+      "SweepBody": {
+        "properties": {
+          "grace_s": {
+            "description": "How old an unreferenced blob must be to go. The server's `MEMEX_SWEEP_GRACE_S` when absent.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SweepDto": {
+        "properties": {
+          "checked": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kept_young": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "removed_bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "checked",
+          "removed",
+          "removed_bytes",
+          "kept_young"
+        ],
+        "type": "object"
+      },
       "TokenDto": {
         "description": "A token's details. The token itself and its hash never appear here.",
         "properties": {
@@ -6919,6 +7367,75 @@
         ],
         "type": "object"
       },
+      "VaultStatusDto": {
+        "properties": {
+          "blob_bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "blobs": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cache_generation": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "dead_jobs": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "head": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "keyword": {
+            "$ref": "#/components/schemas/IndexStatusDto"
+          },
+          "name": {
+            "type": "string"
+          },
+          "open_jobs": {
+            "description": "Queued or running jobs by kind.",
+            "items": {
+              "$ref": "#/components/schemas/JobCountDto"
+            },
+            "type": "array"
+          },
+          "review_pending": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "vector": {
+            "$ref": "#/components/schemas/IndexStatusDto"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "keyword",
+          "vector",
+          "open_jobs",
+          "dead_jobs",
+          "review_pending",
+          "blobs",
+          "blob_bytes",
+          "cache_generation"
+        ],
+        "type": "object"
+      },
       "VersionDto": {
         "properties": {
           "version": {
@@ -7027,6 +7544,44 @@
         },
         "tags": [
           "server"
+        ]
+      }
+    },
+    "/api/v1/metrics": {
+      "get": {
+        "operationId": "metrics",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The status as Prometheus text, for a scraper holding a server admin's token.",
+        "tags": [
+          "operations"
         ]
       }
     },
@@ -7250,6 +7805,44 @@
         },
         "tags": [
           "server"
+        ]
+      }
+    },
+    "/api/v1/status": {
+      "get": {
+        "operationId": "status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Every vault's index lag, job queues, review backlog and sizes, and the caches. Server admins only.",
+        "tags": [
+          "operations"
         ]
       }
     },
@@ -10537,6 +11130,74 @@
         ]
       }
     },
+    "/api/v1/vaults/{id}/erasures": {
+      "get": {
+        "operationId": "list_erasures",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "From `next_cursor` of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 200. The default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`created`, the default.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasurePage"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Erasures in the order they happened: what each removed, and the claims and pages each left flagged.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/vaults/{id}/flagged-pages": {
       "get": {
         "operationId": "list_flagged_pages",
@@ -12231,6 +12892,151 @@
         ]
       }
     },
+    "/api/v1/vaults/{id}/reconcile": {
+      "post": {
+        "operationId": "reconcile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Also replay the log up to this event, to compare with a backup taken there.",
+            "in": "query",
+            "name": "at",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Re-hash every blob, which reads all of them.",
+            "in": "query",
+            "name": "deep",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          {
+            "description": "Rebuild an index that differs, which is derived data. The log and tables are never changed.",
+            "in": "query",
+            "name": "repair",
+            "required": false,
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Compares the log, the tables, the blobs and the indexes, with counts and hashes. With `repair`, rebuilds an index that differs. A vault admin's. It replays the log in memory, so on a large vault it takes a while.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/reindex": {
+      "post": {
+        "operationId": "reindex",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReindexBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {},
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Builds new index generations from the tables. The current ones keep serving until they're ready, and the status shows the build.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/vaults/{id}/renditions/{rid}": {
       "get": {
         "operationId": "get_rendition",
@@ -13866,6 +14672,117 @@
         ]
       }
     },
+    "/api/v1/vaults/{id}/sources/{sid}/erasure": {
+      "get": {
+        "operationId": "erasure_preview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureImpactDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "What erasing this document would remove, rewrite and flag, read now. The erasure's record lists the same once approved, unless the vault changed in between.",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "operationId": "propose_erasure",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EraseBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Proposes erasing the document and every version of it. It always waits for a person, whoever proposes it, and only a person can approve it. Approving runs the erasure, which can't be undone.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/vaults/{id}/sources/{sid}/extraction": {
       "get": {
         "operationId": "extraction_status",
@@ -14845,6 +15762,64 @@
         },
         "tags": [
           "sources"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/sweep": {
+      "post": {
+        "operationId": "sweep",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SweepBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SweepDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Removes blobs no row refers to that are older than the grace period. The server also does this on its own schedule.",
+        "tags": [
+          "operations"
         ]
       }
     },

@@ -216,7 +216,7 @@ pub fn item_types<S: Snapshot>(snap: &S, ops: &[Op]) -> Result<Vec<String>, Stor
             Op::DefineEntityType { .. } => "entity_type".to_string(),
             Op::CreatePage { .. } | Op::EditPage { .. } | Op::DeletePage { .. } | Op::RenamePage { .. } | Op::RevertPage { .. } => "page".to_string(),
             Op::AddEdge { .. } | Op::RemoveEdge { .. } => "link".to_string(),
-            Op::SetSourceTrust { .. } | Op::SetSourceMetadata { .. } => "source".to_string(),
+            Op::SetSourceTrust { .. } | Op::SetSourceMetadata { .. } | Op::EraseSource { .. } => "source".to_string(),
         };
         out.insert(label);
     }

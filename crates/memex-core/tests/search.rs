@@ -461,6 +461,9 @@ impl LexicalIndex for RetractsDuringSearch<'_> {
     fn rollback(&self, v: &VaultId) -> Result<(), LexicalError> {
         self.inner.rollback(v)
     }
+    fn erase(&self, v: &VaultId, ids: &[memex_types::ObjectId]) -> Result<(), LexicalError> {
+        self.inner.erase(v, ids)
+    }
     fn search(&self, v: &VaultId, q: &LexicalQuery) -> Result<LexicalResults, LexicalError> {
         let out = self.inner.search(v, q)?;
         let event = memex_types::Event {

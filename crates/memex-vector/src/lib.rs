@@ -591,6 +591,49 @@ impl PgVectors {
         })
     }
 
+    /// Erasure: these documents leave every generation, and these hashes' embeddings go under every model, in one transaction. `VACUUM FULL` through the store's compaction is what removes their bytes.
+    pub fn erase(&self, vault: &VaultId, ids: &[ObjectId], hashes: &[String]) -> Result<(), VectorError> {
+        let schema = schema_of_vault(vault);
+        let ids: Vec<&str> = ids.iter().map(|i| i.0.as_str()).collect();
+        let result = self.with_conn(|c| {
+            let mut t = c.client.transaction().map_err(backend)?;
+            let gens: Vec<i32> = match t.query(&format!("SELECT gen FROM {schema}.vector_generations ORDER BY gen"), &[]) {
+                Ok(rows) => rows.iter().map(|r| r.get(0)).collect(),
+                Err(e) if e.as_db_error().is_some_and(|d| d.code().code() == "42P01" || d.code().code() == "3F000") => return Ok(()),
+                Err(e) => return Err(backend(e)),
+            };
+            for g in gens {
+                t.execute(&format!("DELETE FROM {} WHERE id = ANY($1::text[])", table(&schema, g)), &[&ids])
+                    .map_err(backend)?;
+            }
+            t.execute(&format!("DELETE FROM {schema}.embeddings WHERE content_hash = ANY($1::text[])"), &[&hashes])
+                .map_err(backend)?;
+            t.commit().map_err(backend)
+        });
+        self.forget_mark(vault);
+        result
+    }
+
+    /// Stored embeddings in (model, hash) order after the given pair, for a backup.
+    pub fn stored_embeddings(&self, vault: &VaultId, after: Option<(&str, &str)>, limit: usize) -> Result<Vec<(String, String, Vec<f32>)>, VectorError> {
+        let schema = schema_of_vault(vault);
+        let (m, h) = after.unwrap_or(("", ""));
+        let first = after.is_none();
+        self.with_conn(|c| {
+            let sql = format!(
+                "SELECT model, content_hash, vector::text FROM {schema}.embeddings WHERE $1 OR (model, content_hash) > ($2, $3) ORDER BY model, content_hash LIMIT $4"
+            );
+            let rows = c.query(&sql, &[&first, &m, &h, &(limit as i64)]).map_err(backend)?;
+            rows.into_iter()
+                .map(|r| {
+                    let text: String = r.get(2);
+                    let vector = parse_vector(&text).ok_or_else(|| VectorError::Backend("a stored embedding can't be read".into()))?;
+                    Ok((r.get(0), r.get(1), vector))
+                })
+                .collect()
+        })
+    }
+
     pub fn store_embeddings(&self, vault: &VaultId, model: &str, rows: &[(String, Vec<f32>)]) -> Result<(), VectorError> {
         if rows.is_empty() {
             return Ok(());

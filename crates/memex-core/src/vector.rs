@@ -44,6 +44,10 @@ pub trait VectorIndex {
     /// Idempotent per model and hash.
     fn store_embeddings(&self, vault: &VaultId, model: &str, rows: &[(String, Vec<f32>)]) -> Result<(), VectorError>;
     fn delete_vault(&self, vault: &VaultId) -> Result<(), VectorError>;
+    /// Erasure (spec 030): removes these documents from every generation and these content hashes' stored embeddings, under every model. Compacting the storage is the store's part. A document or hash that isn't there is fine.
+    fn erase(&self, vault: &VaultId, ids: &[ObjectId], hashes: &[String]) -> Result<(), VectorError>;
+    /// Stored embeddings in (model, hash) order, after the given pair, at most `limit`, for a backup.
+    fn stored_embeddings(&self, vault: &VaultId, after: Option<(&str, &str)>, limit: usize) -> Result<Vec<(String, String, Vec<f32>)>, VectorError>;
     /// A count and digest of the live generation's documents of this kind, and which of `wanted` it holds, for an audit to compare with the store. None if this backend can't say.
     fn reconcile(&self, _vault: &VaultId, _kind: DocKind, _wanted: &[ObjectId]) -> Result<Option<crate::lexical::IndexContents>, VectorError> {
         Ok(None)

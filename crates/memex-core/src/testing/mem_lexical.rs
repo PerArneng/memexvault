@@ -105,6 +105,20 @@ impl MemLexical {
 }
 
 impl LexicalIndex for MemLexical {
+    fn erase(&self, vault: &VaultId, ids: &[memex_types::ObjectId]) -> Result<(), LexicalError> {
+        let mut vaults = self.vaults.lock().expect("lock");
+        let Some(v) = vaults.get_mut(vault) else { return Ok(()) };
+        if let Some(live) = v.live.as_mut() {
+            for id in ids {
+                live.committed.remove(&id.0);
+                live.pending.remove(&id.0);
+            }
+        }
+        v.previous = None;
+        v.building = None;
+        Ok(())
+    }
+
     fn reconcile(
         &self,
         vault: &VaultId,

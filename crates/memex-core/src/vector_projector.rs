@@ -136,6 +136,11 @@ impl VectorProjector {
         self.vaults.remove(vault);
     }
 
+    /// Whether a new generation is being built for this vault.
+    pub fn building(&self, vault: &VaultId) -> bool {
+        self.vaults.get(vault).is_some_and(|v| v.build.is_some())
+    }
+
     /// Does a bounded piece of work. `enqueue` makes sure the embed jobs exist, and runs before the watermark that depends on them moves.
     pub fn step<S, V, E, Q>(&mut self, store: &S, index: &V, embedder: &E, vault: &VaultId, enqueue: &mut Q) -> Result<StepOutcome, ProjectError>
     where

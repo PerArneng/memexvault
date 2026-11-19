@@ -232,6 +232,11 @@ impl LexicalProjector {
         self.vaults.remove(vault);
     }
 
+    /// Whether a new generation is being built for this vault.
+    pub fn building(&self, vault: &VaultId) -> bool {
+        self.vaults.get(vault).is_some_and(|v| v.build.is_some())
+    }
+
     /// Does a bounded piece of work. On an error, the next step checks the index again from its durable state.
     pub fn step<S: Store, L: LexicalIndex, C: Clock>(&mut self, store: &S, index: &L, clock: &C, vault: &VaultId) -> Result<StepOutcome, ProjectError> {
         let mut state = self.vaults.remove(vault).unwrap_or_default();

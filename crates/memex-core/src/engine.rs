@@ -144,6 +144,35 @@ impl<S: Store, C: Clock> Engine<S, C> {
         results
     }
 
+    /// Erasure's commit (spec 030): these drafts, each reduced on top of the ones before, and these payload rewrites, in one transaction. All or nothing.
+    pub fn apply_rewriting(&self, lease: &WriterLease, rewrites: &[(u64, serde_json::Value)], drafts: Vec<EventDraft>) -> Result<Vec<Receipt>, ApplyError> {
+        let snap = self.store.snapshot(&lease.vault)?;
+        let mut pending = Pending::over(&snap)?;
+        let now = self.clock.now_ms();
+        let mut accepted: Vec<(Event, Vec<memex_types::Mutation>)> = vec![];
+        for draft in drafts {
+            let seq = pending.next_seq();
+            let event = Event {
+                seq,
+                vault: lease.vault.clone(),
+                actor: draft.actor,
+                time_ms: now,
+                kind: draft.kind,
+                schema_version: draft.schema_version,
+                payload: draft.payload,
+            };
+            let current = upcast(&event).map_err(ApplyError::Upcast)?;
+            let mutations = reduce(&pending, &current).map_err(ApplyError::Reduce)?;
+            pending.apply(seq, &mutations);
+            accepted.push((event, mutations));
+        }
+        drop(pending);
+        drop(snap);
+        let items: Vec<CommitItem<'_>> = accepted.iter().map(|(event, mutations)| CommitItem { event, mutations }).collect();
+        self.store.commit_rewriting(lease, rewrites, &items)?;
+        Ok(accepted.iter().map(|(e, _)| Receipt { seq: e.seq }).collect())
+    }
+
     /// Assigns the next sequence, reduces and commits once. An error leaves no trace.
     pub fn apply(&self, lease: &WriterLease, draft: EventDraft) -> Result<Receipt, ApplyError> {
         let (event, mutations) = {

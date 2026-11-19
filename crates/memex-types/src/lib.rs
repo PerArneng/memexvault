@@ -6,6 +6,7 @@ mod blob;
 mod cache;
 mod chat;
 mod entity;
+mod erasure;
 mod event;
 mod extraction;
 mod governance;
@@ -38,6 +39,7 @@ pub use entity::{
     ALIAS_FIELD, ClaimedValue, ENTITY_SUBJECT_PREFIX, EntityField, EntityRow, EntityTypeRow, FieldFilter, FieldLookup, FieldOp, FieldSort, FieldValueRow,
     FilterValue, SharedValue, SortAfter, SortColumn, ValueMatch, compare_values, entity_of_subject, entity_subject, entity_type_row_id, type_of_row_id,
 };
+pub use erasure::{ERASE_JOB, EraseJobInput, ErasureRecord, SOURCE_ERASED};
 pub use event::{Event, EventDraft};
 pub use extraction::{DerivationOutcome, DerivationRow, ExtractedItem, ExtractionRow, ExtractionStop, IdentityCandidate, RejectedItem};
 pub use governance::{ChangeSetState, Epistemic, EvidenceInput, MovedClaim, Op, OpKind, RiskDecision, Stance, ValidatorResult};

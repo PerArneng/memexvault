@@ -256,4 +256,19 @@ where
     ] {
         s.apply_as(c, v, kind, version, payload).unwrap_or_else(|e| panic!("{kind}: {e}"));
     }
+    // An erasure, of a document of its own, so the marker stays in the log for the scan.
+    let req = UploadRequest {
+        name: "gone.txt".into(),
+        trust_tier: "trusted".into(),
+        metadata: json!({}),
+        replaces: None,
+    };
+    let gone = s
+        .upload(c, v, req, UploadLimits::default(), &mut "Nothing to keep here.".as_bytes())
+        .unwrap()
+        .source
+        .header
+        .id;
+    let erase = s.propose_erasure(c, v, &gone, "asked to".into()).unwrap().changeset.unwrap();
+    s.approve(c, v, &erase.header.id, None).unwrap();
 }

@@ -2,8 +2,10 @@ mod activity;
 mod audit;
 mod chat;
 mod entities;
+mod erasure;
 mod extraction;
 mod meeting;
+mod ops;
 mod pages;
 mod review;
 pub use self::meeting::{MediaInfo, MeetingView, ParticipantLink, ParticipantView, TranscriptPage, TranscriptWindow};
@@ -13,7 +15,11 @@ pub use chat::{ChatInput, ChatLimits, ChatSettingsUpdate, ChatToolAnswer, ChatTo
 pub use entities::{
     ClaimEvidence, EntityCandidate, EntityClaim, EntityEdit, EntityResolution, EntityView, FieldInput, NewEntity, Redirect, SplitRequest, TypeDecision,
 };
+pub use erasure::{CascadeStep, ERASE_CASCADE, ErasureView, VAULT_CASCADE};
 pub use extraction::{ExtractJobError, ExtractionReport};
+pub use ops::{
+    BlobCheck, IndexCheck, IndexStatus, LogCheck, ReconcileReport, ReindexTarget, RestoreTarget, ServerStatus, SweepReport, VaultStatus, metrics_text,
+};
 pub use pages::{
     BacklinkView, ClaimRefStatus, ClaimReference, ImportedPage, NeighborView, NewPage, OutgoingLink, PageChange, PageDiff, PageRedirect, PageRevisionView,
     PageView, UnresolvedLink,
@@ -385,6 +391,8 @@ pub struct Server<E: ServerEdges> {
     chat_model: Mutex<Option<crate::chat::ChatModel>>,
     /// The runs going now, and how to stop each. Lives in memory, as a run lives no longer than its process.
     chat_runs: chat::ActiveRuns,
+    /// The orphan sweep's settings, which a sweep asked for by route uses too.
+    sweep: Mutex<crate::SweepSettings>,
 }
 
 fn sha256_hex(text: &str) -> String {
@@ -438,6 +446,7 @@ impl<E: ServerEdges> Server<E> {
             chat_limits: Mutex::new(None),
             chat_model: Mutex::new(None),
             chat_runs: Arc::default(),
+            sweep: Mutex::new(crate::SweepSettings::default()),
         }
     }
 
@@ -794,14 +803,7 @@ impl<E: ServerEdges> Server<E> {
         let lease = self.lease(id)?;
         self.registry.delete_vault(id, &self.audit(&caller.principal.id, "vault.delete", &id.0))?;
         self.leases.lock().expect("lock").remove(id);
-        self.engine.store().delete_vault(&lease)?;
-        self.blobs.delete_vault(id)?;
-        self.projector.lock().expect("lock").forget(id);
-        self.lexical.delete_vault(id)?;
-        self.vector_projector.lock().expect("lock").forget(id);
-        self.vector.delete_vault(id)?;
-        crate::Caches::purge_vault(&self.caches, id);
-        Ok(())
+        self.delete_vault_cascade(id, &lease)
     }
 
     /// Words and quoted phrases, with hits current as of this call even if the index hasn't caught up. Filters are the typed ones: there's no query syntax for them.
@@ -1112,6 +1114,10 @@ impl<E: ServerEdges> Server<E> {
         if caller.principal.id == crate::audit::AUDITOR {
             return Err(ServerError::Forbidden);
         }
+        // Only an approved erasure writes these, with the log rewritten to match (spec 030).
+        if kind == memex_types::SOURCE_ERASED || crate::erasure::is_erased_form(&payload) {
+            return Err(ServerError::Forbidden);
+        }
         let lease = self.lease(vault)?;
         let draft = EventDraft {
             actor: caller.principal.id.clone(),
@@ -1156,7 +1162,9 @@ impl<E: ServerEdges> Server<E> {
         let (dedup, check) = governance::validate_dedup(snap, &p.ops)?;
         let entity = governance::validate_entities(snap, &p.ops)?;
         let page = governance::validate_pages(snap, &p.ops)?;
-        Ok((vec![schema, evidence, quote, current, dedup, entity, page], check.contradictions))
+        let mut all = vec![schema, evidence, quote, current, dedup, entity, page];
+        all.extend(Self::validate_erasure(snap, &p.ops)?);
+        Ok((all, check.contradictions))
     }
 
     fn commit_changeset(&self, lease: &WriterLease, actor: &str, changeset: ChangeSetRow, mutations: Vec<Mutation>) -> Result<(), ServerError> {
@@ -1416,6 +1424,18 @@ impl<E: ServerEdges> Server<E> {
             // A person's edit can simply be wrong. Otherwise it passed when proposed, so the vault has moved on.
             return Err(if was_edited { ServerError::Invalid(why) } else { ServerError::Conflict(why) });
         }
+        if row.ops.iter().any(|op| matches!(op, memex_types::Op::EraseSource { .. })) {
+            if was_edited {
+                return Err(ServerError::Invalid("an erasure can't be edited, only approved or rejected".into()));
+            }
+            drop(snap);
+            row.validators = validators;
+            row.decided_by = Some(actor.clone());
+            row.decided_at_ms = Some(now);
+            row.decision_reason = reason;
+            row.header.version += 1;
+            return self.commit_erasure(&lease, &actor, row);
+        }
         let seed = &self.seed;
         let mut edge_id = || ObjectId(format!("{:012x}{:020x}", now.max(0), u128::from(seed.next_u64())));
         let mut mutations = governance::plan(&snap, &row.ops, &row.proposer, id, now, &contradictions, &mut edge_id).map_err(Self::plan_errors)?;
@@ -1503,6 +1523,7 @@ impl<E: ServerEdges> Server<E> {
             NotReversible::AlreadyReverted => "it was already reverted".into(),
             NotReversible::NotCommitted => "it was never committed".into(),
             NotReversible::ChangedSince { key } => format!("{:?} {} has changed since", key.table, key.id),
+            NotReversible::Erasure => "an erasure can't be undone, as what it removed is gone".into(),
         }
     }
 

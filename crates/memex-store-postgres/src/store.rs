@@ -520,11 +520,16 @@ impl PgStore {
 
     /// One SQL transaction for the whole batch. `batch` holds each event with its mutations. Durable when it returns.
     pub fn commit_batch(&self, lease: &PgLease, batch: &[(&Event, &[Mutation])]) -> Result<u64, PgError> {
+        self.commit_rewriting(lease, &[], batch)
+    }
+
+    /// `commit_batch` that also replaces these events' payloads, in the same transaction. For erasure.
+    pub fn commit_rewriting(&self, lease: &PgLease, rewrites: &[(u64, serde_json::Value)], batch: &[(&Event, &[Mutation])]) -> Result<u64, PgError> {
         let last = batch.last().ok_or(PgError::EmptyBatch)?.0.seq;
         let writer = self.writer(lease)?;
         let mut guard = writer.lock().expect("lock");
         let Writer { schema, conn, .. } = &mut *guard;
-        let result = commit_in_transaction(conn, schema, batch);
+        let result = commit_in_transaction(conn, schema, rewrites, batch);
         if conn.client.is_closed() {
             return Err(PgError::LeaseLost);
         }
@@ -539,42 +544,33 @@ impl PgStore {
         Ok(())
     }
 
-    /// Physically reclaims deleted rows, for erasure.
+    /// Physically reclaims deleted rows, for erasure. Plain `VACUUM` frees a dead row's space but leaves its bytes in the page until something overwrites them, and a rewritten event leaves its old payload the same way, so every table of the vault is rewritten: its rows, its TOAST data and its indexes, the vector generations and stored embeddings included. Each table takes an exclusive lock while it's rewritten, which `compact_report` measures. Postgres's WAL and backups keep what they kept.
     pub fn compact(&self, lease: &PgLease) -> Result<(), PgError> {
+        self.compact_report(lease).map(|_| ())
+    }
+
+    /// `compact`, with how long each table's rewrite took, which is how long its exclusive lock was held. An edge, timing its own SQL.
+    #[allow(clippy::disallowed_methods)]
+    pub fn compact_report(&self, lease: &PgLease) -> Result<Vec<(String, std::time::Duration)>, PgError> {
         let writer = self.writer(lease)?;
         let mut guard = writer.lock().expect("lock");
         let Writer { schema, conn, .. } = &mut *guard;
         let client = &mut conn.client;
-        for t in [
-            "events",
-            "sources",
-            "pages",
-            "edges",
-            "segments",
-            "assertions",
-            "evidence",
-            "changesets",
-            "jobs",
-            "entity_types",
-            "entities",
-            "entity_fields",
-            "blocks",
-            "page_slugs",
-            "page_revisions",
-            "review_verdicts",
-            "auto_commit",
-            "audit_runs",
-            "audit_checks",
-            "audit_state",
-            "audit_planted",
-        ] {
-            client.batch_execute(&format!("VACUUM {schema}.{t}")).map_err(backend)?;
+        let tables: Vec<String> = client
+            .query("SELECT tablename FROM pg_tables WHERE schemaname = $1 ORDER BY tablename", &[&schema.as_str()])
+            .map_err(backend)?
+            .iter()
+            .map(|r| r.get(0))
+            .collect();
+        let mut out = vec![];
+        for t in tables {
+            let started = std::time::Instant::now();
+            client.batch_execute(&format!("VACUUM FULL {schema}.\"{t}\"")).map_err(backend)?;
+            // Fresh statistics, so no sample of a removed value stays in the catalog.
+            client.batch_execute(&format!("ANALYZE {schema}.\"{t}\"")).map_err(backend)?;
+            out.push((t, started.elapsed()));
         }
-        // Plain VACUUM frees a dead row's space and leaves its bytes in the page until something overwrites them. A rewrite is what removes them. These tables are small, and erasure is rare, so the short exclusive lock is fine, and a run waiting on it just waits.
-        for t in ["chat_threads", "chat_messages", "chat_thread_sources"] {
-            client.batch_execute(&format!("VACUUM FULL {schema}.{t}")).map_err(backend)?;
-        }
-        Ok(())
+        Ok(out)
     }
 
     /// Runs one short piece of chat work on a pooled connection, and gives it straight back.
@@ -788,13 +784,23 @@ impl PgStore {
         let mut conn = self.take_client()?;
         let c = &mut conn.client;
         let schema = schema_of_vault(vault);
-        c.batch_execute(&format!("DROP SCHEMA IF EXISTS {schema} CASCADE")).map_err(backend)?;
+        // A reader holding a lock on one of its tables would otherwise hold the drop, and everything queued behind it, for as long as it likes (spec 018).
+        let dropped = c.batch_execute(&format!(
+            "SET lock_timeout = '{DROP_LOCK_TIMEOUT_MS}ms'; DROP SCHEMA IF EXISTS {schema} CASCADE; RESET lock_timeout"
+        ));
+        if let Err(e) = dropped {
+            let _ = c.batch_execute("RESET lock_timeout");
+            return Err(backend(e));
+        }
         c.execute("DELETE FROM memex_server.vaults WHERE vault_id = $1", &[&vault.0]).map_err(backend)?;
         self.schemas.lock().expect("lock").remove(vault);
         self.give_client(conn);
         Ok(())
     }
 }
+
+/// How long dropping a vault waits for a lock before it gives up and can be tried again.
+pub const DROP_LOCK_TIMEOUT_MS: u64 = 10_000;
 
 fn migrate_vault(c: &mut Client, schema: String) -> Result<(), PgError> {
     c.batch_execute(&format!(
@@ -857,9 +863,17 @@ fn exec(t: &mut postgres::Transaction<'_>, cache: &mut Statements, sql: &str, pa
     t.execute(&st, params)
 }
 
-fn commit_in_transaction(conn: &mut Conn, schema: &str, batch: &[(&Event, &[Mutation])]) -> Result<(), PgError> {
+fn commit_in_transaction(conn: &mut Conn, schema: &str, rewrites: &[(u64, serde_json::Value)], batch: &[(&Event, &[Mutation])]) -> Result<(), PgError> {
     let Conn { client, statements: cache, .. } = conn;
     let mut t = client.transaction().map_err(backend)?;
+    for (seq, payload) in rewrites {
+        let n = t
+            .execute(&format!("UPDATE {schema}.events SET payload = $2 WHERE seq = $1"), &[&(*seq as i64), payload])
+            .map_err(backend)?;
+        if n != 1 {
+            return Err(PgError::Backend(format!("there's no event {seq} to rewrite")));
+        }
+    }
     let head_sql = format!("SELECT max(seq) FROM {schema}.events");
     let head_st = match cache.get(&head_sql) {
         Some(st) => st.clone(),
@@ -2087,6 +2101,49 @@ impl PgSnapshot<'_> {
         let sql = format!("SELECT time_ms FROM {}.events WHERE seq = $1", self.schema);
         let row = self.with_statement(&sql, |c, st| c.query_opt(st, &[&(seq as i64)]))?;
         Ok(row.map(|r| r.get(0)))
+    }
+
+    /// Events of one kind, above `after`, at most `limit`. Erasure is rare, so this scans rather than keeping an index.
+    pub fn events_of_kind(&self, kind: &str, after: Option<u64>, limit: usize) -> Result<Vec<Event>, PgError> {
+        let from = after.map_or(-1, |a| a as i64);
+        let sql = format!(
+            "SELECT seq, actor, time_ms, kind, schema_version, payload FROM {}.events WHERE kind = $1 AND seq > $2 ORDER BY seq LIMIT $3",
+            self.schema
+        );
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&kind, &from, &(limit as i64)]))?;
+        Ok(rows
+            .iter()
+            .map(|r| Event {
+                seq: r.get::<_, i64>(0) as u64,
+                vault: self.vault.clone(),
+                actor: r.get(1),
+                time_ms: r.get(2),
+                kind: r.get(3),
+                schema_version: r.get::<_, i32>(4) as u32,
+                payload: r.get(5),
+            })
+            .collect())
+    }
+
+    /// Segments naming this source, whatever rendition they're on, in id order.
+    pub fn segments_of_source(&self, source: &ObjectId) -> Result<Vec<ObjectId>, PgError> {
+        let sql = format!("SELECT id FROM {}.segments WHERE source_id = $1 ORDER BY id", self.schema);
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&source.0]))?;
+        Ok(rows.iter().map(|r| ObjectId(r.get(0))).collect())
+    }
+
+    /// Active edges of any kind at either end of these ids, in id order.
+    pub fn edges_of(&self, ids: &[ObjectId]) -> Result<Vec<EdgeRow>, PgError> {
+        let ids: Vec<&str> = ids.iter().map(|i| i.0.as_str()).collect();
+        let sql = format!(
+            "SELECT * FROM {}.edges WHERE status = 'active' AND (from_id = ANY($1) OR to_id = ANY($1)) ORDER BY id",
+            self.schema
+        );
+        let rows = self.with_statement(&sql, |c, st| c.query(st, &[&ids]))?;
+        Ok(rows
+            .iter()
+            .filter_map(|r| if let Row::Edge(x) = row_from(Table::Edge, r) { Some(x) } else { None })
+            .collect())
     }
 
     pub fn events(&self, after: Option<u64>) -> Result<Vec<Event>, PgError> {

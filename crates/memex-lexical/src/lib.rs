@@ -221,6 +221,25 @@ impl Gen {
         *self.writer.lock().expect("lock") = None;
     }
 
+    /// Deletes these documents, then merges every segment into one and removes the files nothing refers to, so a deleted document's bytes leave the folder rather than waiting for a merge that may never come. The watermark stays.
+    fn erase(&self, ids: &[ObjectId]) -> Result<(), LexicalError> {
+        let watermark = self.watermark();
+        let deletes: Vec<IndexOp> = ids.iter().cloned().map(IndexOp::Delete).collect();
+        self.write(&deletes)?;
+        self.commit(watermark)?;
+        let segments = self.index.searchable_segment_ids().map_err(backend)?;
+        if !segments.is_empty() {
+            self.with_writer(|w| w.merge(&segments).wait().map(|_| ()).map_err(backend))?;
+        }
+        self.commit(watermark)?;
+        self.with_writer(|w| w.garbage_collect_files().wait().map(|_| ()).map_err(backend))?;
+        // Waiting for the writer's merge threads leaves no merge running on files about to be read.
+        if let Some(writer) = self.writer.lock().expect("lock").take() {
+            writer.wait_merging_threads().map_err(backend)?;
+        }
+        self.reader.reload().map_err(corrupt_or_backend)
+    }
+
     fn committed(&self) -> bool {
         self.payload.lock().expect("lock").is_some()
     }
@@ -767,6 +786,71 @@ impl TantivyLexical {
             }
         }
         Ok(true)
+    }
+
+    /// Erasure: the documents leave the live generation's files, and every other generation goes, so no rollback can bring them back.
+    pub fn erase(&self, vault: &VaultId, ids: &[ObjectId]) -> Result<(), LexicalError> {
+        self.with_vault(vault, |v, base| {
+            if let Some(b) = v.building.take() {
+                b.close_writer();
+                let _ = fs::remove_dir_all(gen_dir(base, b.number));
+            }
+            let Some(live) = v.live.clone() else { return Ok(()) };
+            if let Some(previous) = v.previous.take() {
+                write_pointer(base, live.number, None)?;
+                fs::remove_dir_all(gen_dir(base, previous)).map_err(backend)?;
+            }
+            for n in gen_numbers(base)? {
+                if n != live.number {
+                    fs::remove_dir_all(gen_dir(base, n)).map_err(backend)?;
+                }
+            }
+            live.erase(ids)
+        })
+    }
+
+    /// What every generation's files on disk hold that contains this text, in any letter case: indexed terms, as `gen-<n>/<field>:<term>`, read from each segment's term dictionary, where a deleted document's terms stay until a merge; and files belonging to no segment of the generation's commit. For checking that an erasure left nothing, as the dictionaries are compressed and a byte scan can't see into them.
+    pub fn scan_files(&self, vault: &VaultId, needle: &str) -> Result<(Vec<String>, Vec<String>), LexicalError> {
+        safe_vault(vault)?;
+        let base = self.vault_dir(vault);
+        let needle = needle.to_lowercase();
+        let (mut terms, mut stray) = (vec![], vec![]);
+        for n in gen_numbers(&base)? {
+            let dir = gen_dir(&base, n);
+            let index = Index::open_in_dir(&dir).map_err(corrupt_or_backend)?;
+            let schema = index.schema();
+            let reader: IndexReader = index
+                .reader_builder()
+                .reload_policy(ReloadPolicy::Manual)
+                .try_into()
+                .map_err(corrupt_or_backend)?;
+            let searcher = reader.searcher();
+            let mut segments = vec![];
+            for seg in searcher.segment_readers() {
+                segments.push(seg.segment_id().uuid_string());
+                for (field, entry) in schema.fields() {
+                    if !entry.is_indexed() {
+                        continue;
+                    }
+                    let inverted = seg.inverted_index(field).map_err(corrupt_or_backend)?;
+                    let mut stream = inverted.terms().stream().map_err(backend)?;
+                    while stream.advance() {
+                        let term = String::from_utf8_lossy(stream.key()).to_lowercase();
+                        if term.contains(&needle) {
+                            terms.push(format!("gen-{n}/{}:{term}", entry.name()));
+                        }
+                    }
+                }
+            }
+            for f in fs::read_dir(&dir).map_err(backend)? {
+                let name = f.map_err(backend)?.file_name().to_string_lossy().into_owned();
+                let known = name == "meta.json" || name == ".managed.json" || name.ends_with(".lock") || segments.iter().any(|s| name.starts_with(s.as_str()));
+                if !known {
+                    stray.push(format!("gen-{n}/{name}"));
+                }
+            }
+        }
+        Ok((terms, stray))
     }
 
     pub fn delete_vault(&self, vault: &VaultId) -> Result<(), LexicalError> {

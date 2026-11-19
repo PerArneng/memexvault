@@ -65,6 +65,30 @@ impl MemVector {
 }
 
 impl VectorIndex for MemVector {
+    fn erase(&self, vault: &VaultId, ids: &[memex_types::ObjectId], hashes: &[String]) -> Result<(), VectorError> {
+        let mut vaults = self.vaults.lock().expect("lock");
+        let Some(v) = vaults.get_mut(vault) else { return Ok(()) };
+        for g in [v.live.as_mut(), v.previous.as_mut(), v.building.as_mut()].into_iter().flatten() {
+            for id in ids {
+                g.docs.remove(&id.0);
+            }
+        }
+        v.embeddings.retain(|(_, hash), _| !hashes.contains(hash));
+        Ok(())
+    }
+
+    fn stored_embeddings(&self, vault: &VaultId, after: Option<(&str, &str)>, limit: usize) -> Result<Vec<(String, String, Vec<f32>)>, VectorError> {
+        let vaults = self.vaults.lock().expect("lock");
+        let Some(v) = vaults.get(vault) else { return Ok(vec![]) };
+        let mut all: Vec<(String, String, Vec<f32>)> = v.embeddings.iter().map(|((m, h), vec)| (m.clone(), h.clone(), vec.clone())).collect();
+        all.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+        Ok(all
+            .into_iter()
+            .filter(|(m, h, _)| after.is_none_or(|(am, ah)| (m.as_str(), h.as_str()) > (am, ah)))
+            .take(limit)
+            .collect())
+    }
+
     fn reconcile(
         &self,
         vault: &VaultId,

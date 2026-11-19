@@ -4,6 +4,7 @@ mod chat;
 mod entities;
 mod extraction;
 mod meeting;
+mod ops;
 mod pages;
 mod review;
 
@@ -171,6 +172,7 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     doc.merge(entities::EntityDoc::openapi());
     doc.merge(extraction::ExtractionDoc::openapi());
     doc.merge(meeting::MeetingDoc::openapi());
+    doc.merge(ops::OpsDoc::openapi());
     doc.merge(review::ReviewDoc::openapi());
     doc.merge(pages::PageDoc::openapi());
     doc
@@ -268,6 +270,7 @@ where
     let api = entities::add_routes::<E>(api);
     let api = extraction::add_routes::<E>(api);
     let api = meeting::add_routes::<E>(api);
+    let api = ops::add_routes::<E>(api);
     let api = review::add_routes::<E>(api);
     let api = pages::add_routes::<E>(api);
     Router::new()

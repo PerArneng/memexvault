@@ -400,6 +400,21 @@ where
     }
 }
 
+/// Does an approved erasure's physical work: index files, blobs, chat threads, caches and compaction (spec 030).
+pub struct EraseHandler<E: ServerEdges> {
+    pub server: Arc<Server<E>>,
+}
+
+impl<E> JobHandler for EraseHandler<E>
+where
+    E: ServerEdges,
+    Server<E>: Send + Sync,
+{
+    fn run(&self, vault: &VaultId, job: &JobRow, _: &JobHold) -> Result<Vec<Mutation>, JobFailure> {
+        self.server.run_erase_job(vault, job).map_err(job_failure)
+    }
+}
+
 /// Starts each vault's scheduled audits when the clock says so. Its own thread, as nothing else here should wait on it.
 pub fn start_audit_scheduler<E>(server: Arc<Server<E>>, stop: Arc<AtomicBool>) -> JoinHandle<()>
 where
@@ -415,6 +430,35 @@ where
                 }
             }
             std::thread::sleep(Duration::from_secs(1));
+        }
+    })
+}
+
+/// Sweeps every vault's orphan blobs on a schedule (spec 030): the first sweep one interval after startup, as a restart shouldn't cost a scan.
+pub fn start_sweeper<E>(server: Arc<Server<E>>, stop: Arc<AtomicBool>, sweep: memex_core::SweepSettings) -> JoinHandle<()>
+where
+    E: ServerEdges + Send + Sync + 'static,
+    Server<E>: Send + Sync,
+{
+    std::thread::spawn(move || {
+        let mut waited = 0;
+        while !stop.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_secs(1));
+            waited += 1;
+            if waited < sweep.interval_s {
+                continue;
+            }
+            waited = 0;
+            match server.sweep_all(sweep.grace_s as i64 * 1000) {
+                Ok(reports) => {
+                    for (vault, r) in reports {
+                        if r.removed > 0 {
+                            tracing::info!(vault = %vault, removed = r.removed, bytes = r.removed_bytes, "swept orphan blobs");
+                        }
+                    }
+                }
+                Err(e) => tracing::warn!(error = %e, "the orphan sweep failed, and runs again at its next interval"),
+            }
         }
     })
 }
