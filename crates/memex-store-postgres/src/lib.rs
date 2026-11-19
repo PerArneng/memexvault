@@ -8,4 +8,4 @@ mod tls;
 pub use migrate::{LATEST_SERVER_VERSION, LATEST_VAULT_VERSION};
 pub use net::{NetMutations, net_mutations};
 pub use registry::{PgRegistryError, schema_for};
-pub use store::{Conn, DEFAULT_MAX_OPEN, DEFAULT_WAIT, PgError, PgLease, PgSnapshot, PgStore, PoolLimits, PoolStats, schema_of_vault};
+pub use store::{Conn, DEFAULT_MAX_OPEN, DEFAULT_WAIT, DEFAULT_WRITERS, PgError, PgLease, PgSnapshot, PgStore, PoolLimits, PoolStats, schema_of_vault};
