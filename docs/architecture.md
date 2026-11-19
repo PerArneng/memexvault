@@ -132,7 +132,11 @@ same canonical dump hash, and indexes rebuild from there. Events record results,
 format and the route between store implementations.
 
 **Limits.** One server process per vault, enforced by the writer lease, which is a Postgres advisory lock. Losing the
-connection loses the lease, so the writer stops until it regains it. Adding a second `Store` means rewriting its SQL, which is
+connection loses the lease, so the writer stops until it regains it (spec 089). The server notices when a write or a job
+claim finds the writer's connection gone, logs that once, and takes the lease again through `open_vault` on the next call
+that needs it, which refuses while another process holds the lock and then cleans up as at startup. Tries wait 250 ms,
+doubling to at most 5 s, and writes in between answer 503 at once. The first write after Postgres comes back can fail
+too, as only a failed call shows a dead connection. A job whose renewals failed meanwhile keeps spec 082's rules. Adding a second `Store` means rewriting its SQL, which is
 real work but stays out of core.
 
 ## Data model

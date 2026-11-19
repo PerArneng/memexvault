@@ -6,7 +6,7 @@ use memex_types::{JobRow, Mutation, VaultId};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -15,6 +15,39 @@ use std::time::Duration;
 const KEEPER_POLL: Duration = Duration::from_millis(250);
 /// How long a worker waits to try again after the store failed a renewal.
 const RENEW_RETRY_MS: i64 = 2_000;
+
+/// The least time between two lines of the same warning from the poll loop, across all worker threads.
+const QUIET_MS: i64 = 10_000;
+
+/// Lets one warning through at most once per `QUIET_MS`, process wide, and counts the ones it held back. Every worker thread polls every vault ten times a second, so a database that's away would otherwise fill the log.
+struct Quiet {
+    last_ms: AtomicI64,
+    held: AtomicU64,
+}
+
+impl Quiet {
+    const fn new() -> Self {
+        Self {
+            last_ms: AtomicI64::new(i64::MIN),
+            held: AtomicU64::new(0),
+        }
+    }
+
+    /// Some(how many were held back since the last line) when this one may be logged.
+    fn allow(&self, now_ms: i64) -> Option<u64> {
+        let last = self.last_ms.load(Ordering::Relaxed);
+        if now_ms.saturating_sub(last) >= QUIET_MS && self.last_ms.compare_exchange(last, now_ms, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+            return Some(self.held.swap(0, Ordering::Relaxed));
+        }
+        self.held.fetch_add(1, Ordering::Relaxed);
+        None
+    }
+}
+
+static LIST_QUIET: Quiet = Quiet::new();
+static CLAIM_QUIET: Quiet = Quiet::new();
+static AUDIT_QUIET: Quiet = Quiet::new();
+static STEP_QUIET: Quiet = Quiet::new();
 
 /// Why a job failed. `retryable: false` means trying again can't help.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,6 +158,8 @@ where
     let ceiling_at = claimed_at.saturating_add(i64::try_from(ceiling.as_millis()).unwrap_or(i64::MAX));
     let mut next_at = claimed_at + memex_core::jobs::RENEW_EVERY_MS;
     let mut renewing = true;
+    // One line when renewals start failing and one when they work again, however long the store is away.
+    let mut failing = false;
     loop {
         match result.recv_timeout(KEEPER_POLL) {
             Ok(outcome) => return Held::Finished(outcome),
@@ -155,14 +190,23 @@ where
             continue;
         }
         match server.hold_job(vault, job, false, vec![]) {
-            Ok(true) => next_at = now + memex_core::jobs::RENEW_EVERY_MS,
+            Ok(true) => {
+                if failing {
+                    tracing::info!(job = %job.header.id, "renewed the job's lease again");
+                    failing = false;
+                }
+                next_at = now + memex_core::jobs::RENEW_EVERY_MS;
+            }
             Ok(false) | Err(memex_core::ServerError::NotFound) => {
                 tracing::info!(job = %job.header.id, "the job was cancelled or taken, so its handler stops");
                 hold.lost.store(true, Ordering::Relaxed);
                 renewing = false;
             }
             Err(e) => {
-                tracing::warn!(job = %job.header.id, error = %e, "can't renew a job's lease, and will try again");
+                if !failing {
+                    tracing::warn!(job = %job.header.id, error = %e, "can't renew a job's lease, and will keep trying");
+                    failing = true;
+                }
                 next_at = now + RENEW_RETRY_MS;
             }
         }
@@ -193,10 +237,14 @@ where
     Server<E>: Send + Sync,
     H: JobHandler + ?Sized + 'static,
 {
+    use memex_core::Clock as _;
+    let now_ms = || server.engine().clock().now_ms();
     let vaults = match server.vault_ids() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!(error = %e, "can't list vaults");
+            if let Some(held) = LIST_QUIET.allow(now_ms()) {
+                tracing::warn!(error = %e, held_back = held, "can't list vaults");
+            }
             return false;
         }
     };
@@ -204,8 +252,12 @@ where
         let job = match server.claim_job(&vault, kind, owner) {
             Ok(Some(j)) => j,
             Ok(None) => continue,
+            // The server says once that the vault's lease was lost and once that it's back.
+            Err(_) if server.lease_lost(&vault) => continue,
             Err(e) => {
-                tracing::warn!(error = %e, "can't claim a job");
+                if let Some(held) = CLAIM_QUIET.allow(now_ms()) {
+                    tracing::warn!(vault = %vault, error = %e, held_back = held, "can't claim a job");
+                }
                 continue;
             }
         };
@@ -357,7 +409,10 @@ where
     std::thread::spawn(move || {
         while !stop.load(Ordering::Relaxed) {
             if let Err(e) = server.audit_tick_all() {
-                tracing::warn!(error = %e, "can't check the audit schedules");
+                use memex_core::Clock as _;
+                if let Some(held) = AUDIT_QUIET.allow(server.engine().clock().now_ms()) {
+                    tracing::warn!(error = %e, held_back = held, "can't check the audit schedules");
+                }
             }
             std::thread::sleep(Duration::from_secs(1));
         }
@@ -394,10 +449,14 @@ where
 
 /// Steps each vault once, and says how long to wait before the next round.
 fn step_all<E: ServerEdges>(server: &Server<E>, step: impl Fn(&Server<E>, &VaultId) -> Result<StepOutcome, memex_core::ProjectError>, what: &str) -> Duration {
+    use memex_core::Clock as _;
+    let now_ms = || server.engine().clock().now_ms();
     let vaults = match server.vault_ids() {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!(error = %e, "can't list vaults");
+            if let Some(held) = LIST_QUIET.allow(now_ms()) {
+                tracing::warn!(error = %e, held_back = held, "can't list vaults");
+            }
             return Duration::from_secs(1);
         }
     };
@@ -407,7 +466,9 @@ fn step_all<E: ServerEdges>(server: &Server<E>, step: impl Fn(&Server<E>, &Vault
             Ok(StepOutcome::Progress) => busy = true,
             Ok(StepOutcome::Idle) => {}
             Err(e) => {
-                tracing::warn!(vault = %vault, error = %e, "{what} step failed, and will be retried");
+                if let Some(held) = STEP_QUIET.allow(now_ms()) {
+                    tracing::warn!(vault = %vault, error = %e, held_back = held, "{what} step failed, and will be retried");
+                }
                 failed = true;
             }
         }
@@ -424,6 +485,19 @@ fn step_all<E: ServerEdges>(server: &Server<E>, step: impl Fn(&Server<E>, &Vault
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quiet_lets_one_line_through_per_interval_and_counts_the_rest() {
+        let q = Quiet::new();
+        assert_eq!(q.allow(1_000), Some(0));
+        let held = (1..100).filter(|i| q.allow(1_000 + i * 100).is_some()).count();
+        assert_eq!(held, 0, "within 10 s of the first");
+        assert_eq!(q.allow(1_000 + QUIET_MS), Some(99));
+        // A minute of a thread failing ten times a second: 6 lines.
+        let q = Quiet::new();
+        let lines = (0..600).filter(|i| q.allow(i * 100).is_some()).count();
+        assert_eq!(lines, 6);
+    }
     use memex_core::testing::{ManualClock, MemBlobStore, MemRegistry, MemStore, SeededRandom};
     use memex_core::{Snapshot, Store, UploadLimits, UploadRequest};
     use memex_types::{Header, JobState, ObjectId, PageRow, Row, Status};

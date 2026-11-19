@@ -31,6 +31,11 @@ fn store() -> PostgresStore {
     PostgresStore(Arc::new(pg))
 }
 
+/// The container tool, `docker` unless `MEMEX_TEST_CONTAINER_ENGINE` names another, such as `podman`.
+fn container_cli() -> String {
+    std::env::var("MEMEX_TEST_CONTAINER_ENGINE").unwrap_or_else(|_| "docker".into())
+}
+
 fn sql() -> Client {
     Client::connect(&url(), NoTls).expect("connect")
 }
@@ -382,10 +387,13 @@ fn kill_harness(cycles: u32, kill_postgres: Option<String>) {
         std::thread::sleep(Duration::from_millis(rng % 200));
         let t = Instant::now();
         if let Some(container) = &kill_postgres {
-            Command::new("docker").args(["kill", "-s", "KILL", container]).output().expect("docker kill");
+            Command::new(container_cli())
+                .args(["kill", "-s", "KILL", container])
+                .output()
+                .expect("docker kill");
             let _ = child.kill();
             let _ = child.wait();
-            Command::new("docker").args(["start", container]).output().expect("docker start");
+            Command::new(container_cli()).args(["start", container]).output().expect("docker start");
         } else {
             child.kill().expect("kill");
             child.wait().expect("wait");
@@ -1005,4 +1013,123 @@ fn pg_full_disk_returns_an_error_and_data_stays_readable() {
         .expect("get")
         .is_some()
     );
+}
+
+/// Spec 089, item 1's limit, set before measuring: from the restart command returning to the first acknowledged write. Postgres takes a moment to accept connections, and the server's longest wait between tries is 5 s.
+const REGAINED_WITHIN: Duration = Duration::from_secs(15);
+
+/// Spec 089, items 3 and 5: Postgres restarts under two running servers on one database. Within the limit, one of them writes to the vault again with no restart of its own, the other keeps refusing writes to it, and every write acknowledged before or after is still there.
+#[test]
+#[ignore = "restarts the Postgres container; about a minute; needs MEMEX_TEST_CONTAINER"]
+fn pg_restart_postgres_under_running_servers() {
+    let container = std::env::var("MEMEX_TEST_CONTAINER").expect("not run: MEMEX_TEST_CONTAINER isn't set");
+    let data = std::env::temp_dir().join(format!("memex-restart-{}", std::process::id()));
+    let (data_a, data_b) = (data.join("a").to_string_lossy().to_string(), data.join("b").to_string_lossy().to_string());
+    let mut admin = sql();
+    store();
+    admin
+        .batch_execute("DELETE FROM memex_server.tokens; DELETE FROM memex_server.principals; DELETE FROM memex_server.vault_meta;")
+        .expect("clean");
+    drop(admin);
+    let a = job_server(&data_a, 0);
+    let token = a.bootstrap("harness").expect("bootstrap").token;
+    let caller_a = a.authenticate(&token).expect("auth");
+    let v = a.create_vault(&caller_a, &format!("restart-{}", std::process::id())).expect("vault").id;
+    // B starts after A holds the vault, as a second server on the same database would.
+    let b = job_server(&data_b, 0);
+    let caller_b = b.authenticate(&token).expect("auth");
+    let limits = memex_core::UploadLimits {
+        max_bytes: 1 << 20,
+        max_open_jobs: 100_000,
+    };
+    let upload = |s: &memex_core::Server<JobEdges>, c: &memex_core::Caller, n: u32| {
+        let req = memex_core::UploadRequest {
+            name: format!("d{n}.txt"),
+            trust_tier: "unverified".into(),
+            metadata: json!({}),
+            replaces: None,
+        };
+        let bytes = format!("restart document {n}");
+        s.upload(c, &v, req, limits, &mut bytes.as_bytes()).map(|o| o.source.header.id)
+    };
+    let mut acked = std::collections::BTreeSet::new();
+    for n in 0..20 {
+        acked.insert(upload(&a, &caller_a, n).expect("upload before the restart"));
+    }
+    assert!(
+        matches!(upload(&b, &caller_b, 1_000_000), Err(memex_core::ServerError::Unavailable(_))),
+        "B wrote while A held the vault"
+    );
+    let load = std::fs::read_to_string("/proc/loadavg").unwrap_or_default();
+    let out = Command::new(container_cli()).args(["restart", &container]).output().expect("restart");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let restarted = Instant::now();
+    // Both servers write every 100 ms, as clients retrying would, until well after one of them is back.
+    let (mut n, mut first) = (100u32, None::<(char, Duration)>);
+    let (mut a_ok, mut b_ok, mut a_refused, mut b_refused) = (0, 0, 0, 0);
+    let (mut a_error, mut b_error) = (String::new(), String::new());
+    loop {
+        let now = restarted.elapsed();
+        for (name, s, c) in [('a', &a, &caller_a), ('b', &b, &caller_b)] {
+            n += 1;
+            match upload(s, c, n) {
+                Ok(id) => {
+                    acked.insert(id);
+                    first.get_or_insert((name, now));
+                    if name == 'a' { a_ok += 1 } else { b_ok += 1 }
+                }
+                Err(e) if name == 'a' => {
+                    a_refused += 1;
+                    a_error = e.to_string();
+                }
+                Err(e) => {
+                    b_refused += 1;
+                    b_error = e.to_string();
+                }
+            }
+        }
+        if first.is_some_and(|(_, at)| now > at + Duration::from_secs(20)) {
+            break;
+        }
+        assert!(
+            first.is_some() || now < REGAINED_WITHIN,
+            "no server wrote to the vault within {REGAINED_WITHIN:?} of the restart: a was refused {a_refused} times, last with {a_error:?}, and b {b_refused} times, last with {b_error:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let (winner, at) = first.expect("one wrote");
+    assert!(at <= REGAINED_WITHIN);
+    // Only one server ever wrote after the restart, and the other is still waiting for the lease.
+    assert!(a_ok == 0 || b_ok == 0, "both servers wrote after the restart: a {a_ok}, b {b_ok}");
+    let (holder, holder_caller) = if winner == 'a' { (&a, &caller_a) } else { (&b, &caller_b) };
+    if winner == 'b' {
+        assert!(a.lease_lost(&v), "A lost its lease to B and doesn't know it");
+    }
+    // The advisory lock has exactly one holder.
+    let mut admin = sql();
+    let holders: i64 = admin
+        .query_one(
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
+            &[],
+        )
+        .expect("locks")
+        .get(0);
+    let mut seen = std::collections::BTreeSet::new();
+    let mut after = None;
+    loop {
+        let page = holder.list_sources(holder_caller, &v, after.as_ref(), 200).expect("list");
+        let Some(last) = page.last() else { break };
+        after = Some(last.header.id.clone());
+        seen.extend(page.into_iter().map(|s| s.header.id));
+    }
+    assert_eq!(holders, 1, "advisory locks held on this database");
+    let missing: Vec<_> = acked.difference(&seen).collect();
+    assert!(missing.is_empty(), "lost {} acknowledged writes: {missing:?}", missing.len());
+    println!(
+        "postgres restart under two servers: load {}, {winner} wrote again {} ms after the restart returned, a wrote {a_ok} and was refused {a_refused} times, b wrote {b_ok} and was refused {b_refused} times, {holders} advisory locks held, {} acknowledged writes all there",
+        load.trim(),
+        at.as_millis(),
+        acked.len()
+    );
+    let _ = std::fs::remove_dir_all(&data);
 }

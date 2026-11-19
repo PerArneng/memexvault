@@ -269,6 +269,10 @@ impl Store for PostgresStore {
         self.0.close_vault(&lease_of(lease)).map_err(|e| translate(&lease.vault, e))
     }
 
+    fn lease_held(&self, lease: &WriterLease) -> bool {
+        self.0.lease_held(&lease_of(lease))
+    }
+
     fn snapshot(&self, vault: &VaultId) -> Result<PostgresSnapshot<'_>, StoreError> {
         Ok(PostgresSnapshot {
             inner: self.0.snapshot(vault).map_err(|e| translate(vault, e))?,
