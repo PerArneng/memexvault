@@ -31,6 +31,7 @@ fn limits(max_open: usize, wait_ms: u64) -> PoolLimits {
         max_open,
         idle: max_open,
         wait: Duration::from_millis(wait_ms),
+        writers: memex_store_postgres::DEFAULT_WRITERS,
     }
 }
 
@@ -355,6 +356,7 @@ fn pg_pool_latency_with_and_without_the_limit() {
                     max_open,
                     idle: 16,
                     wait: Duration::from_secs(30),
+                    writers: memex_store_postgres::DEFAULT_WRITERS,
                 },
             )
             .expect("connect"),

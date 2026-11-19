@@ -61,8 +61,10 @@ impl Default for CacheSettings {
 #[derive(Clone, PartialEq, Eq)]
 pub struct Settings {
     pub database_url: Option<String>,
-    /// How many pooled Postgres connections one server may open. Writers' lock connections, one per vault being written, come on top.
+    /// How many pooled Postgres connections one server may open. Writers' lock connections come on top, up to `pg_writer_connections`.
     pub pg_max_connections: usize,
+    /// How many connections one server's vault writers share, each holding the advisory locks of several vaults (spec 093).
+    pub pg_writer_connections: usize,
     /// How long a caller waits for a pooled connection past that limit, before it gets an error.
     pub pg_wait_ms: u64,
     pub data_dir: PathBuf,
@@ -269,6 +271,7 @@ impl Default for Settings {
         Self {
             database_url: None,
             pg_max_connections: 32,
+            pg_writer_connections: 8,
             pg_wait_ms: 5000,
             data_dir: PathBuf::from("./memex-data"),
             models_dir: PathBuf::from("./memex-models"),
@@ -304,6 +307,7 @@ impl fmt::Debug for Settings {
         f.debug_struct("Settings")
             .field("database_url", &self.database_url.as_ref().map(|_| "<redacted>"))
             .field("pg_max_connections", &self.pg_max_connections)
+            .field("pg_writer_connections", &self.pg_writer_connections)
             .field("pg_wait_ms", &self.pg_wait_ms)
             .field("data_dir", &self.data_dir)
             .field("models_dir", &self.models_dir)
@@ -515,6 +519,7 @@ impl Settings {
             s.auto_commit_threshold_permille = permille.ok_or(SettingsError::InvalidThreshold { value: v })?;
         }
         s.pg_max_connections = count("MEMEX_PG_MAX_CONNECTIONS", text("MEMEX_PG_MAX_CONNECTIONS")?, s.pg_max_connections)?;
+        s.pg_writer_connections = count("MEMEX_PG_WRITER_CONNECTIONS", text("MEMEX_PG_WRITER_CONNECTIONS")?, s.pg_writer_connections)?;
         s.pg_wait_ms = count("MEMEX_PG_WAIT_MS", text("MEMEX_PG_WAIT_MS")?, s.pg_wait_ms as usize)? as u64;
         s.embed_threads = count("MEMEX_EMBED_THREADS", text("MEMEX_EMBED_THREADS")?, s.embed_threads)?;
         s.embed_query_sessions = count("MEMEX_EMBED_QUERY_SESSIONS", text("MEMEX_EMBED_QUERY_SESSIONS")?, s.embed_query_sessions)?;
@@ -688,10 +693,15 @@ mod tests {
     #[test]
     fn postgres_pool_limits_parse_and_refuse_nonsense() {
         let s = from(&[]).unwrap();
-        assert_eq!((s.pg_max_connections, s.pg_wait_ms), (32, 5000));
-        let s = from(&[("MEMEX_PG_MAX_CONNECTIONS", "8"), ("MEMEX_PG_WAIT_MS", "250")]).unwrap();
-        assert_eq!((s.pg_max_connections, s.pg_wait_ms), (8, 250));
-        for var in ["MEMEX_PG_MAX_CONNECTIONS", "MEMEX_PG_WAIT_MS"] {
+        assert_eq!((s.pg_max_connections, s.pg_writer_connections, s.pg_wait_ms), (32, 8, 5000));
+        let s = from(&[
+            ("MEMEX_PG_MAX_CONNECTIONS", "8"),
+            ("MEMEX_PG_WRITER_CONNECTIONS", "2"),
+            ("MEMEX_PG_WAIT_MS", "250"),
+        ])
+        .unwrap();
+        assert_eq!((s.pg_max_connections, s.pg_writer_connections, s.pg_wait_ms), (8, 2, 250));
+        for var in ["MEMEX_PG_MAX_CONNECTIONS", "MEMEX_PG_WRITER_CONNECTIONS", "MEMEX_PG_WAIT_MS"] {
             for bad in ["0", "lots", "-3"] {
                 assert!(matches!(from(&[(var, bad)]), Err(SettingsError::InvalidNumber { .. })), "{var}={bad}");
             }

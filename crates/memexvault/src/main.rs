@@ -47,6 +47,7 @@ fn build(settings: &Settings) -> Result<(Arc<PgStore>, Server<Production>), Stri
         max_open: settings.pg_max_connections,
         idle: settings.pg_max_connections.min(16),
         wait: Duration::from_millis(settings.pg_wait_ms),
+        writers: settings.pg_writer_connections,
     };
     let pg = Arc::new(PgStore::connect_with(url, limits).map_err(|e| e.to_string())?);
     let server = Server::new(

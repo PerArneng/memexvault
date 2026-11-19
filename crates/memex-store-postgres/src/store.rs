@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant};
 
@@ -107,10 +107,12 @@ impl Conn {
     }
 }
 
+/// A vault's writer: its lease's token, its schema, and the shared connection holding its advisory lock.
+#[derive(Clone)]
 struct Writer {
     token: u64,
     schema: String,
-    conn: Conn,
+    shared: Arc<SharedWriter>,
 }
 
 /// Proof of holding a vault's advisory lock, on the writer's own connection.
@@ -120,19 +122,22 @@ pub struct PgLease {
     pub token: u64,
 }
 
-/// How many connections a store's pool may open, how many it keeps idle, and how long a caller waits for one past the limit.
+/// How many connections a store's pool may open, how many it keeps idle, how many writer connections it may open, and how long a caller waits for either past its limit.
 ///
-/// Writers' lock connections are outside this count, one per vault this server writes to, so a burst of readers can't stop a writer opening its vault or committing.
+/// Writers' lock connections are outside the pool's count, so a burst of readers can't stop a writer opening its vault or committing. They have a limit of their own, `writers`, shared by every vault this store writes to (spec 093), so a store holds at most `max_open + writers` connections however many vaults it has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PoolLimits {
     pub max_open: usize,
     pub idle: usize,
     pub wait: Duration,
+    pub writers: usize,
 }
 
 /// Chosen from spec 085's measurements: see its Result.
 pub const DEFAULT_MAX_OPEN: usize = 32;
 pub const DEFAULT_WAIT: Duration = Duration::from_secs(5);
+/// Chosen from spec 093's measurements: see its Result.
+pub const DEFAULT_WRITERS: usize = 8;
 
 impl PoolLimits {
     /// The defaults, keeping at most `idle` idle connections.
@@ -141,6 +146,121 @@ impl PoolLimits {
             max_open: DEFAULT_MAX_OPEN.max(idle).max(1),
             idle,
             wait: DEFAULT_WAIT,
+            writers: DEFAULT_WRITERS,
+        }
+    }
+}
+
+/// A writer connection, shared by the vaults whose advisory locks it holds. One vault's work uses it at a time, and the others wait their turn, in the order they came, up to the store's wait.
+struct SharedWriter {
+    state: Mutex<SharedState>,
+    freed: Condvar,
+    /// Set once a call on the connection has found it closed, so a lease can be checked without waiting for the connection.
+    closed: AtomicBool,
+    /// How many vaults hold their lock on this connection.
+    vaults: AtomicUsize,
+}
+
+struct SharedState {
+    /// None while a caller has it.
+    conn: Option<Conn>,
+    queue: VecDeque<u64>,
+    next_ticket: u64,
+}
+
+/// A shared writer connection taken by one caller, given back when dropped.
+struct Borrowed<'a> {
+    shared: &'a SharedWriter,
+    conn: Option<Conn>,
+}
+
+impl std::ops::Deref for Borrowed<'_> {
+    type Target = Conn;
+    fn deref(&self) -> &Conn {
+        self.conn.as_ref().expect("borrowed")
+    }
+}
+
+impl std::ops::DerefMut for Borrowed<'_> {
+    fn deref_mut(&mut self) -> &mut Conn {
+        self.conn.as_mut().expect("borrowed")
+    }
+}
+
+impl Drop for Borrowed<'_> {
+    fn drop(&mut self) {
+        let Some(conn) = self.conn.take() else { return };
+        if conn.client.is_closed() {
+            self.shared.closed.store(true, Ordering::Relaxed);
+        }
+        self.shared.state.lock().expect("lock").conn = Some(conn);
+        self.shared.freed.notify_all();
+    }
+}
+
+impl SharedWriter {
+    fn new(client: Client) -> Self {
+        Self {
+            state: Mutex::new(SharedState {
+                conn: Some(Conn::new(client)),
+                queue: VecDeque::new(),
+                next_ticket: 0,
+            }),
+            freed: Condvar::new(),
+            closed: AtomicBool::new(false),
+            vaults: AtomicUsize::new(0),
+        }
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Relaxed)
+    }
+
+    /// The connection once it's free and every earlier waiter has had it, or an error saying it's busy after `wait`.
+    // Edge: the wait is measured on the real clock, as it's a time a person waits.
+    #[allow(clippy::disallowed_methods)]
+    fn borrow(&self, wait: Duration) -> Result<Borrowed<'_>, PgError> {
+        let deadline = Instant::now() + wait;
+        let mut st = self.state.lock().expect("lock");
+        let mut ticket = None;
+        loop {
+            let my_turn = match st.queue.front() {
+                None => true,
+                Some(front) => ticket == Some(*front),
+            };
+            if my_turn && let Some(conn) = st.conn.take() {
+                if let Some(t) = ticket {
+                    st.queue.retain(|q| *q != t);
+                }
+                let others = !st.queue.is_empty();
+                drop(st);
+                if others {
+                    self.freed.notify_all();
+                }
+                return Ok(Borrowed {
+                    shared: self,
+                    conn: Some(conn),
+                });
+            }
+            if ticket.is_none() {
+                let t = st.next_ticket;
+                st.next_ticket += 1;
+                st.queue.push_back(t);
+                ticket = Some(t);
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                if let Some(t) = ticket {
+                    st.queue.retain(|q| *q != t);
+                }
+                drop(st);
+                self.freed.notify_all();
+                return Err(PgError::Backend(format!(
+                    "the vault's writer connection is busy with other vaults' writes, and didn't come free within {} ms",
+                    wait.as_millis()
+                )));
+            }
+            st = self.freed.wait_timeout(st, deadline - now).expect("lock").0;
         }
     }
 }
@@ -186,7 +306,9 @@ pub struct PgStore {
     target: Target,
     slots: Arc<Slots>,
     limits: PoolLimits,
-    writers: Mutex<HashMap<VaultId, Arc<Mutex<Writer>>>>,
+    writers: Mutex<HashMap<VaultId, Writer>>,
+    /// The open writer connections, at most `limits.writers`.
+    shared: Mutex<Vec<Arc<SharedWriter>>>,
     schemas: Mutex<HashMap<VaultId, String>>,
     next_token: AtomicU64,
 }
@@ -223,6 +345,9 @@ impl PgStore {
         if limits.max_open == 0 {
             return Err(PgError::Refused("the connection limit must be at least 1".into()));
         }
+        if limits.writers == 0 {
+            return Err(PgError::Refused("the writer connection limit must be at least 1".into()));
+        }
         let store = Self {
             target: Target::parse(url)?,
             slots: Arc::new(Slots {
@@ -236,6 +361,7 @@ impl PgStore {
             }),
             limits,
             writers: Mutex::new(HashMap::new()),
+            shared: Mutex::new(vec![]),
             schemas: Mutex::new(HashMap::new()),
             next_token: AtomicU64::new(1),
         };
@@ -427,43 +553,98 @@ impl PgStore {
         Ok(schema)
     }
 
-    /// Takes the session advisory lock on a dedicated connection, creating the vault if it's new. Losing that connection loses the lease.
+    /// Takes the session advisory lock on one of the store's writer connections, creating the vault if it's new. A connection holds the locks of several vaults when there are more vaults than `limits.writers`, and losing it loses all of their leases. Refused while another writer holds the vault, this store included.
     pub fn open_vault(&self, vault: &VaultId) -> Result<PgLease, PgError> {
-        let mut client = self.new_client()?;
-        let got: bool = client
-            .query_one("SELECT pg_try_advisory_lock($1)", &[&lock_key(vault)])
-            .map_err(backend)?
-            .get(0);
+        {
+            let mut writers = self.writers.lock().expect("lock");
+            match writers.get(vault) {
+                Some(w) if !w.shared.is_closed() => return Err(PgError::WriterActive),
+                Some(_) => {
+                    writers.remove(vault);
+                }
+                None => {}
+            }
+        }
+        let shared = self.writer_connection()?;
+        match self.lock_on(&shared, vault) {
+            Ok(schema) => {
+                let token = self.next_token.fetch_add(1, Ordering::Relaxed);
+                self.writers.lock().expect("lock").insert(vault.clone(), Writer { token, schema, shared });
+                Ok(PgLease { vault: vault.clone(), token })
+            }
+            Err(e) => {
+                self.unreserve(&shared);
+                Err(e)
+            }
+        }
+    }
+
+    /// Takes the vault's lock on the shared connection, and creates or migrates its schema. Returns the schema.
+    fn lock_on(&self, shared: &SharedWriter, vault: &VaultId) -> Result<String, PgError> {
+        let mut conn = shared.borrow(self.limits.wait)?;
+        let key = lock_key(vault);
+        let got: bool = conn.client.query_one("SELECT pg_try_advisory_lock($1)", &[&key]).map_err(backend)?.get(0);
         if !got {
             return Err(PgError::WriterActive);
         }
         let schema = schema_of_vault(vault);
-        client
+        let created = conn
+            .client
             .execute(
                 "INSERT INTO memex_server.vaults (vault_id, schema_name) VALUES ($1, $2) ON CONFLICT (vault_id) DO NOTHING",
                 &[&vault.0, &schema],
             )
-            .map_err(backend)?;
-        migrate_vault(&mut client, schema.clone())?;
-        let token = self.next_token.fetch_add(1, Ordering::Relaxed);
-        self.writers.lock().expect("lock").insert(
-            vault.clone(),
-            Arc::new(Mutex::new(Writer {
-                token,
-                schema,
-                conn: Conn::new(client),
-            })),
-        );
-        Ok(PgLease { vault: vault.clone(), token })
+            .map_err(backend)
+            .and_then(|_| migrate_vault(&mut conn.client, schema.clone()));
+        if let Err(e) = created {
+            // The connection lives on for other vaults, so the lock has to be let go by hand.
+            let _ = conn.client.execute("SELECT pg_advisory_unlock($1)", &[&key]);
+            return Err(e);
+        }
+        Ok(schema)
     }
 
-    fn writer(&self, lease: &PgLease) -> Result<Arc<Mutex<Writer>>, PgError> {
+    /// A writer connection for a vault to take its lock on, with the vault counted on it: a new one while fewer than the limit are open, else the one holding the fewest vaults. Closed ones are let go first. Counting under the list's lock means a connection can't be let go between being chosen and being counted.
+    fn writer_connection(&self) -> Result<Arc<SharedWriter>, PgError> {
+        let mut shared = self.shared.lock().expect("lock");
+        shared.retain(|w| !w.is_closed());
+        let w = if shared.len() < self.limits.writers {
+            let w = Arc::new(SharedWriter::new(self.new_client()?));
+            shared.push(w.clone());
+            w
+        } else {
+            shared
+                .iter()
+                .min_by_key(|w| w.vaults.load(Ordering::Relaxed))
+                .cloned()
+                .expect("at least one writer")
+        };
+        w.vaults.fetch_add(1, Ordering::Relaxed);
+        Ok(w)
+    }
+
+    /// One vault fewer on the connection, which is let go when none is left.
+    fn unreserve(&self, w: &Arc<SharedWriter>) {
+        let mut shared = self.shared.lock().expect("lock");
+        if w.vaults.fetch_sub(1, Ordering::Relaxed) == 1 {
+            shared.retain(|s| !Arc::ptr_eq(s, w));
+        }
+    }
+
+    /// How many writer connections are open, and how many vaults hold a lease on them.
+    pub fn writer_stats(&self) -> (usize, usize) {
+        let mut shared = self.shared.lock().expect("lock");
+        shared.retain(|w| !w.is_closed());
+        (
+            shared.len(),
+            self.writers.lock().expect("lock").values().filter(|w| !w.shared.is_closed()).count(),
+        )
+    }
+
+    fn writer(&self, lease: &PgLease) -> Result<Writer, PgError> {
         let writer = self.writers.lock().expect("lock").get(&lease.vault).cloned().ok_or(PgError::LeaseLost)?;
-        {
-            let w = writer.lock().expect("lock");
-            if w.token != lease.token || w.conn.client.is_closed() {
-                return Err(PgError::LeaseLost);
-            }
+        if writer.token != lease.token || writer.shared.is_closed() {
+            return Err(PgError::LeaseLost);
         }
         Ok(writer)
     }
@@ -473,10 +654,25 @@ impl PgStore {
         self.writer(lease).is_ok()
     }
 
-    /// Ends the writer connection, which releases the advisory lock.
+    /// Lets go of the vault's advisory lock, and of its writer connection when no other vault holds a lock on it.
     pub fn close_vault(&self, lease: &PgLease) -> Result<(), PgError> {
-        self.writer(lease)?;
+        let writer = self.writer(lease)?;
+        self.release(lease, &writer)
+    }
+
+    /// Unlocks the vault, waiting for the shared connection as a write would, and then forgets its writer. Fails with the busy error and keeps the lease if the connection doesn't come free. A connection that has died took the lock with it, so a failed unlock on it still counts as let go.
+    fn release(&self, lease: &PgLease, writer: &Writer) -> Result<(), PgError> {
+        {
+            let mut conn = writer.shared.borrow(self.limits.wait)?;
+            let unlocked = conn.client.execute("SELECT pg_advisory_unlock($1)", &[&lock_key(&lease.vault)]);
+            if let Err(e) = unlocked
+                && !conn.client.is_closed()
+            {
+                return Err(backend(e));
+            }
+        }
         self.writers.lock().expect("lock").remove(&lease.vault);
+        self.unreserve(&writer.shared);
         Ok(())
     }
 
@@ -511,11 +707,14 @@ impl PgStore {
     /// Takes the vault's writer lease as its proof, like a commit.
     pub fn bump_cache_generation(&self, lease: &PgLease) -> Result<u64, PgError> {
         let writer = self.writer(lease)?;
-        let mut guard = writer.lock().expect("lock");
-        let Writer { schema, conn, .. } = &mut *guard;
+        let mut conn = writer.shared.borrow(self.limits.wait)?;
+        let schema = &writer.schema;
         let sql = format!("UPDATE {schema}.cache_generation SET generation = generation + 1 RETURNING generation");
-        let generation: i64 = conn.client.query_one(&sql, &[]).map_err(backend)?.get(0);
-        Ok(generation as u64)
+        let generation = conn.client.query_one(&sql, &[]).map_err(backend);
+        if conn.client.is_closed() {
+            return Err(PgError::LeaseLost);
+        }
+        Ok(generation?.get::<_, i64>(0) as u64)
     }
 
     /// One SQL transaction for the whole batch. `batch` holds each event with its mutations. Durable when it returns.
@@ -527,9 +726,8 @@ impl PgStore {
     pub fn commit_rewriting(&self, lease: &PgLease, rewrites: &[(u64, serde_json::Value)], batch: &[(&Event, &[Mutation])]) -> Result<u64, PgError> {
         let last = batch.last().ok_or(PgError::EmptyBatch)?.0.seq;
         let writer = self.writer(lease)?;
-        let mut guard = writer.lock().expect("lock");
-        let Writer { schema, conn, .. } = &mut *guard;
-        let result = commit_in_transaction(conn, schema, rewrites, batch);
+        let mut conn = writer.shared.borrow(self.limits.wait)?;
+        let result = commit_in_transaction(&mut conn, &writer.schema, rewrites, batch);
         if conn.client.is_closed() {
             return Err(PgError::LeaseLost);
         }
@@ -538,13 +736,12 @@ impl PgStore {
 
     /// Drops the vault's schema and ends its lease.
     pub fn delete_vault(&self, lease: &PgLease) -> Result<(), PgError> {
-        self.writer(lease)?;
+        let writer = self.writer(lease)?;
         self.drop_vault(&lease.vault)?;
-        self.writers.lock().expect("lock").remove(&lease.vault);
-        Ok(())
+        self.release(lease, &writer)
     }
 
-    /// Physically reclaims deleted rows, for erasure. Plain `VACUUM` frees a dead row's space but leaves its bytes in the page until something overwrites them, and a rewritten event leaves its old payload the same way, so every table of the vault is rewritten: its rows, its TOAST data and its indexes, the vector generations and stored embeddings included. Each table takes an exclusive lock while it's rewritten, which `compact_report` measures. Postgres's WAL and backups keep what they kept.
+    /// Physically reclaims deleted rows, for erasure. Plain `VACUUM` frees a dead row's space but leaves its bytes in the page until something overwrites them, and a rewritten event leaves its old payload the same way, so every table of the vault is rewritten: its rows, its TOAST data and its indexes, the vector generations and stored embeddings included. Each table takes an exclusive lock while it's rewritten, which `compact_report` measures. Takes the lease as proof, and runs on a pooled connection, as it changes no row and can take a while, which would hold up every vault sharing the writer connection. Postgres's WAL and backups keep what they kept.
     pub fn compact(&self, lease: &PgLease) -> Result<(), PgError> {
         self.compact_report(lease).map(|_| ())
     }
@@ -553,8 +750,8 @@ impl PgStore {
     #[allow(clippy::disallowed_methods)]
     pub fn compact_report(&self, lease: &PgLease) -> Result<Vec<(String, std::time::Duration)>, PgError> {
         let writer = self.writer(lease)?;
-        let mut guard = writer.lock().expect("lock");
-        let Writer { schema, conn, .. } = &mut *guard;
+        let schema = &writer.schema;
+        let mut conn = self.take_conn()?;
         let client = &mut conn.client;
         let tables: Vec<String> = client
             .query("SELECT tablename FROM pg_tables WHERE schemaname = $1 ORDER BY tablename", &[&schema.as_str()])
@@ -570,6 +767,7 @@ impl PgStore {
             client.batch_execute(&format!("ANALYZE {schema}.\"{t}\"")).map_err(backend)?;
             out.push((t, started.elapsed()));
         }
+        self.give_conn(conn);
         Ok(out)
     }
 
