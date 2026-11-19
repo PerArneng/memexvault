@@ -1460,6 +1460,20 @@
           "enabled": {
             "type": "boolean"
           },
+          "endpoint": {
+            "description": "Where the model is served, as `scheme://host[:port]` with no path, query or credentials. Only an admin of this vault receives it, and anyone else gets null, as it says where vault content goes and can name an internal host. Null too with no chat model.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "description": "The model that answers, or null when this server has no chat model. Anyone who can read the vault sees it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "thread_token_budget": {
             "format": "int64",
             "minimum": 0,
@@ -9228,7 +9242,7 @@
             }
           }
         },
-        "summary": "Whether chat is on, what it may spend and what it has spent today.",
+        "summary": "Whether chat is on, what it may spend and what it has spent today, and the model that answers. Only an admin of the vault is told the model's endpoint, and anyone else gets it as null.",
         "tags": [
           "chat"
         ]

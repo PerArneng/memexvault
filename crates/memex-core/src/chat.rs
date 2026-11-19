@@ -370,6 +370,31 @@ impl Transcript {
     }
 }
 
+/// What answers a chat, and where, as the console's banner says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatModel {
+    pub model: String,
+    /// `scheme://host[:port]` and nothing more. See [`endpoint_origin`].
+    pub endpoint: String,
+}
+
+/// Gemini's address, which the provider fixes.
+pub const GEMINI_ENDPOINT: &str = "https://generativelanguage.googleapis.com";
+
+/// An address cut to `scheme://host[:port]`, so a key or a password in its user part, path or query can't be shown. None for anything that isn't an absolute address.
+pub fn endpoint_origin(url: &str) -> Option<String> {
+    let (scheme, rest) = url.trim().split_once("://")?;
+    if scheme.is_empty() || !scheme.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')) {
+        return None;
+    }
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    if host.is_empty() {
+        return None;
+    }
+    Some(format!("{}://{}", scheme.to_ascii_lowercase(), host.to_ascii_lowercase()))
+}
+
 /// The reply's sentences, judged. Item 1 of spec 049 rests on this.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CitationReport {
@@ -497,6 +522,20 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    #[test]
+    fn an_endpoint_keeps_only_its_scheme_host_and_port() {
+        assert_eq!(endpoint_origin("http://127.0.0.1:8000/v1").as_deref(), Some("http://127.0.0.1:8000"));
+        assert_eq!(
+            endpoint_origin("HTTPS://user:secret@LLM.example:443/v1?key=abc#x").as_deref(),
+            Some("https://llm.example:443")
+        );
+        assert_eq!(endpoint_origin("https://h?key=abc").as_deref(), Some("https://h"));
+        assert_eq!(endpoint_origin("https://a@b@h/p").as_deref(), Some("https://h"));
+        for bad in ["", "h/v1", "://h", "https://", "https://user@/v1", "ht tp://h"] {
+            assert_eq!(endpoint_origin(bad), None, "{bad}");
+        }
     }
 
     #[test]

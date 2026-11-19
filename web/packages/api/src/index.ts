@@ -54,3 +54,4 @@ export {
 export { activityFrameFromWire, activityPageFromWire, documentActivityFromWire, jobFromWire, jobPageFromWire, uploadLimitsFromWire, uploadResultFromWire } from "./translate-activity";
 export { evidencePackageFromWire, renditionReadingFromWire } from "./translate-search";
 export type { LineageStep, ObjectPages, WireHeaders } from "./translate";
+export { agentEventFromWire, chatMessageFromWire, chatSettingsFromWire, chatThreadDetailFromWire, chatThreadFromWire, chatThreadPageFromWire, toolAnswerFromWire } from "./translate-chat";

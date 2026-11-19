@@ -381,6 +381,8 @@ pub struct Server<E: ServerEdges> {
     activity_limits: Mutex<crate::activity::ActivityLimits>,
     /// None until the composition root has a chat model.
     chat_limits: Mutex<Option<ChatLimits>>,
+    /// What answers a chat and where, for the console's banner. None until the composition root has a chat model.
+    chat_model: Mutex<Option<crate::chat::ChatModel>>,
     /// The runs going now, and how to stop each. Lives in memory, as a run lives no longer than its process.
     chat_runs: chat::ActiveRuns,
 }
@@ -434,6 +436,7 @@ impl<E: ServerEdges> Server<E> {
             progress_board: crate::activity::ProgressBoard::default(),
             activity_limits: Mutex::new(crate::activity::ActivityLimits::default()),
             chat_limits: Mutex::new(None),
+            chat_model: Mutex::new(None),
             chat_runs: Arc::default(),
         }
     }

@@ -79,6 +79,7 @@ export * from "./review";
 export * from "./search";
 export * from "./wiki";
 export * from "./entities";
+export * from "./chat";
 
 /**
  * Marks a piece of rendered Markdown that isn't Markdown, such as a wiki link. `core` puts `OPEN<n>CLOSE` in the source and `ui` renders

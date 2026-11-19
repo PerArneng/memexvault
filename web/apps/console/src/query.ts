@@ -92,6 +92,11 @@ export const QUERY_KEYS = {
   contradictions: (vault: string) => ["review", vault, "contradictions"] as const,
   autoCommit: (vault: string) => ["review", vault, "auto-commit"] as const,
   search: (vault: string, request: unknown) => ["search", vault, request] as const,
+  /** Everything about one vault's chat. */
+  chat: (vault: string) => ["chat", vault] as const,
+  chatSettings: (vault: string) => ["chat", vault, "settings"] as const,
+  chatThreads: (vault: string) => ["chat", vault, "threads"] as const,
+  chatThread: (vault: string, id: string) => ["chat", vault, "thread", id] as const,
   reading: (vault: string, rendition: string) => ["documents", vault, "reading", rendition] as const,
   /** Who an actor is. Outside the wiki's and the jobs' keys, so their refreshes don't ask again. */
   actor: (vault: string, id: string) => ["actor", vault, id] as const,

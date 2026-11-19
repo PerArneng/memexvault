@@ -79,3 +79,7 @@ export { segmentRegion } from "./segment-region";
 export { actorText, jobActionText } from "./actors";
 export type { ActorText } from "./actors";
 export type { CancelSignal } from "./api";
+export { attachableFrom, citationIndex, EMPTY_TRANSCRIPT, MAX_MESSAGE_CHARS, messageWith, prepareReply, replyParts, stepSummary, transcriptOf, transcriptReducer, unresolvedCount } from "./chat";
+export type { AgentChannel, AgentRun, AgentRunRequest, ChatAttachment, CitationIndex, PreparedReply, ReplyEnd, ReplyPart, RunStatus, TranscriptAction, TranscriptEntry, TranscriptState } from "./chat";
+export { createChatSession } from "./chat-cases";
+export type { ChatApi, ChatCases, ChatSession } from "./chat-cases";

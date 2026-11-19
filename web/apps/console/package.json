@@ -15,7 +15,8 @@
     "e2e:review": "playwright test --config playwright.review.config.ts",
     "e2e:entities": "playwright test --config playwright.entities.config.ts",
     "e2e:ingest": "playwright test --config playwright.ingest.config.ts",
-    "e2e:search": "playwright test --config playwright.search.config.ts"
+    "e2e:search": "playwright test --config playwright.search.config.ts",
+    "e2e:chat": "playwright test --config playwright.chat.config.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.4",
@@ -26,6 +27,7 @@
     "@codemirror/view": "6.43.15",
     "@lezer/highlight": "1.2.5",
     "@memex/core": "workspace:*",
+    "@memex/edge-agui": "workspace:*",
     "@memex/edge-browser": "workspace:*",
     "@memex/edge-http": "workspace:*",
     "@memex/edge-sse": "workspace:*",
