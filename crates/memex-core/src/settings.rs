@@ -103,6 +103,84 @@ pub struct Settings {
     pub activity: crate::ActivityLimits,
     pub job_ceilings: JobCeilings,
     pub sweep: SweepSettings,
+    /// Prices for the usage report, from `MEMEX_LLM_PRICES`. A model not listed has no cost shown.
+    pub llm_prices: Vec<ModelPrice>,
+}
+
+/// What a model's tokens cost, in US dollars per million (spec 039).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelPrice {
+    pub model: String,
+    pub input: f64,
+    pub output: f64,
+    /// Output's price when not given.
+    pub thinking: f64,
+}
+
+impl Eq for ModelPrice {}
+
+/// Parses `model=input:output[:thinking],...`, in US dollars per million tokens.
+pub fn parse_prices(text: &str) -> Option<Vec<ModelPrice>> {
+    let mut out = vec![];
+    for item in text.split(',').map(str::trim).filter(|i| !i.is_empty()) {
+        let (model, prices) = item.rsplit_once('=')?;
+        let numbers: Vec<f64> = prices
+            .split(':')
+            .map(|p| p.trim().parse::<f64>().ok().filter(|n| n.is_finite() && *n >= 0.0))
+            .collect::<Option<_>>()?;
+        let (input, output, thinking) = match numbers[..] {
+            [i, o] => (i, o, o),
+            [i, o, t] => (i, o, t),
+            _ => return None,
+        };
+        let model = model.trim();
+        if model.is_empty() || out.iter().any(|p: &ModelPrice| p.model == model) {
+            return None;
+        }
+        out.push(ModelPrice {
+            model: model.into(),
+            input,
+            output,
+            thinking,
+        });
+    }
+    Some(out)
+}
+
+/// The `host:port` to try for whether the LLM can be reached: Gemini's API, or the OpenAI-compatible server's base URL, without its path or any user in it.
+pub fn llm_probe_target(llm: &LlmSettings) -> Option<String> {
+    if llm.provider == "gemini" {
+        return Some("generativelanguage.googleapis.com:443".into());
+    }
+    let url = llm.base_url.as_deref()?;
+    let (scheme, rest) = url.split_once("://")?;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let host = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    if host.is_empty() {
+        return None;
+    }
+    let has_port = host
+        .rsplit_once(':')
+        .is_some_and(|(h, p)| !h.ends_with(':') && !p.contains(']') && p.parse::<u16>().is_ok());
+    Some(if has_port {
+        host.to_string()
+    } else if scheme.eq_ignore_ascii_case("https") {
+        format!("{host}:443")
+    } else {
+        format!("{host}:80")
+    })
+}
+
+/// A connection URL without its user, password and parameters, which may hold secrets.
+pub fn redact_url(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return "<redacted>".into();
+    };
+    let rest = rest.split(['?', '#']).next().unwrap_or_default();
+    match rest.rsplit_once('@') {
+        Some((_, host)) => format!("{scheme}://<redacted>@{host}"),
+        None => format!("{scheme}://{rest}"),
+    }
 }
 
 /// The orphan blob sweep (spec 030): how often it runs, and how old an unreferenced blob must be before it goes, as an upload's blob is stored before the row that refers to it.
@@ -236,7 +314,7 @@ impl fmt::Debug for TranscribeApi {
         f.debug_struct("TranscribeApi")
             .field("model", &self.model)
             .field("api_key", &"<redacted>")
-            .field("base_url", &self.base_url)
+            .field("base_url", &self.base_url.as_deref().map(redact_url))
             .field("max_tokens", &self.max_tokens)
             .finish()
     }
@@ -260,7 +338,7 @@ impl fmt::Debug for LlmSettings {
         f.debug_struct("LlmSettings")
             .field("provider", &self.provider)
             .field("model", &self.model)
-            .field("base_url", &self.base_url)
+            .field("base_url", &self.base_url.as_deref().map(redact_url))
             .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
             .finish()
     }
@@ -297,6 +375,7 @@ impl Default for Settings {
             activity: crate::ActivityLimits::default(),
             job_ceilings: JobCeilings::default(),
             sweep: SweepSettings::default(),
+            llm_prices: vec![],
         }
     }
 }
@@ -361,6 +440,9 @@ pub enum SettingsError {
     InvalidThreshold {
         value: String,
     },
+    InvalidPrices {
+        value: String,
+    },
     /// One setting needs another that isn't set.
     Missing {
         name: &'static str,
@@ -380,6 +462,10 @@ impl fmt::Display for SettingsError {
                 "{name} must be a number of bytes, either 0 to turn the tier off or from {MIN_CACHE_BYTES} to {max}, got '{value}'"
             ),
             Self::InvalidThreshold { value } => write!(f, "MEMEX_AUTO_COMMIT_THRESHOLD must be above 0 and at most 1, got '{value}'"),
+            Self::InvalidPrices { value } => write!(
+                f,
+                "MEMEX_LLM_PRICES must be model=input:output[:thinking] in US dollars per million tokens, separated by commas, got '{value}'"
+            ),
             Self::Missing { name, because } => write!(f, "{name} is needed {because}"),
         }
     }
@@ -388,6 +474,82 @@ impl fmt::Display for SettingsError {
 impl std::error::Error for SettingsError {}
 
 impl Settings {
+    /// What the server runs with, for operators (spec 039). Every secret is left out: the database URL keeps only its host and database, and keys and tokens show only whether they're set.
+    pub fn effective(&self) -> serde_json::Value {
+        use serde_json::json;
+        let set = |v: bool| if v { "<set>" } else { "<not set>" };
+        json!({
+            "database_url": self.database_url.as_deref().map(redact_url),
+            "pg_max_connections": self.pg_max_connections,
+            "pg_writer_connections": self.pg_writer_connections,
+            "pg_wait_ms": self.pg_wait_ms,
+            "data_dir": self.data_dir.display().to_string(),
+            "models_dir": self.models_dir.display().to_string(),
+            "http_bind": self.http_bind,
+            "mcp_token": set(self.mcp_token.is_some()),
+            "mcp_allowed_hosts": self.mcp_allowed_hosts,
+            "backends": {
+                "store": self.backends.store,
+                "blob": self.backends.blob,
+                "lexical": self.backends.lexical,
+                "vector": self.backends.vector,
+                "embedder": self.backends.embedder,
+                "reranker": self.backends.reranker,
+                "ocr": self.backends.ocr,
+                "transcriber": self.backends.transcriber,
+            },
+            "embed_threads": self.embed_threads,
+            "embed_query_sessions": self.embed_query_sessions,
+            "rerank_threads": self.rerank_threads,
+            "rerank_sessions": self.rerank_sessions,
+            "llm": self.llm.as_ref().map(|l| json!({
+                "provider": l.provider,
+                "model": l.model,
+                "base_url": l.base_url.as_deref().map(redact_url),
+                "api_key": set(l.api_key.is_some()),
+            })),
+            "reviewer_model": self.reviewer_model,
+            "audit_model": self.audit_model,
+            "chat_model": self.chat_model,
+            "llm_prices": self.llm_prices.iter().map(|p| json!({"model": p.model, "input": p.input, "output": p.output, "thinking": p.thinking})).collect::<Vec<_>>(),
+            "thresholds": {
+                "auto_commit": f64::from(self.auto_commit_threshold_permille) / 1000.0,
+            },
+            "extraction": format!("{:?}", self.extraction),
+            "review": format!("{:?}", self.review),
+            "audit": format!("{:?}", self.audit),
+            "chat": format!("{:?}", self.chat),
+            "activity": format!("{:?}", self.activity),
+            "caches": {
+                "query_bytes": self.caches.query_bytes,
+                "inference_bytes": self.caches.inference_bytes,
+                "object_bytes": self.caches.object_bytes,
+                "disk_bytes": self.caches.disk_bytes,
+            },
+            "transcribe": {
+                "threads": self.transcribe.threads,
+                "max_seconds": self.transcribe.max_seconds,
+                "max_rss_mb": self.transcribe.max_rss_mb,
+                "stall_seconds": self.transcribe.stall_seconds,
+                "api": self.transcribe.api.as_ref().map(|a| json!({
+                    "model": a.model,
+                    "api_key": set(!a.api_key.is_empty()),
+                    "base_url": a.base_url.as_deref().map(redact_url),
+                    "max_tokens": a.max_tokens,
+                })),
+            },
+            "job_ceilings_s": {
+                "rendition": self.job_ceilings.rendition_s,
+                "transcription": self.job_ceilings.transcription_s,
+                "embed": self.job_ceilings.embed_s,
+                "extract": self.job_ceilings.extract_s,
+                "review": self.job_ceilings.review_s,
+                "audit": self.job_ceilings.audit_s,
+            },
+            "sweep": {"interval_s": self.sweep.interval_s, "grace_s": self.sweep.grace_s},
+        })
+    }
+
     /// Parses settings from a lookup, so it's pure. `main.rs` passes the environment.
     pub fn from_vars(lookup: impl Fn(&str) -> Option<String>) -> Result<Self, SettingsError> {
         let mut s = Self::default();
@@ -472,6 +634,9 @@ impl Settings {
             MAX_RAM_CACHE_BYTES,
         )?;
         c.disk_bytes = cache_size("MEMEX_CACHE_DISK_BYTES", text("MEMEX_CACHE_DISK_BYTES")?, c.disk_bytes, MAX_DISK_CACHE_BYTES)?;
+        if let Some(v) = text("MEMEX_LLM_PRICES")? {
+            s.llm_prices = parse_prices(&v).ok_or(SettingsError::InvalidPrices { value: v })?;
+        }
         s.reviewer_model = text("MEMEX_REVIEW_MODEL")?;
         if s.reviewer_model.is_some() && s.llm.is_none() {
             return Err(SettingsError::Missing {

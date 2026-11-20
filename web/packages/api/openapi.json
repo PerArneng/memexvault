@@ -1753,6 +1753,26 @@
         ],
         "type": "object"
       },
+      "ClearedCachesDto": {
+        "properties": {
+          "caches": {
+            "items": {
+              "$ref": "#/components/schemas/CacheTierDto"
+            },
+            "type": "array"
+          },
+          "vaults": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "vaults",
+          "caches"
+        ],
+        "type": "object"
+      },
       "ConflictDto": {
         "properties": {
           "claim_id": {
@@ -3697,6 +3717,52 @@
         ],
         "type": "object"
       },
+      "ImportDto": {
+        "description": "An import, which restores an archive into a vault. Imports are held in the server's memory, so they're gone after a restart, and the vault they made stays.",
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at_ms": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/JobProgressDto"
+          },
+          "report": {
+            "description": "The vault, its events, blobs and embeddings, once done.",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "started_at_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "state": {
+            "description": "`running`, `done` or `failed`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "progress",
+          "started_at_ms"
+        ],
+        "type": "object"
+      },
       "IndexCheckDto": {
         "properties": {
           "behind": {
@@ -3881,6 +3947,24 @@
             "format": "int64",
             "type": "integer"
           },
+          "progress": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JobProgressDto",
+                "description": "How far the job has got, for jobs that say, such as operations."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "report": {
+            "description": "What a finished job found, for jobs that report, such as operations.",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
           "state": {
             "description": "`queued`, `running`, `done`, `dead` or `cancelled`.",
             "type": "string"
@@ -4021,6 +4105,30 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "JobProgressDto": {
+        "description": "A step of a job's work, counted from 1.",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "of": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "step",
+          "of",
+          "label"
         ],
         "type": "object"
       },
@@ -4165,6 +4273,70 @@
         },
         "required": [
           "token"
+        ],
+        "type": "object"
+      },
+      "McpInfoDto": {
+        "description": "How to connect an MCP client to this server.",
+        "properties": {
+          "allowed_hosts": {
+            "description": "Hosts the HTTP endpoint answers to.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "endpoint": {
+            "description": "The streamable HTTP endpoint's path on this server.",
+            "type": "string"
+          },
+          "protocol_version": {
+            "description": "The newest protocol version the server speaks.",
+            "type": "string"
+          },
+          "supported_protocol_versions": {
+            "description": "Every version it accepts, oldest first.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/McpToolDto"
+            },
+            "type": "array"
+          },
+          "transports": {
+            "description": "`streamable-http`, and `stdio` through `memexvault mcp`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "endpoint",
+          "transports",
+          "protocol_version",
+          "supported_protocol_versions",
+          "allowed_hosts",
+          "tools"
+        ],
+        "type": "object"
+      },
+      "McpToolDto": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
         ],
         "type": "object"
       },
@@ -4369,6 +4541,29 @@
           "into",
           "rationale",
           "idempotency_key"
+        ],
+        "type": "object"
+      },
+      "ModelStatusDto": {
+        "properties": {
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "description": "`embedder`, `reranker`, `extraction`, `review`, `audit`, `chat` or `transcriber`.",
+            "type": "string"
+          },
+          "status": {
+            "description": "`ready`, `off`, `missing` and so on.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "status"
         ],
         "type": "object"
       },
@@ -4592,6 +4787,58 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "OperationBody": {
+        "description": "An operation to run on a vault as a job. Its progress and report are on the job.",
+        "properties": {
+          "at": {
+            "description": "`reconcile`: also replay up to this event.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "deep": {
+            "description": "`reconcile`: re-hash every blob.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "grace_s": {
+            "description": "`sweep`: how old an unreferenced blob must be to go. The server's `MEMEX_SWEEP_GRACE_S` when absent.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "index": {
+            "description": "`keyword` or `vector`, for `reindex` and `rollback`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "op": {
+            "description": "`reindex`, `rollback`, `reconcile`, `export`, `sweep` or `compact`.",
+            "type": "string"
+          },
+          "repair": {
+            "description": "`reconcile`: rebuild an index that differs.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "op"
         ],
         "type": "object"
       },
@@ -5510,6 +5757,37 @@
         "required": [
           "pending",
           "groups"
+        ],
+        "type": "object"
+      },
+      "ReachDto": {
+        "description": "Whether something the server needs answered, and how fast.",
+        "properties": {
+          "configured": {
+            "description": "False when it's not set up, such as an LLM that's off.",
+            "type": "boolean"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latency_ms": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reachable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured",
+          "reachable"
         ],
         "type": "object"
       },
@@ -6916,6 +7194,85 @@
         ],
         "type": "object"
       },
+      "SystemStatusDto": {
+        "description": "The server's health for operators. It answers within 2 s even with Postgres or the LLM down.",
+        "properties": {
+          "abandoned_handlers": {
+            "description": "Handlers left running past their job's time ceiling.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "backends": {
+            "type": "object"
+          },
+          "caches": {
+            "items": {
+              "$ref": "#/components/schemas/CacheTierDto"
+            },
+            "type": "array"
+          },
+          "caller_from_memory": {
+            "description": "True when Postgres couldn't check the caller and a recent check of the same credential was used instead.",
+            "type": "boolean"
+          },
+          "llm": {
+            "$ref": "#/components/schemas/ReachDto"
+          },
+          "memory_rss_bytes": {
+            "description": "The server process's resident memory, where the platform says.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelStatusDto"
+            },
+            "type": "array"
+          },
+          "postgres": {
+            "$ref": "#/components/schemas/ReachDto"
+          },
+          "thresholds": {
+            "type": "object"
+          },
+          "vaults": {
+            "description": "Each vault's head, index lag, queue depth and sizes. None when they couldn't be read in time, with the reason in `vaults_error`.",
+            "items": {
+              "$ref": "#/components/schemas/VaultStatusDto"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "vaults_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "postgres",
+          "llm",
+          "abandoned_handlers",
+          "backends",
+          "models",
+          "thresholds",
+          "caches",
+          "caller_from_memory"
+        ],
+        "type": "object"
+      },
       "TokenDto": {
         "description": "A token's details. The token itself and its hash never appear here.",
         "properties": {
@@ -7303,6 +7660,90 @@
         ],
         "type": "object"
       },
+      "UsageDto": {
+        "properties": {
+          "priced_cost_usd": {
+            "description": "The sum over rows with a price.",
+            "format": "double",
+            "type": "number"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/UsageRowDto"
+            },
+            "type": "array"
+          },
+          "unpriced_tokens": {
+            "description": "Tokens in rows with no price, which the cost leaves out.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rows",
+          "priced_cost_usd",
+          "unpriced_tokens"
+        ],
+        "type": "object"
+      },
+      "UsageRowDto": {
+        "properties": {
+          "agent": {
+            "description": "The Derivation's kind, such as `extraction` or `chat`.",
+            "type": "string"
+          },
+          "cost_usd": {
+            "description": "US dollars, only when `MEMEX_LLM_PRICES` gives the model a price. Never guessed.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "day": {
+            "description": "`YYYY-MM-DD`, UTC.",
+            "type": "string"
+          },
+          "derivations": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "input_tokens": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "output_tokens": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "thinking_tokens": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "vault_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "model",
+          "vault_id",
+          "day",
+          "derivations",
+          "input_tokens",
+          "output_tokens",
+          "thinking_tokens"
+        ],
+        "type": "object"
+      },
       "VaultDto": {
         "properties": {
           "created_at_ms": {
@@ -7519,6 +7960,35 @@
         ]
       }
     },
+    "/api/v1/caches/clear": {
+      "post": {
+        "operationId": "clear_caches",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearedCachesDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Drops every cached entry, in RAM and on disk, for every vault. The counters stay. A server admin's.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health",
@@ -7544,6 +8014,145 @@
         },
         "tags": [
           "server"
+        ]
+      }
+    },
+    "/api/v1/imports": {
+      "post": {
+        "operationId": "start_import",
+        "parameters": [
+          {
+            "description": "Restore under a new id, keeping the vault the archive came from.",
+            "in": "query",
+            "name": "new_id",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Overwrite the vault that has the archive's id. Without it, restoring over an existing vault is refused.",
+            "in": "query",
+            "name": "replace",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "A name for the restored vault, instead of the archive's.",
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "items": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Restores an archive, the body, into a vault, as `memexvault restore` does. It's checked whole before anything is written, and a failed restore removes what it made. Over an existing vault only with `replace`, and refused at once otherwise. Answers once the archive is received, and the restore goes on in the background. A server admin's.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/imports/{iid}": {
+      "get": {
+        "operationId": "get_import",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "iid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "An import's progress and, once done, the vault it made. Held in memory, so gone after a restart. A server admin's.",
+        "tags": [
+          "operations"
         ]
       }
     },
@@ -7841,6 +8450,178 @@
           }
         },
         "summary": "Every vault's index lag, job queues, review backlog and sizes, and the caches. Server admins only.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/system/mcp": {
+      "get": {
+        "operationId": "mcp_info",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpInfoDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "How to connect an MCP client: the endpoint, transports, protocol versions and the tools. A server admin's.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/system/settings": {
+      "get": {
+        "operationId": "settings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The settings the server runs with, read-only. Secrets are left out: the database URL keeps its host and database only, and keys and tokens say only whether they're set. A server admin's.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/system/status": {
+      "get": {
+        "operationId": "system_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatusDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Postgres and the LLM, memory, caches, and each vault's index lag, queue depth and sizes, with the backends, models and thresholds. It answers within 2 s even with Postgres or the LLM down. While Postgres is down a server admin's credential checked in the last 5 minutes still works here, and only here. A server admin's.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/system/usage": {
+      "get": {
+        "operationId": "usage",
+        "parameters": [
+          {
+            "description": "From this day, `YYYY-MM-DD` in UTC, inclusive. All time when absent.",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "To this day, `YYYY-MM-DD` in UTC, inclusive. All time when absent.",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "LLM tokens by agent, model, vault and UTC day, summed from Derivations, with cost only for a model `MEMEX_LLM_PRICES` gives a price. A server admin's.",
         "tags": [
           "operations"
         ]
@@ -11614,6 +12395,292 @@
         "summary": "Every link at one object, both ways, one hop. Kinds default to wiki links, claim references and contradictions.",
         "tags": [
           "pages"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/operations": {
+      "get": {
+        "operationId": "list_operations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "From `next_cursor` of the previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "1 to 200. The default is 50.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "`created`, the default.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobPage"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The vault's operations, oldest first. A vault admin's.",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "operationId": "start_operation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Starts an operation on the vault as a job, and answers at once with the job. Its progress and, once done, its report are on the job. One of the same kind that's still queued or running is refused with 409, as is a rollback during a reindex of the same index. A vault admin's.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/operations/{jid}": {
+      "get": {
+        "operationId": "get_operation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "jid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "One operation: its state, its progress, and its report once done. A vault admin's.",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/vaults/{id}/operations/{jid}/archive": {
+      "get": {
+        "operationId": "operation_archive",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "jid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "items": {
+                    "format": "int32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "summary": "The archive a finished export wrote, the same format as `memexvault backup`, which `memexvault restore` and `POST /api/v1/imports` read. A vault admin's.",
+        "tags": [
+          "operations"
         ]
       }
     },

@@ -67,6 +67,81 @@ pub struct JobRow {
     /// Cancels and retries by people, oldest first, at most `MAX_JOB_ACTIONS`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actions: Vec<JobAction>,
+    /// How far a running job has got, for jobs that say (spec 039).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<JobProgress>,
+    /// What a finished job found, for jobs that report (spec 039).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<Value>,
+}
+
+/// A step of a job's work, counted from 1.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JobProgress {
+    pub step: u32,
+    pub of: u32,
+    /// What the step does, in words.
+    pub label: String,
+}
+
+/// An operator's operation on a vault, run as a job (spec 039).
+pub const OPERATION_JOB: &str = "operation";
+
+/// Which index an operation acts on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IndexName {
+    Keyword,
+    Vector,
+}
+
+impl IndexName {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Keyword => "keyword",
+            Self::Vector => "vector",
+        }
+    }
+}
+
+/// What an operation job does. Its input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum OperationInput {
+    /// Builds a new generation and waits until it's live.
+    Reindex {
+        index: IndexName,
+    },
+    /// Makes the generation before the live one live again.
+    Rollback {
+        index: IndexName,
+    },
+    Reconcile {
+        at: Option<u64>,
+        deep: bool,
+        repair: bool,
+    },
+    /// Writes a backup archive the operation's route can download.
+    Export,
+    /// Removes unreferenced blobs older than this.
+    Sweep {
+        grace_s: u64,
+    },
+    /// Physically removes deleted rows from the vault's tables.
+    Compact,
+}
+
+impl OperationInput {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Reindex { .. } => "reindex",
+            Self::Rollback { .. } => "rollback",
+            Self::Reconcile { .. } => "reconcile",
+            Self::Export => "export",
+            Self::Sweep { .. } => "sweep",
+            Self::Compact => "compact",
+        }
+    }
 }
 
 /// How many of a job's actions it keeps. The oldest go first.

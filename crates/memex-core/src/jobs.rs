@@ -38,6 +38,8 @@ pub fn new_job(id: ObjectId, creator: &str, kind: &str, input: Value, dedupe_key
         finished_at_ms: None,
         wait: None,
         actions: vec![],
+        progress: None,
+        report: None,
     }
 }
 
@@ -58,6 +60,9 @@ pub fn claimed(mut job: JobRow, owner: &str, now_ms: i64) -> JobRow {
         }
     }
     job.state = JobState::Running;
+    // A new attempt starts over, so what an earlier one said no longer holds.
+    job.progress = None;
+    job.report = None;
     job.lease_owner = Some(owner.into());
     job.lease_until_ms = Some(now_ms + LEASE_MS);
     job.attempts.push(JobAttempt {

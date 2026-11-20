@@ -65,10 +65,47 @@ fn world() -> World {
     World { s, admin, vault }
 }
 
+/// Holds nothing: the routes only need to answer.
+struct NoArchives;
+
+impl memex_core::ArchiveStore for NoArchives {
+    fn put(&self, _: &str, write: &mut dyn FnMut(&mut dyn std::io::Write) -> Result<(), memex_core::ServerError>) -> Result<u64, memex_core::ServerError> {
+        write(&mut std::io::sink())?;
+        Ok(0)
+    }
+    fn open(&self, _: &str) -> Result<Option<memex_core::ArchiveRead>, memex_core::ServerError> {
+        Ok(None)
+    }
+    fn remove(&self, _: &str) -> Result<(), memex_core::ServerError> {
+        Ok(())
+    }
+}
+
 impl World {
     fn app(&self) -> Router {
-        // With the route the composition root adds, as the contract documents it.
-        router_with(self.s.clone(), built_console, chat_routes::<Fakes, memex_core::testing::ScriptedChat>(None))
+        // With the routes the composition root adds, as the contract documents them.
+        let admin = memex_http::admin_routes(memex_http::AdminConfig {
+            archives: std::sync::Arc::new(NoArchives),
+            settings: memex_core::Settings::default().effective(),
+            prices: vec![],
+            llm_endpoint: None,
+            models: vec![],
+            mcp: memex_api::McpInfoDto {
+                endpoint: "/api/v1/mcp".into(),
+                transports: vec![],
+                protocol_version: String::new(),
+                supported_protocol_versions: vec![],
+                allowed_hosts: vec![],
+                tools: vec![],
+            },
+            memory: || None,
+            abandoned: || 0,
+        });
+        router_with(
+            self.s.clone(),
+            built_console,
+            chat_routes::<Fakes, memex_core::testing::ScriptedChat>(None).merge(admin),
+        )
     }
 
     async fn send(&self, req: Request<Body>) -> (StatusCode, Vec<u8>, HeaderMap) {

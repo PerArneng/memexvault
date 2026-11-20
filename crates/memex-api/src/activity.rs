@@ -701,6 +701,12 @@ mod tests {
                 actor: MARKER.into(),
                 time_ms: 3,
             }],
+            progress: Some(memex_types::JobProgress {
+                step: 1,
+                of: 2,
+                label: MARKER.into(),
+            }),
+            report: Some(json!({"note": MARKER})),
         }
     }
 

@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 memex-agent-adk = { path = "../memex-agent-adk" }
+memex-api.workspace = true
 memex-asr = { path = "../memex-asr" }
 memex-blob-fs = { path = "../memex-blob-fs" }
 memex-cache = { path = "../memex-cache" }

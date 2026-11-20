@@ -50,6 +50,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/caches/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Drops every cached entry, in RAM and on disk, for every vault. The counters stay. A server admin's. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ClearedCachesDto"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -80,6 +123,129 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["HealthDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restores an archive, the body, into a vault, as `memexvault restore` does. It's checked whole before anything is written, and a failed restore removes what it made. Over an existing vault only with `replace`, and refused at once otherwise. Answers once the archive is received, and the restore goes on in the background. A server admin's. */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description Restore under a new id, keeping the vault the archive came from. */
+                    new_id?: boolean;
+                    /** @description Overwrite the vault that has the archive's id. Without it, restoring over an existing vault is refused. */
+                    replace?: boolean;
+                    /** @description A name for the restored vault, instead of the archive's. */
+                    name?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/octet-stream": number[];
+                };
+            };
+            responses: {
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImportDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/imports/{iid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** An import's progress and, once done, the vault it made. Held in memory, so gone after a restart. A server admin's. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    iid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ImportDto"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
                     };
                 };
             };
@@ -397,6 +563,215 @@ export interface paths {
                     };
                 };
                 401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** How to connect an MCP client: the endpoint, transports, protocol versions and the tools. A server admin's. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["McpInfoDto"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The settings the server runs with, read-only. Secrets are left out: the database URL keeps its host and database only, and keys and tokens say only whether they're set. A server admin's. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Postgres and the LLM, memory, caches, and each vault's index lag, queue depth and sizes, with the backends, models and thresholds. It answers within 2 s even with Postgres or the LLM down. While Postgres is down a server admin's credential checked in the last 5 minutes still works here, and only here. A server admin's. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SystemStatusDto"];
+                    };
+                };
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** LLM tokens by agent, model, vault and UTC day, summed from Derivations, with cost only for a model `MEMEX_LLM_PRICES` gives a price. A server admin's. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From this day, `YYYY-MM-DD` in UTC, inclusive. All time when absent. */
+                    from?: string;
+                    /** @description To this day, `YYYY-MM-DD` in UTC, inclusive. All time when absent. */
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UsageDto"];
+                    };
+                };
+                400: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -3554,6 +3929,247 @@ export interface paths {
                     };
                 };
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The vault's operations, oldest first. A vault admin's. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description From `next_cursor` of the previous page. */
+                    cursor?: string;
+                    /** @description 1 to 200. The default is 50. */
+                    limit?: number;
+                    /** @description `created`, the default. */
+                    sort?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobPage"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Starts an operation on the vault as a job, and answers at once with the job. Its progress and, once done, its report are on the job. One of the same kind that's still queued or running is refused with 409, as is a rollback during a reindex of the same index. A vault admin's. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["OperationBody"];
+                };
+            };
+            responses: {
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobDto"];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/operations/{jid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One operation: its state, its progress, and its report once done. A vault admin's. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    jid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobDto"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/vaults/{id}/operations/{jid}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The archive a finished export wrote, the same format as `memexvault backup`, which `memexvault restore` and `POST /api/v1/imports` read. A vault admin's. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    jid: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/octet-stream": number[];
+                    };
+                };
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ErrorBody"];
+                    };
+                };
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -7540,6 +8156,11 @@ export interface components {
             items: components["schemas"]["ClaimRefDto"][];
             next_cursor?: string | null;
         };
+        ClearedCachesDto: {
+            caches: components["schemas"]["CacheTierDto"][];
+            /** Format: int64 */
+            vaults: number;
+        };
         ConflictDto: {
             claim_id: string;
             epistemic?: string | null;
@@ -8076,6 +8697,20 @@ export interface components {
              */
             t_start_ms?: number | null;
         };
+        /** @description An import, which restores an archive into a vault. Imports are held in the server's memory, so they're gone after a restart, and the vault they made stays. */
+        ImportDto: {
+            error?: string | null;
+            /** Format: int64 */
+            finished_at_ms?: number | null;
+            id: string;
+            progress: components["schemas"]["JobProgressDto"];
+            /** @description The vault, its events, blobs and embeddings, once done. */
+            report?: Record<string, never> | null;
+            /** Format: int64 */
+            started_at_ms: number;
+            /** @description `running`, `done` or `failed`. */
+            state: string;
+        };
         IndexCheckDto: {
             behind: boolean;
             /** @description `keyword` or `vector`. */
@@ -8132,6 +8767,9 @@ export interface components {
             max_attempts: number;
             /** Format: int64 */
             next_run_at_ms: number;
+            progress?: components["schemas"]["JobProgressDto"] | null;
+            /** @description What a finished job found, for jobs that report, such as operations. */
+            report?: Record<string, never> | null;
             /** @description `queued`, `running`, `done`, `dead` or `cancelled`. */
             state: string;
             /**
@@ -8175,6 +8813,14 @@ export interface components {
             items: components["schemas"]["JobDto"][];
             next_cursor?: string | null;
         };
+        /** @description A step of a job's work, counted from 1. */
+        JobProgressDto: {
+            label: string;
+            /** Format: int32 */
+            of: number;
+            /** Format: int32 */
+            step: number;
+        };
         KindRecallDto: {
             /** Format: int64 */
             audited: number;
@@ -8216,6 +8862,24 @@ export interface components {
         /** @description Signs in a browser. No `Debug`, so the token can't reach a log by accident. */
         LoginBody: {
             token: string;
+        };
+        /** @description How to connect an MCP client to this server. */
+        McpInfoDto: {
+            /** @description Hosts the HTTP endpoint answers to. */
+            allowed_hosts: string[];
+            /** @description The streamable HTTP endpoint's path on this server. */
+            endpoint: string;
+            /** @description The newest protocol version the server speaks. */
+            protocol_version: string;
+            /** @description Every version it accepts, oldest first. */
+            supported_protocol_versions: string[];
+            tools: components["schemas"]["McpToolDto"][];
+            /** @description `streamable-http`, and `stdio` through `memexvault mcp`. */
+            transports: string[];
+        };
+        McpToolDto: {
+            description: string;
+            name: string;
         };
         MediaInfoDto: {
             /** Format: int32 */
@@ -8285,6 +8949,13 @@ export interface components {
             into: string;
             rationale: string;
         };
+        ModelStatusDto: {
+            model?: string | null;
+            /** @description `embedder`, `reranker`, `extraction`, `review`, `audit`, `chat` or `transcriber`. */
+            role: string;
+            /** @description `ready`, `off`, `missing` and so on. */
+            status: string;
+        };
         NameBody: {
             name: string;
         };
@@ -8344,6 +9015,27 @@ export interface components {
             name: string;
             /** @description Whose token it is. The default is the caller. */
             principal_id?: string | null;
+        };
+        /** @description An operation to run on a vault as a job. Its progress and report are on the job. */
+        OperationBody: {
+            /**
+             * Format: int64
+             * @description `reconcile`: also replay up to this event.
+             */
+            at?: number | null;
+            /** @description `reconcile`: re-hash every blob. */
+            deep?: boolean | null;
+            /**
+             * Format: int64
+             * @description `sweep`: how old an unreferenced blob must be to go. The server's `MEMEX_SWEEP_GRACE_S` when absent.
+             */
+            grace_s?: number | null;
+            /** @description `keyword` or `vector`, for `reindex` and `rollback`. */
+            index?: string | null;
+            /** @description `reindex`, `rollback`, `reconcile`, `export`, `sweep` or `compact`. */
+            op: string;
+            /** @description `reconcile`: rebuild an index that differs. */
+            repair?: boolean | null;
         };
         OutgoingLinkDto: {
             block_id?: string | null;
@@ -8610,6 +9302,15 @@ export interface components {
              * @description Pending items. One with several types counts once here, and once under each in `groups`.
              */
             pending: number;
+        };
+        /** @description Whether something the server needs answered, and how fast. */
+        ReachDto: {
+            /** @description False when it's not set up, such as an LLM that's off. */
+            configured: boolean;
+            error?: string | null;
+            /** Format: int64 */
+            latency_ms?: number | null;
+            reachable: boolean;
         };
         ReanchorFailureDto: {
             assertion_id: string;
@@ -9002,6 +9703,31 @@ export interface components {
             /** Format: int64 */
             removed_bytes: number;
         };
+        /** @description The server's health for operators. It answers within 2 s even with Postgres or the LLM down. */
+        SystemStatusDto: {
+            /**
+             * Format: int64
+             * @description Handlers left running past their job's time ceiling.
+             */
+            abandoned_handlers: number;
+            backends: Record<string, never>;
+            caches: components["schemas"]["CacheTierDto"][];
+            /** @description True when Postgres couldn't check the caller and a recent check of the same credential was used instead. */
+            caller_from_memory: boolean;
+            llm: components["schemas"]["ReachDto"];
+            /**
+             * Format: int64
+             * @description The server process's resident memory, where the platform says.
+             */
+            memory_rss_bytes?: number | null;
+            models: components["schemas"]["ModelStatusDto"][];
+            postgres: components["schemas"]["ReachDto"];
+            thresholds: Record<string, never>;
+            /** @description Each vault's head, index lag, queue depth and sizes. None when they couldn't be read in time, with the reason in `vaults_error`. */
+            vaults?: components["schemas"]["VaultStatusDto"][] | null;
+            vaults_error?: string | null;
+            version: string;
+        };
         /** @description A token's details. The token itself and its hash never appear here. */
         TokenDto: {
             /** Format: int64 */
@@ -9115,6 +9841,40 @@ export interface components {
             existing: boolean;
             job_id?: string | null;
             source: components["schemas"]["SourceDto"];
+        };
+        UsageDto: {
+            /**
+             * Format: double
+             * @description The sum over rows with a price.
+             */
+            priced_cost_usd: number;
+            rows: components["schemas"]["UsageRowDto"][];
+            /**
+             * Format: int64
+             * @description Tokens in rows with no price, which the cost leaves out.
+             */
+            unpriced_tokens: number;
+        };
+        UsageRowDto: {
+            /** @description The Derivation's kind, such as `extraction` or `chat`. */
+            agent: string;
+            /**
+             * Format: double
+             * @description US dollars, only when `MEMEX_LLM_PRICES` gives the model a price. Never guessed.
+             */
+            cost_usd?: number | null;
+            /** @description `YYYY-MM-DD`, UTC. */
+            day: string;
+            /** Format: int64 */
+            derivations: number;
+            /** Format: int64 */
+            input_tokens: number;
+            model: string;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            thinking_tokens: number;
+            vault_id: string;
         };
         VaultDto: {
             /** Format: int64 */

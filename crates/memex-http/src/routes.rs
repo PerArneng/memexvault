@@ -1,4 +1,5 @@
 mod activity;
+mod admin;
 mod audit;
 mod chat;
 mod entities;
@@ -8,6 +9,7 @@ mod ops;
 mod pages;
 mod review;
 
+pub use admin::{AdminConfig, admin_routes};
 pub use chat::chat_routes;
 
 use crate::browser::{self, ConsoleLookup};
@@ -167,6 +169,7 @@ struct ApiDoc;
 pub fn openapi() -> utoipa::openapi::OpenApi {
     let mut doc = ApiDoc::openapi();
     doc.merge(activity::ActivityDoc::openapi());
+    doc.merge(admin::AdminDoc::openapi());
     doc.merge(audit::AuditDoc::openapi());
     doc.merge(chat::ChatDoc::openapi());
     doc.merge(entities::EntityDoc::openapi());
@@ -313,7 +316,7 @@ async fn method_not_allowed(Extension(rid): Extension<RequestId>) -> ApiError {
 }
 
 /// Runs a synchronous core call on a blocking thread, after authenticating.
-async fn authed<E, T, F>(server: App<E>, headers: HeaderMap, rid: &RequestId, f: F) -> Result<T, ApiError>
+pub(crate) async fn authed<E, T, F>(server: App<E>, headers: HeaderMap, rid: &RequestId, f: F) -> Result<T, ApiError>
 where
     E: ServerEdges + Send + Sync + 'static,
     Server<E>: Send + Sync,
@@ -852,9 +855,9 @@ where
 }
 
 /// Hands a request body's chunks to the blocking side. The channel is bounded, so a slow disk slows the client and memory stays flat.
-struct BodyReader {
-    rx: tokio::sync::mpsc::Receiver<Result<axum::body::Bytes, std::io::Error>>,
-    current: axum::body::Bytes,
+pub(crate) struct BodyReader {
+    pub(crate) rx: tokio::sync::mpsc::Receiver<Result<axum::body::Bytes, std::io::Error>>,
+    pub(crate) current: axum::body::Bytes,
 }
 
 impl std::io::Read for BodyReader {

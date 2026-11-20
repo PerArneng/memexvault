@@ -558,6 +558,17 @@ fn main() -> ExitCode {
                 handler: Arc::new(EraseHandler { server: server.clone() }),
                 ceiling: settings.job_ceilings.for_kind(memex_types::ERASE_JOB),
             });
+            // One at a time per server, as each reads or rewrites a whole vault.
+            let archives = Arc::new(memexvault::admin_edge::FsArchives::new(&settings.data_dir));
+            pools.push(Pool {
+                kind: memex_types::OPERATION_JOB.into(),
+                workers: 1,
+                handler: Arc::new(memexvault::workers::OperationHandler {
+                    server: server.clone(),
+                    archives: archives.clone(),
+                }),
+                ceiling: settings.job_ceilings.for_kind(memex_types::OPERATION_JOB),
+            });
             // Audits run with no LLM too, doing what costs no tokens. Their LLM checks are asked for by name, as each sampled claim is two calls.
             let auditor = match (&settings.llm, &settings.audit_model) {
                 (Some(llm), Some(model)) => {
@@ -673,7 +684,17 @@ fn main() -> ExitCode {
                             max_response_bytes: memex_mcp::DEFAULT_MAX_RESPONSE_BYTES,
                         },
                     );
-                    let extra = mcp.merge(memex_http::chat_routes(chat_agent));
+                    let admin = memex_http::admin_routes(memex_http::AdminConfig {
+                        archives,
+                        settings: settings.effective(),
+                        prices: settings.llm_prices.clone(),
+                        llm_endpoint: settings.llm.as_ref().and_then(memex_core::llm_probe_target),
+                        models: memexvault::admin_edge::model_status(&settings),
+                        mcp: memex_mcp::connection_info(&settings.mcp_allowed_hosts),
+                        memory: memexvault::admin_edge::resident_bytes,
+                        abandoned: memexvault::workers::abandoned_handlers,
+                    });
+                    let extra = mcp.merge(memex_http::chat_routes(chat_agent)).merge(admin);
                     runtime.block_on(memex_http::serve_with(server, extra, &settings.http_bind, shutdown))
                 }
             };

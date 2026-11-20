@@ -1,5 +1,6 @@
 //! Pure: request and response types for the HTTP API, and their translation from domain data. No web framework.
 mod activity;
+mod admin;
 mod audit;
 mod chat;
 mod convert;
@@ -10,6 +11,7 @@ mod ops;
 mod pages;
 mod review;
 pub use activity::*;
+pub use admin::*;
 pub use audit::*;
 pub use chat::*;
 pub use convert::*;
@@ -447,6 +449,21 @@ pub struct JobDto {
     /// Cancels and retries by people, oldest first. The actor is a principal's id, which `GET /vaults/{id}/principals/{pid}` names.
     #[serde(default)]
     pub actions: Vec<JobActionDto>,
+    /// How far the job has got, for jobs that say, such as operations.
+    #[serde(default)]
+    pub progress: Option<JobProgressDto>,
+    /// What a finished job found, for jobs that report, such as operations.
+    #[serde(default)]
+    #[schema(value_type = Option<Object>)]
+    pub report: Option<serde_json::Value>,
+}
+
+/// A step of a job's work, counted from 1.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct JobProgressDto {
+    pub step: u32,
+    pub of: u32,
+    pub label: String,
 }
 
 /// A person's cancel or retry of a job.
@@ -513,6 +530,12 @@ impl From<JobRow> for JobDto {
             finished_at_ms: j.finished_at_ms,
             waiting_since_ms: j.wait.map(|w| w.since_ms),
             actions: j.actions.into_iter().map(Into::into).collect(),
+            progress: j.progress.map(|p| JobProgressDto {
+                step: p.step,
+                of: p.of,
+                label: p.label,
+            }),
+            report: j.report,
         }
     }
 }

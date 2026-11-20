@@ -452,6 +452,16 @@ impl Write for Sha256Sink {
     }
 }
 
+/// Reads only the header, the first record, to see where an archive would go before checking all of it.
+pub fn read_header(read: &mut dyn Read) -> Result<BackupHeader, BackupError> {
+    let mut r = Reader::new(std::io::BufReader::new(read));
+    match r.next(&mut |_, _| Ok(()))? {
+        Record::Header(h) if h.format == FORMAT => Ok(h),
+        Record::Header(h) => Err(BackupError::Corrupt(format!("format {} isn't one this server reads", h.format))),
+        _ => Err(BackupError::Corrupt("the header isn't first".into())),
+    }
+}
+
 /// Reads a whole archive and checks it, writing nothing: its framing, its trailer, each blob against its name and the events' order. A restore runs this first.
 pub fn verify(read: &mut dyn Read) -> Result<(BackupHeader, BackupSummary), BackupError> {
     let mut r = Reader::new(std::io::BufReader::new(read));

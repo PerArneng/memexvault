@@ -415,6 +415,47 @@ where
     }
 }
 
+/// Runs operators' operations (spec 039). Reindex waits here for the projector thread to finish the build, so the job's done when the new generation is live.
+pub struct OperationHandler<E: ServerEdges, A: memex_core::ArchiveStore> {
+    pub server: Arc<Server<E>>,
+    pub archives: Arc<A>,
+}
+
+struct OperationRun<'a, A> {
+    hold: &'a JobHold,
+    archives: &'a A,
+}
+
+impl<A: memex_core::ArchiveStore> memex_core::OperationEdge for OperationRun<'_, A> {
+    fn pause(&self, d: Duration) {
+        std::thread::sleep(d);
+    }
+
+    fn lost(&self) -> bool {
+        self.hold.lost()
+    }
+
+    fn archives(&self) -> &dyn memex_core::ArchiveStore {
+        self.archives
+    }
+}
+
+impl<E, A> JobHandler for OperationHandler<E, A>
+where
+    E: ServerEdges,
+    Server<E>: Send + Sync,
+    A: memex_core::ArchiveStore,
+{
+    fn run(&self, vault: &VaultId, job: &JobRow, hold: &JobHold) -> Result<Vec<Mutation>, JobFailure> {
+        let run = OperationRun {
+            hold,
+            archives: &*self.archives,
+        };
+        self.server.run_operation_job(vault, job, &run).map_err(job_failure)?;
+        Ok(vec![])
+    }
+}
+
 /// Starts each vault's scheduled audits when the clock says so. Its own thread, as nothing else here should wait on it.
 pub fn start_audit_scheduler<E>(server: Arc<Server<E>>, stop: Arc<AtomicBool>) -> JoinHandle<()>
 where

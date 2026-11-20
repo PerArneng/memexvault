@@ -44,6 +44,14 @@ fn session_cookie(headers: &HeaderMap) -> Option<&str> {
         .find_map(|pair| pair.trim().strip_prefix(SESSION_COOKIE)?.strip_prefix('='))
 }
 
+/// The raw credential a request carries, the same one `caller_from` would check.
+pub(crate) fn credential(headers: &HeaderMap) -> Option<&str> {
+    match headers.get(header::AUTHORIZATION) {
+        Some(value) => value.to_str().ok().and_then(|v| v.strip_prefix("Bearer ")),
+        None => session_cookie(headers),
+    }
+}
+
 /// A bearer header decides alone when present, so a bad one never falls back to a cookie.
 pub(crate) fn caller_from<E>(server: &Server<E>, headers: &HeaderMap) -> Result<Caller, ServerError>
 where

@@ -44,7 +44,7 @@ pub use event::{Event, EventDraft};
 pub use extraction::{DerivationOutcome, DerivationRow, ExtractedItem, ExtractionRow, ExtractionStop, IdentityCandidate, RejectedItem};
 pub use governance::{ChangeSetState, Epistemic, EvidenceInput, MovedClaim, Op, OpKind, RiskDecision, Stance, ValidatorResult};
 pub use ids::{ObjectId, VaultId};
-pub use jobs::{JobAction, JobActionKind, JobAttempt, JobRow, JobState, JobWait, MAX_JOB_ACTIONS};
+pub use jobs::{IndexName, JobAction, JobActionKind, JobAttempt, JobProgress, JobRow, JobState, JobWait, MAX_JOB_ACTIONS, OPERATION_JOB, OperationInput};
 pub use lexical::{
     AttrScope, AttrValue, DocKind, Generation, IndexDoc, IndexHealth, IndexOp, LexicalError, LexicalFilter, LexicalHit, LexicalQuery, LexicalResults, QueryTerm,
 };

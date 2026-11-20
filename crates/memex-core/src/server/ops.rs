@@ -160,6 +160,11 @@ impl<E: ServerEdges> Server<E> {
     pub fn reconcile(&self, caller: &Caller, vault: &VaultId, at: Option<u64>, deep: bool, repair: bool) -> Result<ReconcileReport, ServerError> {
         self.allow(caller, Operation::VaultOperate(vault))?;
         self.vault_exists(vault)?;
+        self.reconcile_report(vault, at, deep, repair)
+    }
+
+    /// `reconcile` without the caller's check, for the operation job that runs it.
+    pub(super) fn reconcile_report(&self, vault: &VaultId, at: Option<u64>, deep: bool, repair: bool) -> Result<ReconcileReport, ServerError> {
         let mut report = self.reconcile_store(vault, at, deep)?;
         report.indexes = self.ops_index_checks(vault, report.log.head)?;
         if repair {
@@ -335,7 +340,7 @@ impl<E: ServerEdges> Server<E> {
         Ok(out)
     }
 
-    fn sweep_vault(&self, vault: &VaultId, grace_ms: i64) -> Result<SweepReport, ServerError> {
+    pub(super) fn sweep_vault(&self, vault: &VaultId, grace_ms: i64) -> Result<SweepReport, ServerError> {
         let referenced = {
             let snap = self.engine.store().snapshot(vault)?;
             crate::erasure::referenced_blobs(&snap)?
@@ -554,7 +559,7 @@ impl<E: ServerEdges> Server<E> {
     }
 }
 
-fn backup_error(e: crate::backup::BackupError) -> ServerError {
+pub(super) fn backup_error(e: crate::backup::BackupError) -> ServerError {
     match e {
         crate::backup::BackupError::Store(s) => s.into(),
         crate::backup::BackupError::NotEmpty(v) => ServerError::Conflict(format!("vault {v} isn't empty")),

@@ -1,4 +1,5 @@
 mod activity;
+mod admin;
 mod audit;
 mod chat;
 mod entities;
@@ -10,6 +11,10 @@ mod pages;
 mod review;
 pub use self::meeting::{MediaInfo, MeetingView, ParticipantLink, ParticipantView, TranscriptPage, TranscriptWindow};
 pub use activity::{ActivitySnapshot, DocumentActivity};
+pub use admin::{
+    ArchiveRead, ArchiveStore, OperationEdge, RECENT_ADMIN_MS, RecentAdmins, UsageReport, UsageRow, export_archive_name, parse_utc_day, reconcile_json,
+    usage_report, utc_day,
+};
 pub use audit::{AuditBudget, AuditRunDetail, TriggerAudit};
 pub use chat::{ChatInput, ChatLimits, ChatSettingsUpdate, ChatToolAnswer, ChatToolContext, ChatView, PreparedChat, new_chat_cancel};
 pub use entities::{
