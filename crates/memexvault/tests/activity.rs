@@ -639,15 +639,7 @@ fn pg_activity_marker_scan() {
     let all: BTreeSet<String> = memex_core::CURRENT_VERSIONS.iter().map(|(k, _)| k.to_string()).collect();
     assert_eq!(kinds, all);
     assert!(with_marker >= 20, "{with_marker}");
-    let mut replay = r.follow(&r.root, &[("Last-Event-ID", "-1")]);
-    let mut seen = vec![];
-    while seen.len() < log.len() {
-        let f = replay.next(WAIT).expect("the whole log");
-        if f.event == "durable" {
-            seen.push(seq_of(&f));
-        }
-    }
-    // Live, the whole log, or up to the resync the erasure at the end of the fixture sends, past which the replay covers it.
+    // Live, the whole log, or up to the resync the erasure at the end of the fixture sends.
     let (mut live_seen, last) = (0, *log.last().unwrap());
     while live_seen < log.len() {
         let f = live.next(WAIT).expect("the whole log, live");
@@ -655,6 +647,15 @@ fn pg_activity_marker_scan() {
             break;
         }
         live_seen += usize::from(f.event == "durable");
+    }
+    // The replay starts once the live stream has had the erasure's resync, so the server has caught up with it and the replay gets the whole log.
+    let mut replay = r.follow(&r.root, &[("Last-Event-ID", "-1")]);
+    let mut seen = vec![];
+    while seen.len() < log.len() {
+        let f = replay.next(WAIT).expect("the whole log");
+        if f.event == "durable" {
+            seen.push(seq_of(&f));
+        }
     }
     assert_eq!(seen, log);
     for (name, bytes) in [("replay", &replay.recorded), ("live", &live.recorded)] {

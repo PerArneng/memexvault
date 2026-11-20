@@ -748,7 +748,7 @@ fn pg_deleting_the_index_folder_and_restarting_rebuilds_it_the_same() {
     let (after, before) = (ordered(after), ordered(before));
     println!("{raw_order_same} of {} queries in exactly the same order before rounding", queries.len());
     for ((q, a), b) in queries.iter().zip(&after).zip(&before) {
-        let differing: Vec<(usize, Option<&(ObjectId, i64)>, Option<&(ObjectId, i64)>)> = (0..a.len().max(b.len()))
+        let differing: Vec<_> = (0..a.len().max(b.len()))
             .filter(|i| a.get(*i) != b.get(*i))
             .map(|i| (i, a.get(i), b.get(i)))
             .take(5)
