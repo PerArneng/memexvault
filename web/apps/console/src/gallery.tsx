@@ -1,5 +1,5 @@
 import {
-  Badge, Button, CommandPalette, ConflictBadge, DataTable, Dialog, EmptyState, EpistemicBadge, ErrorState, Input, Menu, Select, Skeleton, SplitPane, StageBadge, Tabs, Timeline, Toasts, Tooltip, TrustBadge,
+  Badge, Button, CommandPalette, ConflictBadge, DataTable, Dialog, EmptyState, EpistemicBadge, ErrorState, Input, Menu, Select, Skeleton, SplitPane, StackedColumnChart, StageBadge, Tabs, Timeline, Toasts, Tooltip, TrustBadge,
 } from "@memex/ui";
 import type { Column, ToastMessage } from "@memex/ui";
 import { useMemo, useState } from "react";
@@ -76,6 +76,9 @@ export const Gallery = () => {
       </Section>
       <Section title="Split pane">
         <div className="h-32 w-full"><SplitPane label="Resize panes" start="Document page" end="Claims" /></div>
+      </Section>
+      <Section title="Chart">
+        <div className="w-full"><StackedColumnChart label="Tokens by day and agent. The table below it has the exact numbers." series={["Extraction", "Audit", "Chat"]} columns={Array.from({ length: 14 }, (_, i) => ({ label: String(i + 1), values: [(i * 37) % 90, (i * 53) % 40, i % 3 === 0 ? 20 : 0] }))} labelEvery={2} /></div>
       </Section>
       <Section title="Data table">
         <div className="w-full"><DataTable label="Documents" rows={rows} columns={COLUMNS} rowKey={(r) => r.id} height={320} /></div>

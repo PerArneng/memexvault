@@ -104,12 +104,13 @@ pub struct UsageQuery {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct UsageRowDto {
-    /// The Derivation's kind, such as `extraction` or `chat`.
+    /// The Derivation's kind, such as `extraction` or `chat`, or `audit` for audit runs, which keep their tokens on the run.
     pub agent: String,
     pub model: String,
     pub vault_id: String,
     /// `YYYY-MM-DD`, UTC.
     pub day: String,
+    /// Derivations, or for `audit` the runs that called a model, summed into this row.
     pub derivations: u64,
     pub input_tokens: u64,
     pub output_tokens: u64,

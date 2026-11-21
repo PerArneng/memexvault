@@ -91,6 +91,15 @@ export const QUERY_KEYS = {
   inverse: (vault: string, id: string) => ["review", vault, "inverse", id] as const,
   contradictions: (vault: string) => ["review", vault, "contradictions"] as const,
   autoCommit: (vault: string) => ["review", vault, "auto-commit"] as const,
+  /** Everything about one vault's audits, so starting a run or writing the schedule can refresh all of it. */
+  audit: (vault: string) => ["audit", vault] as const,
+  auditRuns: (vault: string) => ["audit", vault, "runs"] as const,
+  auditRun: (vault: string, id: string) => ["audit", vault, "run", id] as const,
+  auditChecks: (vault: string, id: string, findingsOnly: boolean) => ["audit", vault, "checks", id, findingsOnly] as const,
+  auditSchedule: (vault: string) => ["audit", vault, "schedule"] as const,
+  auditBudget: (vault: string) => ["audit", vault, "budget"] as const,
+  auditRecall: (vault: string) => ["audit", vault, "recall"] as const,
+  agentUsage: (from: string, to: string) => ["agent-usage", from, to] as const,
   search: (vault: string, request: unknown) => ["search", vault, request] as const,
   /** Everything about one vault's chat. */
   chat: (vault: string) => ["chat", vault] as const,

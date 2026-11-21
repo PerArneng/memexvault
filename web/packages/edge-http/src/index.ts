@@ -74,6 +74,18 @@ import {
   tokenPageFromWire,
   usageFromWire,
 } from "@memex/api";
+import {
+  agentUsageFromWire,
+  auditBudgetFromWire,
+  auditCheckPageFromWire,
+  auditRunDetailFromWire,
+  auditRunFromWire,
+  auditRunPageFromWire,
+  auditScheduleFromWire,
+  auditScheduleToWire,
+  auditTriggerToWire,
+  recallFromWire,
+} from "@memex/api";
 import type { components, paths } from "@memex/api";
 import { failed, ok } from "@memex/core";
 import type { Api, ApiResult, EntityFieldInput, ImportOptions, OperationRequest, SearchRequest, UploadFile } from "@memex/core";
@@ -389,6 +401,16 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
         () => client.PUT("/api/v1/vaults/{id}/chat/settings", { params: { path: { id: vault } }, body: { enabled: change.enabled, ...(change.threadTokenBudget === null ? {} : { thread_token_budget: change.threadTokenBudget }), ...(change.dayTokenBudget === null ? {} : { day_token_budget: change.dayTokenBudget }) } }),
         chatSettingsFromWire,
       ),
+    listAuditRuns: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/audit/runs", { params: { path: { id: vault }, query: page(cursor) } }), auditRunPageFromWire),
+    getAuditRun: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/audit/runs/{run}", { params: { path: { id: vault, run: id } } }), auditRunDetailFromWire),
+    listAuditChecks: (vault, run, findingsOnly, cursor) =>
+      attempt(() => client.GET("/api/v1/vaults/{id}/audit/runs/{run}/checks", { params: { path: { id: vault, run }, query: { ...page(cursor), ...(findingsOnly ? { findings: true } : {}) } } }), auditCheckPageFromWire),
+    triggerAudit: (vault, trigger) => attempt(() => client.POST("/api/v1/vaults/{id}/audit/runs", { params: { path: { id: vault } }, body: auditTriggerToWire(trigger) }), auditRunFromWire),
+    getAuditSchedule: (vault) => attempt(() => client.GET("/api/v1/vaults/{id}/audit/schedule", { params: { path: { id: vault } } }), auditScheduleFromWire),
+    putAuditSchedule: (vault, schedule) => attempt(() => client.PUT("/api/v1/vaults/{id}/audit/schedule", { params: { path: { id: vault } }, body: auditScheduleToWire(schedule) }), auditScheduleFromWire),
+    getAuditBudget: (vault) => attempt(() => client.GET("/api/v1/vaults/{id}/audit/budget", { params: { path: { id: vault } } }), auditBudgetFromWire),
+    getAuditRecall: (vault) => attempt(() => client.GET("/api/v1/vaults/{id}/audit/recall", { params: { path: { id: vault } } }), recallFromWire),
+    getAgentUsage: (from, to) => attempt(() => client.GET("/api/v1/system/usage", { params: { query: { from, to } } }), agentUsageFromWire),
     health: (timeoutMs) => attempt(() => client.GET("/api/v1/health", { signal: AbortSignal.timeout(timeoutMs) }), none),
   };
 };

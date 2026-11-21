@@ -7690,7 +7690,7 @@
       "UsageRowDto": {
         "properties": {
           "agent": {
-            "description": "The Derivation's kind, such as `extraction` or `chat`.",
+            "description": "The Derivation's kind, such as `extraction` or `chat`, or `audit` for audit runs, which keep their tokens on the run.",
             "type": "string"
           },
           "cost_usd": {
@@ -7706,6 +7706,7 @@
             "type": "string"
           },
           "derivations": {
+            "description": "Derivations, or for `audit` the runs that called a model, summed into this row.",
             "format": "int64",
             "minimum": 0,
             "type": "integer"
@@ -8621,7 +8622,7 @@
             }
           }
         },
-        "summary": "LLM tokens by agent, model, vault and UTC day, summed from Derivations, with cost only for a model `MEMEX_LLM_PRICES` gives a price. A server admin's.",
+        "summary": "LLM tokens by agent, model, vault and UTC day, summed from Derivations and audit runs (agent `audit`), with cost only for a model `MEMEX_LLM_PRICES` gives a price. A server admin's.",
         "tags": [
           "operations"
         ]

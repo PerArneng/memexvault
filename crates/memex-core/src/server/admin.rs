@@ -3,8 +3,8 @@ use super::{ExtractJobError, Server, ServerEdges, ServerError};
 use crate::auth::{Caller, Operation};
 use crate::{LexicalIndex, ModelPrice, Registry, Snapshot, Store, VectorIndex};
 use memex_types::{
-    DerivationRow, IndexHealth, IndexName, JobProgress, JobRow, JobState, Mutation, OPERATION_JOB, ObjectId, OperationInput, Row, RowKey, Table, VaultId,
-    VectorHealth,
+    AgentUsage, AuditRunRow, DerivationRow, IndexHealth, IndexName, JobProgress, JobRow, JobState, Mutation, OPERATION_JOB, ObjectId, OperationInput, Row,
+    RowKey, Table, VaultId, VectorHealth,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -99,12 +99,13 @@ impl RecentAdmins {
 /// Tokens and cost for one agent, model, vault and day.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UsageRow {
-    /// The Derivation's kind: `extraction`, `chat` and so on.
+    /// The Derivation's kind, `extraction`, `chat` and so on, or `audit` for audit runs.
     pub agent: String,
     pub model: String,
     pub vault: VaultId,
     /// `YYYY-MM-DD`, in UTC.
     pub day: String,
+    /// Derivations, or for `audit` the runs, summed into this row.
     pub derivations: u64,
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -158,25 +159,54 @@ pub fn parse_utc_day(text: &str) -> Option<i64> {
     (utc_day(ms) == text).then_some(ms)
 }
 
-/// Sums Derivations by agent, model, vault and day, in that order of keys, within `[from_ms, to_ms)`. Pure, so the report is tested without a server.
-pub fn usage_report<'a>(
-    derivations: impl IntoIterator<Item = (&'a VaultId, &'a DerivationRow)>,
-    from_ms: i64,
-    to_ms: i64,
-    prices: &[ModelPrice],
-) -> UsageReport {
+/// One record of tokens spent: a Derivation, or an audit run, which keeps its spending on the run rather than in Derivations.
+#[derive(Debug, Clone, Copy)]
+pub struct Spent<'a> {
+    pub vault: &'a VaultId,
+    pub agent: &'a str,
+    pub model: &'a str,
+    pub at_ms: i64,
+    pub usage: &'a AgentUsage,
+}
+
+impl<'a> Spent<'a> {
+    pub fn derivation(vault: &'a VaultId, d: &'a DerivationRow) -> Self {
+        Self {
+            vault,
+            agent: &d.kind,
+            model: &d.model,
+            at_ms: d.created_at_ms,
+            usage: &d.usage,
+        }
+    }
+
+    /// An audit run counts under `audit`, its model and the day it was created. A run that called no model spent nothing, and is left out.
+    pub fn audit_run(vault: &'a VaultId, r: &'a AuditRunRow) -> Option<Self> {
+        let model = r.model.as_deref()?;
+        (r.llm_calls > 0 || r.usage.total() > 0).then_some(Self {
+            vault,
+            agent: crate::audit::AUDIT_JOB,
+            model,
+            at_ms: r.created_at_ms,
+            usage: &r.usage,
+        })
+    }
+}
+
+/// Sums spending by agent, model, vault and day, in that order of keys, within `[from_ms, to_ms)`. Pure, so the report is tested without a server.
+pub fn usage_report<'a>(spent: impl IntoIterator<Item = Spent<'a>>, from_ms: i64, to_ms: i64, prices: &[ModelPrice]) -> UsageReport {
     let mut sums: BTreeMap<(String, String, String, String), UsageRow> = BTreeMap::new();
-    for (vault, d) in derivations {
-        if d.created_at_ms < from_ms || d.created_at_ms >= to_ms {
+    for d in spent {
+        if d.at_ms < from_ms || d.at_ms >= to_ms {
             continue;
         }
-        let day = utc_day(d.created_at_ms);
+        let day = utc_day(d.at_ms);
         let row = sums
-            .entry((d.kind.clone(), d.model.clone(), vault.0.clone(), day.clone()))
+            .entry((d.agent.to_owned(), d.model.to_owned(), d.vault.0.clone(), day.clone()))
             .or_insert_with(|| UsageRow {
-                agent: d.kind.clone(),
-                model: d.model.clone(),
-                vault: vault.clone(),
+                agent: d.agent.to_owned(),
+                model: d.model.to_owned(),
+                vault: d.vault.clone(),
                 day,
                 derivations: 0,
                 input_tokens: 0,
@@ -496,21 +526,26 @@ impl<E: ServerEdges> Server<E> {
     /// LLM tokens by agent, model, vault and UTC day, summed from Derivations made in `[from_ms, to_ms)`, with cost only for a model that has a price. For server admins.
     pub fn usage(&self, caller: &Caller, from_ms: i64, to_ms: i64, prices: &[ModelPrice]) -> Result<UsageReport, ServerError> {
         self.allow(caller, Operation::ServerStatus)?;
-        let mut all: Vec<(VaultId, DerivationRow)> = vec![];
+        let mut all: Vec<(VaultId, Row)> = vec![];
         for v in self.vault_ids()? {
             let snap = self.engine.store().snapshot(&v)?;
-            let mut after: Option<ObjectId> = None;
-            loop {
-                let page = snap.rows(Table::Derivation, after.as_ref())?;
-                let Some(last) = page.last() else { break };
-                after = Some(last.header().id.clone());
-                all.extend(page.into_iter().filter_map(|r| match r {
-                    Row::Derivation(d) => Some((v.clone(), d)),
-                    _ => None,
-                }));
+            // Audit runs keep their tokens on the run rather than in Derivations (spec 047).
+            for table in [Table::Derivation, Table::AuditRun] {
+                let mut after: Option<ObjectId> = None;
+                loop {
+                    let page = snap.rows(table, after.as_ref())?;
+                    let Some(last) = page.last() else { break };
+                    after = Some(last.header().id.clone());
+                    all.extend(page.into_iter().map(|r| (v.clone(), r)));
+                }
             }
         }
-        Ok(usage_report(all.iter().map(|(v, d)| (v, d)), from_ms, to_ms, prices))
+        let spent = all.iter().filter_map(|(v, r)| match r {
+            Row::Derivation(d) => Some(Spent::derivation(v, d)),
+            Row::AuditRun(a) => Spent::audit_run(v, a),
+            _ => None,
+        });
+        Ok(usage_report(spent, from_ms, to_ms, prices))
     }
 }
 
@@ -604,7 +639,7 @@ mod tests {
             (a.clone(), derivation("chat", "m2", 1_700_000_000_000, 1000, 0, 0)),
             (a.clone(), derivation("extraction", "m1", 1_700_100_000_000, 1, 1, 1)),
         ];
-        let none = usage_report(rows.iter().map(|(v, d)| (v, d)), 0, i64::MAX, &[]);
+        let none = usage_report(rows.iter().map(|(v, d)| Spent::derivation(v, d)), 0, i64::MAX, &[]);
         assert!(none.rows.iter().all(|r| r.cost_usd.is_none()), "no price means no cost");
         assert_eq!(none.priced_cost_usd, 0.0);
         assert_eq!(none.unpriced_tokens, 100 + 10 + 1 + 50 + 5 + 7 + 1000 + 3);
@@ -624,12 +659,93 @@ mod tests {
             output: 2.0,
             thinking: 4.0,
         }];
-        let priced = usage_report(rows.iter().map(|(v, d)| (v, d)), 0, 1_700_050_000_000, &prices);
+        let priced = usage_report(rows.iter().map(|(v, d)| Spent::derivation(v, d)), 0, 1_700_050_000_000, &prices);
         assert_eq!(priced.rows.len(), 3, "the later day is outside the window");
         let first = priced.rows.iter().find(|r| r.agent == "extraction" && r.vault == a).unwrap();
         assert_eq!(first.cost_usd, Some((150.0 + 30.0 + 4.0) / 1e6));
         assert!(priced.rows.iter().find(|r| r.model == "m2").unwrap().cost_usd.is_none());
         assert_eq!(priced.unpriced_tokens, 1000);
+    }
+
+    fn audit_run(model: Option<&str>, at: i64, calls: u32, i: u64, o: u64) -> AuditRunRow {
+        AuditRunRow {
+            header: Header {
+                id: ObjectId(format!("r{at}{i}")),
+                creator: "x".into(),
+                status: Status::Active,
+                version: 1,
+                acl_id: None,
+            },
+            seed: 1,
+            trigger: memex_types::AuditTrigger::OnDemand,
+            requested_by: "x".into(),
+            state: memex_types::AuditRunState::Finished,
+            stop: None,
+            stop_detail: None,
+            sample_size: 1,
+            population: 1,
+            sampled: 1,
+            state_seq: None,
+            run_token_budget: 0,
+            usage: AgentUsage {
+                input_tokens: i,
+                output_tokens: o,
+                thinking_tokens: 0,
+            },
+            model: model.map(Into::into),
+            llm_calls: calls,
+            passed: 0,
+            suspect: 0,
+            failed: 0,
+            llm_skipped: 0,
+            revoked: vec![],
+            siblings_requeued: 0,
+            siblings_remaining: 0,
+            missed_slots: 0,
+            vault_findings: vec![],
+            job_id: ObjectId("j".into()),
+            created_at_ms: at,
+            started_at_ms: None,
+            finished_at_ms: None,
+        }
+    }
+
+    #[test]
+    fn audit_runs_count_as_the_audit_agent_by_their_day_and_model_and_runs_with_no_model_are_left_out() {
+        let a = VaultId("a".into());
+        let t0 = 1_700_000_000_000;
+        let runs = [
+            audit_run(Some("m1"), t0, 2, 100, 10),
+            audit_run(Some("m1"), t0 + 1000, 1, 50, 5),
+            audit_run(Some("m3"), t0 + 86_400_000, 1, 7, 1),
+            audit_run(None, t0, 0, 0, 0),
+            audit_run(Some("m1"), t0, 0, 0, 0),
+        ];
+        let d = derivation("extraction", "m1", t0, 1, 1, 0);
+        let spent = runs.iter().filter_map(|r| Spent::audit_run(&a, r)).chain([Spent::derivation(&a, &d)]);
+        let prices = [ModelPrice {
+            model: "m1".into(),
+            input: 1.0,
+            output: 2.0,
+            thinking: 4.0,
+        }];
+        let report = usage_report(spent, 0, i64::MAX, &prices);
+        assert_eq!(report.rows.len(), 3, "{report:?}");
+        let audit = report.rows.iter().find(|r| r.agent == "audit" && r.model == "m1").unwrap();
+        assert_eq!(
+            (audit.derivations, audit.input_tokens, audit.output_tokens),
+            (2, 150, 15),
+            "a run with no call isn't counted"
+        );
+        assert_eq!(audit.cost_usd, Some((150.0 + 30.0) / 1e6));
+        assert_eq!(audit.day, "2023-11-14");
+        let unpriced = report.rows.iter().find(|r| r.model == "m3").unwrap();
+        assert_eq!(
+            (unpriced.agent.as_str(), unpriced.day.as_str(), unpriced.cost_usd),
+            ("audit", "2023-11-15", None)
+        );
+        assert_eq!(report.unpriced_tokens, 8);
+        assert!(report.rows.iter().any(|r| r.agent == "extraction"));
     }
 
     #[test]

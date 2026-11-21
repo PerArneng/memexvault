@@ -17,7 +17,8 @@
     "e2e:ingest": "playwright test --config playwright.ingest.config.ts",
     "e2e:search": "playwright test --config playwright.search.config.ts",
     "e2e:chat": "playwright test --config playwright.chat.config.ts",
-    "e2e:admin": "playwright test --config playwright.admin.config.ts"
+    "e2e:admin": "playwright test --config playwright.admin.config.ts",
+    "e2e:audit": "playwright test --config playwright.audit.config.ts"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.4",

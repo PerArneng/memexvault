@@ -98,7 +98,7 @@ export const SettingsTab = () => {
       <Panel title="Effective settings" description="What this server runs with, read-only: settings are checked when the server starts, so they change with its environment and a restart. Secrets never leave the server, and show only whether they're set.">
         <QueryView query={query} label="the settings">{(tree) => <SettingsTable tree={tree} />}</QueryView>
       </Panel>
-      <Panel title="LLM usage" description="Tokens by day, vault, agent and model, summed from what each call recorded. Review and audit calls aren't counted yet.">
+      <Panel title="LLM usage" description="Tokens by day, vault, agent and model, summed from what each call recorded, and audit runs as the agent audit. The reviewer agent's calls aren't counted yet.">
         <UsagePanel />
       </Panel>
     </div>

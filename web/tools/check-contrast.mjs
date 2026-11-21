@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 
 const css = readFileSync(process.argv[2] ?? "packages/ui/src/tokens.css", "utf8");
-const tokens = Object.fromEntries([...css.matchAll(/--color-([a-z-]+):\s*(#[0-9a-f]{6});/g)].map((m) => [m[1], m[2]]));
+const tokens = Object.fromEntries([...css.matchAll(/--color-([a-z0-9-]+):\s*(#[0-9a-f]{6});/g)].map((m) => [m[1], m[2]]));
 const lum = (hex) => {
   const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
   return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
@@ -18,6 +18,8 @@ const pairs = [
   ["success", "success-surface", 4.5], ["warning", "warning-surface", 4.5], ["danger", "danger-surface", 4.5], ["info", "info-surface", 4.5], ["text", "neutral-surface", 4.5], ["text-muted", "neutral-surface", 4.5],
   // Large text, icons and control borders need 3:1.
   ...surfaces.flatMap((s) => [["border-strong", s, 3], ["focus", s, 3]]),
+  // Chart series are graphics, so 3:1 (spec 047).
+  ...["chart-1", "chart-2", "chart-3", "chart-4", "chart-5"].flatMap((c) => surfaces.map((s) => [c, s, 3])),
 ];
 let failed = 0;
 for (const [fg, bg, need] of pairs) {

@@ -12,7 +12,7 @@ mod review;
 pub use self::meeting::{MediaInfo, MeetingView, ParticipantLink, ParticipantView, TranscriptPage, TranscriptWindow};
 pub use activity::{ActivitySnapshot, DocumentActivity};
 pub use admin::{
-    ArchiveRead, ArchiveStore, OperationEdge, RECENT_ADMIN_MS, RecentAdmins, UsageReport, UsageRow, export_archive_name, parse_utc_day, reconcile_json,
+    ArchiveRead, ArchiveStore, OperationEdge, RECENT_ADMIN_MS, RecentAdmins, Spent, UsageReport, UsageRow, export_archive_name, parse_utc_day, reconcile_json,
     usage_report, utc_day,
 };
 pub use audit::{AuditBudget, AuditRunDetail, TriggerAudit};

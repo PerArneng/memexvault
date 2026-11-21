@@ -34,6 +34,14 @@
   --color-info-surface: #13263a;
   --color-neutral-surface: #252b34;
 
+  /* Chart series, in the order a chart assigns them. Each is a graphic, so each needs 3:1 on every surface. */
+  --color-chart-1: #6ba6ff;
+  --color-chart-2: #e6b84a;
+  --color-chart-3: #5cd16f;
+  --color-chart-4: #d08cff;
+  --color-chart-5: #ff8880;
+  --color-chart-grid: #2d343e;
+
   --font-sans: "Inter Variable", system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
 

@@ -117,3 +117,10 @@ export {
 } from "./admin";
 export type { AdminAccess, AdminRoute, AdminTab, AdminTabId, HealthLine, HealthTone, OperationDef, OperationKind, OperationRequest, SettingKind, SettingRow, TokenState } from "./admin";
 export type { AdminApi, AdminCases, ChatSettingsChange, ImportOptions, NewPrincipal, NewToken } from "./admin-cases";
+export { auditAccess, auditAccessText, auditRunStatus, budgetUsedText, checkName, checkStatusOf, formatCount, intervalText, isFinding, MAX_SAMPLE, noReviewItemText, outcomeOf, parseSchedule, parseTrigger, recallText, recallWarnings, runIsOpen, scheduleForm, seedProblem, targetText, tokensTotal, triggerText } from "./audit";
+export type { AuditAccess, AuditRunStatus, AuditTone, Parsed, RecallWarning, ScheduleForm, TriggerForm } from "./audit";
+export { agentName, costText, isMonth, monthName, monthOf, monthRange, shiftMonth, totalsOf, usageView } from "./audit-usage";
+export type { Month, UsageDay, UsageGroup, UsageTotals, UsageView } from "./audit-usage";
+export { auditPath, parseAuditRoute } from "./audit-routes";
+export type { AuditRoute } from "./audit-routes";
+export type { AuditApi, AuditCases } from "./audit-cases";

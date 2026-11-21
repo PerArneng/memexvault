@@ -21,6 +21,10 @@ import { fakeAdminApi } from "./testing-admin";
 import type { AdminSeed, FakeAdmin } from "./testing-admin";
 export { EMPTY_STATUS } from "./testing-admin";
 export type { AdminSeed, FakeAdmin } from "./testing-admin";
+import { fakeAuditApi } from "./testing-audit";
+import type { AuditSeed } from "./testing-audit";
+export { checkWith, DEFAULT_SCHEDULE, fakeAuditApi, runWith, usageRowWith } from "./testing-audit";
+export type { AuditSeed } from "./testing-audit";
 import type { IngestSeed } from "./ingest-testing";
 
 /** A clock tests move by hand, so nothing sleeps. */
@@ -93,6 +97,7 @@ export interface FakeApiSeed {
   /** What the admin screens read. */
   readonly admin?: AdminSeed;
   readonly ingest?: IngestSeed;
+  readonly audit?: AuditSeed;
   readonly chat?: { readonly settings?: ChatSettings; readonly threads?: readonly ChatThreadDetail[] };
   /** Which token signs in as whom. */
   readonly tokens?: Readonly<Record<string, Identity>>;
@@ -221,6 +226,7 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
     ...fakeIngestApi(seed.ingest ?? {}),
     ...admin,
     admin,
+    ...fakeAuditApi(seed.audit ?? {}),
     getChatSettings: () => answer("getChatSettings", () => ok(seed.chat?.settings ?? { enabled: false, threadTokenBudget: null, dayTokenBudget: null, dayTokensUsed: 0, dayTokensLimit: 0, model: null, endpoint: null })),
     listChatThreads: () => answer("listChatThreads", () => ok({ items: (seed.chat?.threads ?? []).map((t) => t.thread), nextCursor: null })),
     getChatThread: (_vault, id, cursor) =>
