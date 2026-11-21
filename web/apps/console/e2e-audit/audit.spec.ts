@@ -141,6 +141,14 @@ const startRun = async (page: Page, seed: string, sample: string, budget = ""): 
   return decodeURIComponent(new URL(page.url()).pathname.split("/").pop() ?? "");
 };
 
+/** A finished run with this seed, made through the API when no earlier check left one, so each check stands alone. */
+const finishedRun = async (request: APIRequestContext, seed: string): Promise<string> => {
+  const runs = await get<{ items: { id: string; seed: string }[] }>(request, api("/audit/runs?limit=200"));
+  const id = runs.items.find((r) => r.seed === seed)?.id ?? (await send<{ id: string }>(request, api("/audit/runs"), { seed, sample_size: 50 }, 202)).id;
+  await expect.poll(async () => (await get<{ run: RunWire }>(request, api(`/audit/runs/${id}`))).run.state, { timeout: 120_000 }).toBe("finished");
+  return id;
+};
+
 const sampleText = async (page: Page) => (await page.getByTestId("sample").locator("li").allTextContents()).join(" ");
 
 test("item 1: a run started from the UI appears live, finishes, and its findings link to their review items", async ({ browser, request }) => {
@@ -206,9 +214,7 @@ test("item 1: a run started from the UI appears live, finishes, and its findings
 
 test("item 2: rerunning with the same seed shows the same sample, and another seed doesn't", async ({ browser, request }) => {
   const page = await signIn(browser, adminToken);
-  const runs = await get<{ items: { id: string; seed: string }[] }>(request, api("/audit/runs"));
-  const earlier = runs.items.find((r) => r.seed === "42");
-  if (earlier === undefined) throw new Error("item 1's run isn't there");
+  const earlier = { id: await finishedRun(request, "42") };
   await page.goto(`/vaults/${world.vault}/audit/${earlier.id}`);
   await expect(page.getByTestId("sample")).toBeVisible();
   const before = await sampleText(page);
@@ -271,6 +277,7 @@ const month = () => {
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 const compareUsage = async (page: Page, request: APIRequestContext, priced: boolean) => {
+  await finishedRun(request, "42");
   const { from, to } = month();
   const report = await get<UsageWire>(request, `/api/v1/system/usage?from=${from}&to=${to}`);
   const rows = report.rows.filter((r) => r.vault_id === world.vault);

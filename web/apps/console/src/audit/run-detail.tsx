@@ -35,7 +35,7 @@ const Summary = ({ run }: { readonly run: AuditRun }) => {
       </dl>
       {run.vaultFindings.length > 0 && (
         <div className="flex flex-col gap-1">
-          <h3 className="text-sm font-medium">About the vault as a whole</h3>
+          <h2 className="text-sm font-medium">About the vault as a whole</h2>
           <ul className="flex flex-col gap-1 text-sm" data-testid="vault-findings">
             {run.vaultFindings.map((f, i) => {
               const s = checkStatusOf(f.status);
