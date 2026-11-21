@@ -22,6 +22,8 @@ const IngestScreen = lazy(() => import("../ingest/ingest-screen"));
 const SearchScreen = lazy(() => import("../search/search-screen"));
 // Lazy, as the chat brings in Markdown and, on its first message, the AG-UI client.
 const ChatPanel = lazy(() => import("../chat/chat-panel"));
+// Lazy, as only an admin needs it.
+const AdminScreen = lazy(() => import("../admin/admin-screen"));
 
 interface SectionScreenProps {
   readonly identity: Identity;
@@ -31,6 +33,27 @@ interface SectionScreenProps {
 }
 
 const Allowed = ({ identity, vault, section, rest }: { readonly identity: Identity; readonly vault: VaultId; readonly section: Section; readonly rest: readonly string[] }) => {
+  // Admin reads the vault only on the screens that need it, so its status screen still works with Postgres down. See spec 048.
+  if (section.id === "admin") return <AdminSection identity={identity} vault={vault} rest={rest} />;
+  return <VaultScreen identity={identity} vault={vault} section={section} rest={rest} />;
+};
+
+/** Names the vault from the list the shell already holds, rather than a read of its own that would fail with Postgres down. */
+const AdminSection = ({ identity, vault, rest }: { readonly identity: Identity; readonly vault: VaultId; readonly rest: readonly string[] }) => {
+  const engine = useEngine();
+  const vaults = useQuery({ queryKey: QUERY_KEYS.vaults, queryFn: async () => unwrap(await engine.listVaults()) });
+  const name = vaults.data?.find((v) => v.id === vault)?.name;
+  return (
+    <div className="flex flex-col gap-4">
+      {name !== undefined && <p className="text-sm text-text-muted">In vault <span className="text-text">{name}</span></p>}
+      <Suspense fallback={<Skeleton className="h-24 w-full" />}>
+        <AdminScreen identity={identity} vault={vault} rest={rest} />
+      </Suspense>
+    </div>
+  );
+};
+
+const VaultScreen = ({ identity, vault, section, rest }: { readonly identity: Identity; readonly vault: VaultId; readonly section: Section; readonly rest: readonly string[] }) => {
   const engine = useEngine();
   const query = useQuery({ queryKey: QUERY_KEYS.vault(vault), queryFn: async () => unwrap(await engine.getVault(vault)) });
   return (

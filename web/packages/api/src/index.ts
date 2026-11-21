@@ -55,3 +55,21 @@ export { activityFrameFromWire, activityPageFromWire, documentActivityFromWire, 
 export { evidencePackageFromWire, renditionReadingFromWire } from "./translate-search";
 export type { LineageStep, ObjectPages, WireHeaders } from "./translate";
 export { agentEventFromWire, chatMessageFromWire, chatSettingsFromWire, chatThreadDetailFromWire, chatThreadFromWire, chatThreadPageFromWire, toolAnswerFromWire } from "./translate-chat";
+export {
+  cacheTierFromWire,
+  clearedCachesFromWire,
+  createdTokenFromWire,
+  erasureImpactFromWire,
+  erasurePageFromWire,
+  importFromWire,
+  mcpInfoFromWire,
+  operationFromWire,
+  operationPageFromWire,
+  principalFromWire,
+  principalPageFromWire,
+  settingsFromWire,
+  systemStatusFromWire,
+  tokenFromWire,
+  tokenPageFromWire,
+  usageFromWire,
+} from "./translate-admin";

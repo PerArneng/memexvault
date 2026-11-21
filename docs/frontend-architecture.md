@@ -75,6 +75,25 @@ Spec 041 built this for Ingest. `ActivityWatch` in `core` holds the picture and 
 
 Spec 050. `AgentChannel` in `core` runs one turn, and `AgUiAgentChannel` in `edge-agui` is it on `HttpAgent.run`, not `runAgent`, since the transcript reducer in `core` keeps the state and judges order itself. It sends only the newest message, as the server keeps the thread. Stop aborts the request, which the server takes as the cancel, and says the stop at once. The reducer takes events out of order, ignores what it doesn't know and anything about a run that has ended, and marks a reply that didn't finish with why: stopped, cut, budget, failed or dropped. The panel opens beside any screen from the shell and is the Chat section too. The current screen's object reaches the chat only if the person ticks the box, as a line naming it in the message. A proposal card reads the review API and decides through it with the review screen's reason, and its buttons show only where `decisionAccess` allows.
 
+## Administration
+
+Spec 048. Admin is one section in a vault, with a screen per tab: the vault itself, tokens, operations and erasure for that vault's admin,
+and status, settings, MCP and all vaults for a server admin, as the API allows them no one else. `adminAccess` in `core` decides each
+tab the way the server does, so a direct link gets the same permission message as the navigation. A server admin with no vault makes the
+first one on the home page.
+
+- Every action that changes or removes something takes two presses: the first opens a confirmation in the page, which says what will
+  happen, and sends nothing. A destructive one also needs its object's name typed: a vault's name to delete it or to roll back, sweep or
+  compact it, a principal's to disable it, a document's to propose its erasure. `confirmationMatches` is exact, apart from spaces around it.
+- A new token's value is shown once, in the page's own state, never in the query cache, and closing the panel drops it.
+- The status page reads `GET /system/status` every 2 s rather than following the activity stream, as it's server-wide. It reads nothing
+  else, not even the vault, so with Postgres down it still explains what's wrong: spec 039's route answers within 2 s and remembers a server
+  admin it checked in the last 5 minutes.
+- Settings and operation reports are the server's own trees, laid out by `settingRows` as `a.b.c` rows, so a new setting needs no change
+  here. Spec 039's `<set>`, `<not set>` and `<redacted>` show as marked secrets.
+- An erasure keeps the preview it was proposed from, follows its ChangeSet through Review, and compares the result with it once the
+  erasure's record exists.
+
 ## Security
 
 All vault content is untrusted, including document text, OCR output, entity fields, page bodies and model replies.

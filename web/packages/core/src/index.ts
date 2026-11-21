@@ -83,3 +83,37 @@ export { attachableFrom, citationIndex, EMPTY_TRANSCRIPT, MAX_MESSAGE_CHARS, mes
 export type { AgentChannel, AgentRun, AgentRunRequest, ChatAttachment, CitationIndex, PreparedReply, ReplyEnd, ReplyPart, RunStatus, TranscriptAction, TranscriptEntry, TranscriptState } from "./chat";
 export { createChatSession } from "./chat-cases";
 export type { ChatApi, ChatCases, ChatSession } from "./chat-cases";
+export {
+  ADMIN_TABS,
+  adminAccess,
+  adminAccessText,
+  adminPath,
+  adminTabById,
+  compareErasure,
+  confirmationMatches,
+  expiryFrom,
+  healthLines,
+  hitRate,
+  isOperationOpen,
+  mcpClientConfig,
+  mcpStdioConfig,
+  nameProblem,
+  needsTypedConfirmation,
+  operationDef,
+  operationFraction,
+  operationRequest,
+  operationRequestProblem,
+  operationStateText,
+  OPERATIONS,
+  parseAdminRoute,
+  REDACTED,
+  removedByTable,
+  SECRET_NOT_SET,
+  SECRET_SET,
+  settingKindText,
+  settingRows,
+  statusFailureText,
+  tokenState,
+} from "./admin";
+export type { AdminAccess, AdminRoute, AdminTab, AdminTabId, HealthLine, HealthTone, OperationDef, OperationKind, OperationRequest, SettingKind, SettingRow, TokenState } from "./admin";
+export type { AdminApi, AdminCases, ChatSettingsChange, ImportOptions, NewPrincipal, NewToken } from "./admin-cases";

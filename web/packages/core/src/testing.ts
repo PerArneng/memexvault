@@ -17,6 +17,10 @@ export { scriptedAgentChannel } from "./testing-chat";
 export type { ScriptedAgentChannel, ScriptedRun } from "./testing-chat";
 export type { ReviewSeed } from "./testing-review";
 import { fakeIngestApi } from "./ingest-testing";
+import { fakeAdminApi } from "./testing-admin";
+import type { AdminSeed, FakeAdmin } from "./testing-admin";
+export { EMPTY_STATUS } from "./testing-admin";
+export type { AdminSeed, FakeAdmin } from "./testing-admin";
 import type { IngestSeed } from "./ingest-testing";
 
 /** A clock tests move by hand, so nothing sleeps. */
@@ -86,6 +90,8 @@ export const httpFailure = (status: number, code: string, message = code): ApiFa
 export const UNREACHABLE: ApiFailure = { kind: "unreachable", message: "no answer" };
 
 export interface FakeApiSeed {
+  /** What the admin screens read. */
+  readonly admin?: AdminSeed;
   readonly ingest?: IngestSeed;
   readonly chat?: { readonly settings?: ChatSettings; readonly threads?: readonly ChatThreadDetail[] };
   /** Which token signs in as whom. */
@@ -137,6 +143,8 @@ export interface DocumentsSeed {
 /** An in-memory server with seeded data. `down` and `failNext` script the bad cases. */
 export interface FakeApi extends Api {
   down: boolean;
+  /** What the admin routes changed. */
+  readonly admin: FakeAdmin;
   failNext(failure: ApiFailure): void;
   /** Ends the session on the server's side, as expiry or revocation would. */
   endSession(): void;
@@ -208,8 +216,11 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
   const unauthenticated = httpFailure(401, "unauthenticated");
   const notFound = httpFailure(404, "not_found");
 
+  const admin = fakeAdminApi(seed.admin ?? {}, answer);
   const api: FakeApi = {
     ...fakeIngestApi(seed.ingest ?? {}),
+    ...admin,
+    admin,
     getChatSettings: () => answer("getChatSettings", () => ok(seed.chat?.settings ?? { enabled: false, threadTokenBudget: null, dayTokenBudget: null, dayTokensUsed: 0, dayTokensLimit: 0, model: null, endpoint: null })),
     listChatThreads: () => answer("listChatThreads", () => ok({ items: (seed.chat?.threads ?? []).map((t) => t.thread), nextCursor: null })),
     getChatThread: (_vault, id, cursor) =>

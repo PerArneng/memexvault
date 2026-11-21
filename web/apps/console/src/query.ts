@@ -98,6 +98,17 @@ export const QUERY_KEYS = {
   chatThreads: (vault: string) => ["chat", vault, "threads"] as const,
   chatThread: (vault: string, id: string) => ["chat", vault, "thread", id] as const,
   reading: (vault: string, rendition: string) => ["documents", vault, "reading", rendition] as const,
+  /** Everything the admin screens read, so a change can refresh all of it. */
+  admin: ["admin"] as const,
+  principals: ["admin", "principals"] as const,
+  tokens: (all: boolean) => ["admin", "tokens", all] as const,
+  operations: (vault: string) => ["admin", "operations", vault] as const,
+  erasures: (vault: string) => ["admin", "erasures", vault] as const,
+  erasurePreview: (vault: string, source: string) => ["admin", "erasure-preview", vault, source] as const,
+  systemStatus: ["admin", "status"] as const,
+  systemSettings: ["admin", "settings"] as const,
+  usage: (from: string, to: string) => ["admin", "usage", from, to] as const,
+  mcp: ["admin", "mcp"] as const,
   /** Who an actor is. Outside the wiki's and the jobs' keys, so their refreshes don't ask again. */
   actor: (vault: string, id: string) => ["actor", vault, id] as const,
 };

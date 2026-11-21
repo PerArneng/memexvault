@@ -88,6 +88,8 @@ test("verification 1: sign in, switch vault and sign out on the real backend", a
     await expect(screen(page, label)).toBeVisible();
     await expect(nav(page).getByRole("link", { name: label, exact: true })).toHaveAttribute("aria-current", "page");
   }
+  // Admin is the last, and since spec 048 it reads the vault and its chat setting. Signing out while those are on their way would get a 401 that the browser logs.
+  await expect(page.getByLabel("Where vault content goes")).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login$/);

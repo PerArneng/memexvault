@@ -14,6 +14,7 @@ import { SectionScreen } from "./section-screen";
 
 // Lazy, so nobody pays for the chat, its Markdown or its AG-UI client until they open it. The AG-UI client itself loads on the first message.
 const ChatPanel = lazy(() => import("../chat/chat-panel"));
+const CreateVaultForm = lazy(() => import("../admin/create-vault").then((m) => ({ default: m.CreateVaultForm })));
 
 const VaultSwitcher = ({ identity, vault, vaults }: { readonly identity: Identity; readonly vault: VaultId | null; readonly vaults: readonly Vault[] }) => {
   const navigate = useNavigate();
@@ -74,8 +75,13 @@ const Home = ({ identity, vaults }: { readonly identity: Identity; readonly vaul
     <section className="flex flex-col gap-4" aria-labelledby="screen-title">
       <h1 id="screen-title" className="text-xl font-medium">No vaults</h1>
       <EmptyState title="There are no vaults you can open yet.">
-        {identity.principal.serverAdmin ? "Create one through the API, as the console's administration screens aren't built yet." : "Ask an administrator to give your token access to one."}
+        {identity.principal.serverAdmin ? "Create the first one here." : "Ask an administrator to give your token access to one."}
       </EmptyState>
+      {identity.principal.serverAdmin && (
+        <Suspense fallback={<Skeleton className="h-8 w-64" />}>
+          <CreateVaultForm onCreated={(v) => router.history.push(defaultSectionPath(identity, v.id))} />
+        </Suspense>
+      )}
     </section>
   );
 };

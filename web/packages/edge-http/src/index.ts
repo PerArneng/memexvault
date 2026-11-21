@@ -59,10 +59,24 @@ import {
   reviewDetailFromWire,
   reviewFilterToWire,
   reviewPageFromWire,
+  clearedCachesFromWire,
+  createdTokenFromWire,
+  erasureImpactFromWire,
+  erasurePageFromWire,
+  importFromWire,
+  mcpInfoFromWire,
+  operationFromWire,
+  operationPageFromWire,
+  principalFromWire,
+  principalPageFromWire,
+  settingsFromWire,
+  systemStatusFromWire,
+  tokenPageFromWire,
+  usageFromWire,
 } from "@memex/api";
-import type { paths } from "@memex/api";
+import type { components, paths } from "@memex/api";
 import { failed, ok } from "@memex/core";
-import type { Api, ApiResult, EntityFieldInput, SearchRequest } from "@memex/core";
+import type { Api, ApiResult, EntityFieldInput, ImportOptions, OperationRequest, SearchRequest, UploadFile } from "@memex/core";
 import createClient from "openapi-fetch";
 
 /** The server wants this on anything a cookie would authorize. Its presence is the defence, so the value doesn't matter. */
@@ -116,6 +130,38 @@ const attempt = async <D, T>(run: () => Promise<Answer<D>>, translate: (data: D)
   } catch (e) {
     // A body that doesn't parse is an answer, such as an HTML page, and anything else from fetch means no answer.
     if (e instanceof SyntaxError) return failed({ kind: "protocol", status: 200, message: "The server answered with something that isn't the API." });
+    return failed({ kind: "unreachable", message: e instanceof Error ? e.message : "no answer" });
+  }
+};
+
+/** The operation body with only what the operation takes, as the server refuses what doesn't belong. */
+const operationBody = (r: OperationRequest): components["schemas"]["OperationBody"] => ({
+  op: r.op,
+  ...(r.index === null ? {} : { index: r.index }),
+  ...(r.op === "reconcile" ? { deep: r.deep, repair: r.repair, ...(r.at === null ? {} : { at: r.at }) } : {}),
+  ...(r.op === "sweep" && r.graceS !== null ? { grace_s: r.graceS } : {}),
+});
+
+/** An archive is a raw body, which the generated client would encode as JSON, so this is plain `fetch` with the same headers. */
+const startImport = async (apiBaseUrl: string, file: UploadFile, options: ImportOptions): Promise<ApiResult<ReturnType<typeof importFromWire>>> => {
+  const query = new URLSearchParams();
+  if (options.newId) query.set("new_id", "true");
+  if (options.replace) query.set("replace", "true");
+  if (options.name !== null && options.name.trim() !== "") query.set("name", options.name.trim());
+  try {
+    // The caller passes the object it was given, which in a browser is a `File`.
+    const response = await fetch(`${apiBaseUrl}/imports?${query.toString()}`, { method: "POST", headers: { ...CSRF_HEADERS, "content-type": "application/octet-stream" }, body: file as File });
+    const text = await response.text();
+    let body: unknown = null;
+    try {
+      body = JSON.parse(text) as unknown;
+    } catch {
+      body = null;
+    }
+    if (!response.ok) return failed(failureFromWire(response.status, body, response.headers));
+    if (body === null) return failed({ kind: "protocol", status: response.status, message: "The server answered with something that isn't the API." });
+    return ok(importFromWire(body as components["schemas"]["ImportDto"]));
+  } catch (e) {
     return failed({ kind: "unreachable", message: e instanceof Error ? e.message : "no answer" });
   }
 };
@@ -309,6 +355,40 @@ export const createFetchApi = ({ apiBaseUrl }: { readonly apiBaseUrl: string }):
     listChatThreads: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/chat/threads", { params: { path: { id: vault }, query: page(cursor) } }), chatThreadPageFromWire),
     getChatThread: (vault, id, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/chat/threads/{tid}", { params: { path: { id: vault, tid: id }, query: page(cursor) } }), chatThreadDetailFromWire),
     deleteChatThread: (vault, id) => attempt(() => client.DELETE("/api/v1/vaults/{id}/chat/threads/{tid}", { params: { path: { id: vault, tid: id } } }), none),
+    createVault: (name) => attempt(() => client.POST("/api/v1/vaults", { body: { name } }), vaultFromWire),
+    renameVault: (id, name) => attempt(() => client.PATCH("/api/v1/vaults/{id}", { params: { path: { id } }, body: { name } }), vaultFromWire),
+    deleteVault: (id) => attempt(() => client.DELETE("/api/v1/vaults/{id}", { params: { path: { id } } }), none),
+    listPrincipals: (cursor) => attempt(() => client.GET("/api/v1/principals", { params: { query: page(cursor) } }), principalPageFromWire),
+    createPrincipal: (input) => attempt(() => client.POST("/api/v1/principals", { body: { name: input.name, kind: input.kind, server_admin: input.serverAdmin } }), principalFromWire),
+    disablePrincipal: (id) => attempt(() => client.POST("/api/v1/principals/{id}/disable", { params: { path: { id } } }), none),
+    listTokens: (all, cursor) => attempt(() => client.GET("/api/v1/tokens", { params: { query: { ...page(cursor), ...(all ? { all: true } : {}) } } }), tokenPageFromWire),
+    createToken: (input) =>
+      attempt(
+        () =>
+          client.POST("/api/v1/tokens", {
+            body: { name: input.name, grants: input.grants.map((g) => ({ vault_id: g.vault, scope: g.scope })), ...(input.principalId === null ? {} : { principal_id: input.principalId }), ...(input.expiresAtMs === null ? {} : { expires_at_ms: input.expiresAtMs }) },
+          }),
+        createdTokenFromWire,
+      ),
+    revokeToken: (id) => attempt(() => client.DELETE("/api/v1/tokens/{id}", { params: { path: { id } } }), none),
+    getErasurePreview: (vault, source) => attempt(() => client.GET("/api/v1/vaults/{id}/sources/{sid}/erasure", { params: { path: { id: vault, sid: source } } }), erasureImpactFromWire),
+    proposeErasure: (vault, source, rationale) => attempt(() => client.POST("/api/v1/vaults/{id}/sources/{sid}/erasure", { params: { path: { id: vault, sid: source } }, body: { rationale } }), wikiWriteFromWire),
+    listErasures: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/erasures", { params: { path: { id: vault }, query: page(cursor) } }), erasurePageFromWire),
+    listOperations: (vault, cursor) => attempt(() => client.GET("/api/v1/vaults/{id}/operations", { params: { path: { id: vault }, query: page(cursor) } }), operationPageFromWire),
+    startOperation: (vault, request) => attempt(() => client.POST("/api/v1/vaults/{id}/operations", { params: { path: { id: vault } }, body: operationBody(request) }), operationFromWire),
+    getOperation: (vault, id) => attempt(() => client.GET("/api/v1/vaults/{id}/operations/{jid}", { params: { path: { id: vault, jid: id } } }), operationFromWire),
+    startImport: (file, options) => startImport(apiBaseUrl, file, options),
+    getImport: (id) => attempt(() => client.GET("/api/v1/imports/{iid}", { params: { path: { iid: id } } }), importFromWire),
+    getSystemSettings: () => attempt(() => client.GET("/api/v1/system/settings"), settingsFromWire),
+    getSystemStatus: () => attempt(() => client.GET("/api/v1/system/status"), systemStatusFromWire),
+    getUsage: (from, to) => attempt(() => client.GET("/api/v1/system/usage", { params: { query: { ...(from === null ? {} : { from }), ...(to === null ? {} : { to }) } } }), usageFromWire),
+    getMcpInfo: () => attempt(() => client.GET("/api/v1/system/mcp"), mcpInfoFromWire),
+    clearCaches: () => attempt(() => client.POST("/api/v1/caches/clear"), clearedCachesFromWire),
+    putChatSettings: (vault, change) =>
+      attempt(
+        () => client.PUT("/api/v1/vaults/{id}/chat/settings", { params: { path: { id: vault } }, body: { enabled: change.enabled, ...(change.threadTokenBudget === null ? {} : { thread_token_budget: change.threadTokenBudget }), ...(change.dayTokenBudget === null ? {} : { day_token_budget: change.dayTokenBudget }) } }),
+        chatSettingsFromWire,
+      ),
     health: (timeoutMs) => attempt(() => client.GET("/api/v1/health", { signal: AbortSignal.timeout(timeoutMs) }), none),
   };
 };
