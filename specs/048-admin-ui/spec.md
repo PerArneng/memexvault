@@ -37,7 +37,7 @@ Done. Measured on 2026-11-21 on Linux x86_64, against a pgvector 0.8.7 / Postgre
 or provider was called: the LLM and the transcription API were configured, so their keys show on the settings page, but pointed at a
 closed port on this machine.
 
-**What was built.** An Admin section in each vault, a tab per screen, all in its own lazy chunk (13.4 kB gzip):
+**What was built.** An Admin section in each vault, a tab per screen, all in its own lazy chunk (13.3 kB gzip):
 - *Vault*: rename, the chat setting with the model and endpoint that vault content would go to, and delete. *All vaults* (server admin):
   every vault and a create form. A server admin with no vault creates the first one on the home page.
 - *Tokens*: create a token for yourself or, as a server admin, for any principal, with grants on the vaults you administer and an expiry in
@@ -90,14 +90,18 @@ closed port on this machine.
 
 Also: axe finds no violation on the 8 admin screens, and the browser logged no CSP or script error in any test.
 
-Other checks: in `web/`, `pnpm test` (795 tests in 49 files, 33 new), `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm run licenses`,
-`pnpm run contrast` (53 pairs, 0 failed), `pnpm budget` (sign-in route 150,894 bytes gzip of 200,000), `pnpm api:check` against the
-server and `pnpm e2e` (6) pass. `e2e:shell` passes 17 on a fresh database: its sign-out test now waits for the Admin screen's reads before
-signing out, as Admin, the last screen it opens, now reads something, and a read still on its way when the session ends got a 401 the browser
-logged. `cargo build --workspace`, `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo deny check licenses`
-and `cargo test --workspace` pass (1,037 passed, 126 ignored, with `MEMEX_PDFIUM_LIB` set). A first run, beside another worker's tests, failed memex-http's
-`worker_progress_reaches_a_stream_with_no_id` once on a stream timeout; it passed three times alone and in the full rerun. No Rust changed, so the
-Postgres suites weren't rerun.
+Other checks, rerun after merging main with spec 047: in `web/`, `pnpm test` (834 tests in 54 files, 33 of them new), `pnpm typecheck`,
+`pnpm lint`, `pnpm build`, `pnpm run licenses`, `pnpm run contrast` (73 pairs, 0 failed), `pnpm budget` (sign-in route 152,163 bytes gzip of
+200,000), `pnpm api:check` against the server and `pnpm e2e` (6) pass, and `e2e:admin` passed its 8 again on a fresh database with the same
+measurements to within a few ms (revoked token refused 4 ms after the revoke, Postgres down shown after 1,783 ms). `e2e:shell` passes 17 on a
+fresh database: its sign-out test now waits for the Admin screen's reads before signing out, as Admin, the last screen it opens, now reads
+something, and a read still on its way when the session ends got a 401 the browser logged. `cargo build --workspace`, `cargo fmt --check`,
+`cargo clippy --workspace --all-targets -- -D warnings`, `cargo deny check licenses` and `cargo test --workspace` pass (1,038 passed, 126
+ignored, with `MEMEX_PDFIUM_LIB` set). Two of four full runs, beside another worker's tests, failed memex-http's
+`worker_progress_reaches_a_stream_with_no_id` on its 20 s wait; it passed all 12 runs on its own, 3 of them with the
+workspace's features. It reports a progress frame, which isn't kept for replay, just after the stream's first frame, so a loaded machine can
+deliver it before the stream is listening: main's test, which this spec doesn't touch. No Rust changed here, so the Postgres suites weren't
+rerun.
 
 **Left as found.** The other screens' e2e suites weren't rerun: only the shell's code path around them changed, and the shell's own suite
 covers that. Imports are held in the server's memory (spec 039), so the import panel loses track of one after a server restart.
