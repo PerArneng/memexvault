@@ -53,6 +53,7 @@ import type { SearchRequest } from "./search";
 
 import type { IngestApi } from "./ingest-cases";
 import type { ChatApi } from "./chat-cases";
+import type { AuditApi } from "./audit-cases";
 
 export type { ApiFailure };
 
@@ -170,7 +171,7 @@ export interface CancelSignal {
   readonly aborted: boolean;
 }
 
-export interface Api extends IngestApi, ChatApi {
+export interface Api extends IngestApi, ChatApi, AuditApi {
   whoami(): Promise<ApiResult<Identity>>;
   signIn(token: string): Promise<ApiResult<Identity>>;
   signOut(): Promise<ApiResult<null>>;

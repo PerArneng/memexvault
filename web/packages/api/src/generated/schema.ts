@@ -748,7 +748,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** LLM tokens by agent, model, vault and UTC day, summed from Derivations, with cost only for a model `MEMEX_LLM_PRICES` gives a price. A server admin's. */
+        /** LLM tokens by agent, model, vault and UTC day, summed from Derivations and audit runs (agent `audit`), with cost only for a model `MEMEX_LLM_PRICES` gives a price. A server admin's. */
         get: {
             parameters: {
                 query?: {
@@ -9856,7 +9856,7 @@ export interface components {
             unpriced_tokens: number;
         };
         UsageRowDto: {
-            /** @description The Derivation's kind, such as `extraction` or `chat`. */
+            /** @description The Derivation's kind, such as `extraction` or `chat`, or `audit` for audit runs, which keep their tokens on the run. */
             agent: string;
             /**
              * Format: double
@@ -9865,7 +9865,10 @@ export interface components {
             cost_usd?: number | null;
             /** @description `YYYY-MM-DD`, UTC. */
             day: string;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Derivations, or for `audit` the runs that called a model, summed into this row.
+             */
             derivations: number;
             /** Format: int64 */
             input_tokens: number;

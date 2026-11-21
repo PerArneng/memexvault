@@ -83,3 +83,10 @@ export { attachableFrom, citationIndex, EMPTY_TRANSCRIPT, MAX_MESSAGE_CHARS, mes
 export type { AgentChannel, AgentRun, AgentRunRequest, ChatAttachment, CitationIndex, PreparedReply, ReplyEnd, ReplyPart, RunStatus, TranscriptAction, TranscriptEntry, TranscriptState } from "./chat";
 export { createChatSession } from "./chat-cases";
 export type { ChatApi, ChatCases, ChatSession } from "./chat-cases";
+export { auditAccess, auditAccessText, auditRunStatus, budgetUsedText, checkName, checkStatusOf, formatCount, intervalText, isFinding, MAX_SAMPLE, noReviewItemText, outcomeOf, parseSchedule, parseTrigger, recallText, recallWarnings, runIsOpen, scheduleForm, seedProblem, targetText, tokensTotal, triggerText } from "./audit";
+export type { AuditAccess, AuditRunStatus, AuditTone, Parsed, RecallWarning, ScheduleForm, TriggerForm } from "./audit";
+export { agentName, costText, isMonth, monthName, monthOf, monthRange, shiftMonth, totalsOf, usageView } from "./audit-usage";
+export type { Month, UsageDay, UsageGroup, UsageTotals, UsageView } from "./audit-usage";
+export { auditPath, parseAuditRoute } from "./audit-routes";
+export type { AuditRoute } from "./audit-routes";
+export type { AuditApi, AuditCases } from "./audit-cases";

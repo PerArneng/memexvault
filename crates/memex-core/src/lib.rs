@@ -71,9 +71,9 @@ pub use server::{
     MeetingView, NeighborView, NewEntity, NewPage, NewToken, OperationEdge, OutgoingLink, PIPELINE_VERSION, PageChange, PageDiff, PageList, PageRedirect,
     PageRevisionView, PageView, ParticipantLink, ParticipantView, PreparedChat, Proposal, ProposalOutcome, RECENT_ADMIN_MS, REGAIN_FIRST_MS, REGAIN_MAX_MS,
     RENDITION_JOB, RESULT_LIMIT, RecentAdmins, ReconcileReport, Redirect, ReindexTarget, RenditionInput, RestoreTarget, ReviewDetail, ReviewEvidence,
-    ReviewItem, SearchEdges, Server, ServerEdges, ServerError, ServerStatus, SplitRequest, SweepReport, TRANSCRIBE_JOB, TranscriptPage, TranscriptWindow,
-    TriggerAudit, TypeDecision, UnresolvedLink, UsageReport, UsageRow, VAULT_CASCADE, VaultStatus, export_archive_name, metrics_text, new_chat_cancel,
-    parse_utc_day, reconcile_json, regain_delay_ms, usage_report, utc_day,
+    ReviewItem, SearchEdges, Server, ServerEdges, ServerError, ServerStatus, Spent, SplitRequest, SweepReport, TRANSCRIBE_JOB, TranscriptPage,
+    TranscriptWindow, TriggerAudit, TypeDecision, UnresolvedLink, UsageReport, UsageRow, VAULT_CASCADE, VaultStatus, export_archive_name, metrics_text,
+    new_chat_cancel, parse_utc_day, reconcile_json, regain_delay_ms, usage_report, utc_day,
 };
 pub use session::{LOGIN_FAILURE_LIMIT, LOGIN_WINDOW_MS, SESSION_TTL_MS};
 pub use settings::{

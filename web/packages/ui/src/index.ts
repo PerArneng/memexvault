@@ -7,3 +7,5 @@ export type { Command, DialogProps, MenuItem, SelectOption, TabItem, ToastMessag
 export { DataTable } from "./data-table";
 export type { Column, DataTableProps } from "./data-table";
 export { SplitPane } from "./split-pane";
+export { StackedColumnChart } from "./chart";
+export type { ChartColumn, StackedColumnChartProps } from "./chart";

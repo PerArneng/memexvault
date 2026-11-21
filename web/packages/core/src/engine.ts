@@ -30,6 +30,8 @@ import type { SearchCases } from "./search-cases";
 import { createChatCases } from "./chat-cases";
 import type { ChatCases } from "./chat-cases";
 import type { AgentChannel } from "./chat";
+import { createAuditCases } from "./audit-cases";
+import type { AuditCases } from "./audit-cases";
 
 export interface Edges {
   readonly clock: Clock;
@@ -51,7 +53,7 @@ export interface Edges {
 const MAX_VAULT_PAGES = 50;
 
 /** The single entry point for views. Later specs add a method per use case. */
-export interface Engine extends WikiCases, DocumentCases, ReviewCases, EntityCases, SearchCases, IngestCases, ChatCases {
+export interface Engine extends WikiCases, DocumentCases, ReviewCases, EntityCases, SearchCases, IngestCases, ChatCases, AuditCases {
   startedAt(): EpochMs;
   uptimeMs(): number;
   settings(): Settings;
@@ -146,6 +148,7 @@ export const createEngine = (edges: Edges): Engine => {
     ...ingest,
     ...createSearchCases({ edges, watched }),
     ...createChatCases({ edges, watched }),
+    ...createAuditCases({ edges, watched }),
     startedAt: () => started,
     uptimeMs: () => clock.now() - started,
     settings: () => edges.settings,

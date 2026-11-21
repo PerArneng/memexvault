@@ -568,7 +568,7 @@ where
     }))
 }
 
-/// LLM tokens by agent, model, vault and UTC day, summed from Derivations, with cost only for a model `MEMEX_LLM_PRICES` gives a price. A server admin's.
+/// LLM tokens by agent, model, vault and UTC day, summed from Derivations and audit runs (agent `audit`), with cost only for a model `MEMEX_LLM_PRICES` gives a price. A server admin's.
 #[utoipa::path(get, path = "/api/v1/system/usage", tag = "operations", params(memex_api::UsageQuery), responses((status = 200, body = memex_api::UsageDto), (status = 400, body = ErrorBody), (status = 403, body = ErrorBody)))]
 async fn usage<E, A>(
     State(server): State<App<E>>,

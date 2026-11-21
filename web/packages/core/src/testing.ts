@@ -17,6 +17,10 @@ export { scriptedAgentChannel } from "./testing-chat";
 export type { ScriptedAgentChannel, ScriptedRun } from "./testing-chat";
 export type { ReviewSeed } from "./testing-review";
 import { fakeIngestApi } from "./ingest-testing";
+import { fakeAuditApi } from "./testing-audit";
+import type { AuditSeed } from "./testing-audit";
+export { checkWith, DEFAULT_SCHEDULE, fakeAuditApi, runWith, usageRowWith } from "./testing-audit";
+export type { AuditSeed } from "./testing-audit";
 import type { IngestSeed } from "./ingest-testing";
 
 /** A clock tests move by hand, so nothing sleeps. */
@@ -87,6 +91,7 @@ export const UNREACHABLE: ApiFailure = { kind: "unreachable", message: "no answe
 
 export interface FakeApiSeed {
   readonly ingest?: IngestSeed;
+  readonly audit?: AuditSeed;
   readonly chat?: { readonly settings?: ChatSettings; readonly threads?: readonly ChatThreadDetail[] };
   /** Which token signs in as whom. */
   readonly tokens?: Readonly<Record<string, Identity>>;
@@ -210,6 +215,7 @@ export const fakeApi = (seed: FakeApiSeed = {}): FakeApi => {
 
   const api: FakeApi = {
     ...fakeIngestApi(seed.ingest ?? {}),
+    ...fakeAuditApi(seed.audit ?? {}),
     getChatSettings: () => answer("getChatSettings", () => ok(seed.chat?.settings ?? { enabled: false, threadTokenBudget: null, dayTokenBudget: null, dayTokensUsed: 0, dayTokensLimit: 0, model: null, endpoint: null })),
     listChatThreads: () => answer("listChatThreads", () => ok({ items: (seed.chat?.threads ?? []).map((t) => t.thread), nextCursor: null })),
     getChatThread: (_vault, id, cursor) =>

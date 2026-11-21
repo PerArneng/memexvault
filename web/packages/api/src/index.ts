@@ -55,3 +55,16 @@ export { activityFrameFromWire, activityPageFromWire, documentActivityFromWire, 
 export { evidencePackageFromWire, renditionReadingFromWire } from "./translate-search";
 export type { LineageStep, ObjectPages, WireHeaders } from "./translate";
 export { agentEventFromWire, chatMessageFromWire, chatSettingsFromWire, chatThreadDetailFromWire, chatThreadFromWire, chatThreadPageFromWire, toolAnswerFromWire } from "./translate-chat";
+export {
+  agentUsageFromWire,
+  auditBudgetFromWire,
+  auditCheckFromWire,
+  auditCheckPageFromWire,
+  auditRunDetailFromWire,
+  auditRunFromWire,
+  auditRunPageFromWire,
+  auditScheduleFromWire,
+  auditScheduleToWire,
+  auditTriggerToWire,
+  recallFromWire,
+} from "./translate-audit";
