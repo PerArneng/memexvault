@@ -4,7 +4,8 @@
   "type": "module",
   "packageManager": "pnpm@9.15.9",
   "scripts": {
-    "build": "pnpm --filter @memex/console build",
+    "build": "pnpm run coverage && pnpm --filter @memex/console build",
+    "coverage": "node tools/check-coverage.mjs",
     "dev": "pnpm --filter @memex/console dev",
     "test": "vitest run",
     "typecheck": "node tools/api-types.mjs check --offline && for p in packages/* apps/*; do tsc --noEmit -p $p/tsconfig.json || exit 1; if [ -f $p/tsconfig.test.json ]; then tsc --noEmit -p $p/tsconfig.test.json || exit 1; fi; done",

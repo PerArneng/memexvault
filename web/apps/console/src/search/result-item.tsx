@@ -96,12 +96,12 @@ export const ResultItem = memo(function ResultItem({ vault, item, terms, names, 
         </ul>
       )}
       {item.conflicts.length > 0 && (
-        <section aria-label="What disagrees with this" data-conflicts={true} className="flex flex-col gap-2 rounded-md border border-warning bg-warning-surface p-2">
-          <h4 className="text-xs font-medium text-warning">Disagrees with</h4>
+        <div data-conflicts={true} className="flex flex-col gap-2 rounded-md border border-warning bg-warning-surface p-2">
+          <h3 className="text-xs font-medium text-warning">Disagrees with</h3>
           <ul className="flex flex-col gap-2">
             {item.conflicts.map((conflict) => <ConflictRow key={conflict.claimId} vault={vault} conflict={conflict} names={names} />)}
           </ul>
-        </section>
+        </div>
       )}
     </article>
   );

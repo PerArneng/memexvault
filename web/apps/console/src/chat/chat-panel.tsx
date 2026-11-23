@@ -186,7 +186,7 @@ const ChatPanel = ({ identity, vault, attachable, onClose }: ChatPanelProps) => 
   const [shown, setShown] = useState<string | null>(null);
   const isAdmin = scopeIn(identity, vault) === "admin";
   return (
-    <section aria-label="Chat" data-testid="chat-panel" className="flex h-full min-h-0 flex-col bg-surface-raised">
+    <section aria-label="Chat panel" data-testid="chat-panel" className="flex h-full min-h-0 flex-col bg-surface-raised">
       <header className="flex items-center gap-2 border-b border-border px-3 py-2">
         <h2 className="text-sm font-medium">Chat</h2>
         {onClose !== undefined && (

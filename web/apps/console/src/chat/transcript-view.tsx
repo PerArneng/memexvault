@@ -106,19 +106,21 @@ export interface TranscriptViewProps {
 
 /** The thread, as it streams. Everything the model or a tool said is shown as text or through `SafeMarkdown`, never as markup. */
 export const TranscriptView = ({ identity, vault, entries, index }: TranscriptViewProps) => (
-  <ol role="log" aria-label="Conversation" aria-live="polite" className="flex flex-col gap-3">
-    {entries.map((e) => (
-      <li key={`${e.kind}-${e.id}`}>
-        {e.kind === "user" ? (
-          <p data-user-message={e.id} className="ml-8 whitespace-pre-wrap break-words rounded-lg bg-surface-selected px-3 py-2 text-sm">{e.text}</p>
-        ) : e.kind === "reply" ? (
-          <ReplyView reply={e} index={index} />
-        ) : e.kind === "step" ? (
-          <StepView step={e} identity={identity} vault={vault} />
-        ) : (
-          <p role={e.tone === "error" ? "alert" : "status"} data-notice={e.tone} className={`text-xs ${e.tone === "error" ? "text-danger" : e.tone === "stopped" ? "text-warning" : "text-text-muted"}`}>{e.text}</p>
-        )}
-      </li>
-    ))}
-  </ol>
+  <div role="log" aria-label="Conversation" aria-live="polite">
+    <ol className="flex flex-col gap-3">
+      {entries.map((e) => (
+        <li key={`${e.kind}-${e.id}`}>
+          {e.kind === "user" ? (
+            <p data-user-message={e.id} className="ml-8 whitespace-pre-wrap break-words rounded-lg bg-surface-selected px-3 py-2 text-sm">{e.text}</p>
+          ) : e.kind === "reply" ? (
+            <ReplyView reply={e} index={index} />
+          ) : e.kind === "step" ? (
+            <StepView step={e} identity={identity} vault={vault} />
+          ) : (
+            <p role={e.tone === "error" ? "alert" : "status"} data-notice={e.tone} className={`text-xs ${e.tone === "error" ? "text-danger" : e.tone === "stopped" ? "text-warning" : "text-text-muted"}`}>{e.text}</p>
+          )}
+        </li>
+      ))}
+    </ol>
+  </div>
 );
