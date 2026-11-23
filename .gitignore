@@ -10,3 +10,4 @@ web/**/dist/
 web/**/test-results/
 web/**/playwright-report/
 vendor/
+\n# Generated icon PNGs (render.sh)\ndocs/icon/*.png\n
